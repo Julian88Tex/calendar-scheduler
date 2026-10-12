@@ -12,7 +12,7 @@ import { and, count, eq, lt, min } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { scheduledEvents, workflowExecutions } from "@/db/schema";
 import { isE2eMode, isVercel } from "@/lib/env";
-import { CRON_STALE_MS, getCronStatus } from "@/lib/jobs";
+import { CRON_STALE_MS, getCronStatus } from "@/lib/jobs/timing";
 import { now as clockNow } from "@/lib/time/now";
 
 /** A scheduled execution this far past its run time counts as overdue. */

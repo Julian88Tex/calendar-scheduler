@@ -9,7 +9,7 @@ import type { DbOrTx } from "@/db";
 import { eventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
 import { now as clockNow } from "@/lib/time/now";
 import { enqueueBackfill } from "./backfill";
-import { BASIC_REMINDER_KIND, REMINDER_WORKFLOW_NAMES } from "./reminders";
+import { BASIC_REMINDER_KIND, BASIC_REMINDER_TEMPLATE_KEY, REMINDER_WORKFLOW_NAMES } from "./constants";
 import { retimeExecutions } from "./store";
 import { DEFAULT_REMINDER_OFFSET_MINUTES } from "./timing";
 
@@ -60,7 +60,7 @@ export async function seedDemo(tx: DbOrTx, ctx: SeedDemoContext): Promise<void> 
           isBasic: true,
           basicKind: BASIC_REMINDER_KIND,
           basicEventTypeId: et.id,
-          templateKey: "basic_email_reminder",
+          templateKey: BASIC_REMINDER_TEMPLATE_KEY,
           createdAt: at,
           updatedAt: at,
         })

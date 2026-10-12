@@ -9,7 +9,7 @@ import "server-only";
 import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { DbOrTx } from "@/db";
 import { jobs, meetingActivity, scheduledEvents, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
-import { cancelJobs, enqueueJobs, enqueueOrReviveJob } from "@/lib/jobs";
+import { cancelJobs, enqueueJobs, enqueueOrReviveJob } from "@/lib/jobs/queue";
 import { now } from "@/lib/time/now";
 import { currentRunAt, type ComputedExecution, type EngineStep, type EngineWorkflow, type WorkflowTrigger } from "./engine";
 

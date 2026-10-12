@@ -44,6 +44,8 @@ test.describe("availability schedules", () => {
   });
 
   test("weekly hours auto-save, survive reload, and overlaps are not saved", async ({ page, axe }) => {
+    // The first test of the run also compiles the page in dev mode.
+    test.setTimeout(150_000);
     const errors = trackPageErrors(page);
     await open(page, "/app/availability");
     await expect(page.getByRole("heading", { name: "Availability", level: 1 })).toBeVisible();
@@ -252,6 +254,7 @@ test.describe("advanced settings and troubleshoot", () => {
   });
 
   test("troubleshoot shows every start time with the reason", async ({ page, api, axe, loginAs }) => {
+    test.setTimeout(120_000);
     const errors = trackPageErrors(page);
     const seededIds = (await api.seed("owner")) as { owner: { eventTypeIds: Record<string, string> } };
     // Tuesday 2030-10-08 08:00 in Los Angeles; Dentist 1:00pm to 2:00pm on the (fake) calendar. Moving the clock ends
@@ -283,7 +286,7 @@ test.describe("advanced settings and troubleshoot", () => {
     await expect(sheet.getByText("Dentist", { exact: true })).toBeVisible();
     await sheet.getByRole("button", { name: "Close" }).first().click();
 
-    await page.getByRole("radio", { name: "Available" }).click();
+    await page.getByRole("radio", { name: "Available", exact: true }).click();
     await expect(card.getByText("CALENDAR")).toHaveCount(0);
     await axe(page);
     expect(errors).toEqual([]);

@@ -19,8 +19,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | foundation-auth | Sign up, log in, password reset, 2FA, Sign in with Google (also connects the calendar) | done |
 | foundation-platform | Email sending with Calendly-style layout and calendar invites, background jobs, cron | done |
 | slot-engine | The scheduling brain: hours, buffers, minimum notice, increments, limits, DST, why-blocked diagnostics | done |
-| booking-core | Taking a booking safely (no double booking), daily/weekly and account-wide limits, slot API | building |
-| booking-pages | Your profile page, the month calendar and time slots, details form, confirmation page | next |
+| booking-core | Taking a booking safely (no double booking), daily/weekly and account-wide limits, slot API | done |
+| booking-pages | Your profile page, the month calendar and time slots, details form, confirmation page | building |
 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |

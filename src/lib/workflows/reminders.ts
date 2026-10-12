@@ -32,20 +32,10 @@ import { absoluteUrl } from "@/lib/url";
 import { enqueueBackfill } from "./backfill";
 import { getReminderDeliveryHealth } from "./health";
 import { BODY_TEXT_MAX, REMINDER_MESSAGES, type SaveRemindersInput, type ToggleRemindersInput } from "./schemas";
+import { BASIC_REMINDER_KIND, BASIC_REMINDER_TEMPLATE_KEY, HOST_REMINDER_TEMPLATE_KEY, MAX_WORKFLOWS_PER_USER, REMINDER_WORKFLOW_NAMES } from "./constants";
 import { cancelExecutions, type StepRow, type WorkflowRow } from "./store";
 import { DEFAULT_REMINDER_OFFSET_MINUTES, sortOffsets, toOffsetMinutes } from "./timing";
 import type { EventTypeRemindersView, ReminderDefaults, ReminderKind, ReminderRowView } from "./types";
-
-export const HOST_REMINDER_TEMPLATE_KEY = "event_type_host_reminder";
-export const BASIC_REMINDER_KIND = "email_reminder" as const;
-/** NT-24: up to 50 workflows per user (basic notifications do not count). */
-export const MAX_WORKFLOWS_PER_USER = 50;
-
-/** Workflow names (shown in the meeting activity log). */
-export const REMINDER_WORKFLOW_NAMES: Record<ReminderKind, string> = {
-  invitee: "Email reminder to invitees",
-  host: "Email reminder to host",
-};
 
 type ReminderRow = { workflow: WorkflowRow; step: StepRow | null };
 
@@ -287,7 +277,7 @@ async function createTiming(
       isBasic: kind === "invitee",
       basicKind: kind === "invitee" ? BASIC_REMINDER_KIND : null,
       basicEventTypeId: kind === "invitee" ? et.id : null,
-      templateKey: kind === "host" ? HOST_REMINDER_TEMPLATE_KEY : "basic_email_reminder",
+      templateKey: kind === "host" ? HOST_REMINDER_TEMPLATE_KEY : BASIC_REMINDER_TEMPLATE_KEY,
       createdAt: at,
       updatedAt: at,
     })
