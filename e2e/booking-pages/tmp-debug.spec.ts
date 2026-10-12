@@ -1,14 +1,27 @@
-import AxeBuilder from "@axe-core/playwright";
 import { test } from "../fixtures";
-
-test("debug axe", async ({ page, api, seed }) => {
+const DIR = "/tmp/claude-0/-home-user-calendar-scheduler/c9812121-7c1c-586e-a5d4-c6110d4042e5/scratchpad/shots";
+test.use({ viewport: { width: 1920, height: 1080 } });
+test("screens", async ({ page, api, seed }) => {
+  test.setTimeout(240_000);
   await api.reset();
   await api.setTime("2030-10-07T13:00:00Z");
   await seed("owner");
-  await page.goto("/julianjoseph/30min?month=2030-10&date=2030-10-07", { timeout: 120_000 });
-  await page.getByRole("list", { name: "Select a time" }).getByRole("button", { name: "3:00pm" }).click({ timeout: 60_000 });
-  await page.waitForTimeout(600);
-  const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-  for (const v of r.violations) for (const n of v.nodes) console.log("VIOLATION", v.id, n.target.join(" "), n.failureSummary);
+  await page.goto("/julianjoseph", { timeout: 120_000 });
+  await page.screenshot({ path: DIR + "/landing.png" });
+  await page.goto("/julianjoseph/30min?back=1", { timeout: 120_000 });
+  await page.getByRole("button", { name: "Monday, October 7 - Times available" }).waitFor({ timeout: 60_000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: DIR + "/booking.png" });
+  await page.getByRole("button", { name: "Tuesday, October 8 - Times available" }).click();
+  await page.waitForTimeout(800);
+  await page.getByRole("list", { name: "Select a time" }).getByRole("button").first().click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: DIR + "/times.png" });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: DIR + "/details.png", fullPage: true });
+  await page.goto("/julianjoseph/meal?back=1", { timeout: 120_000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: DIR + "/meal.png" });
   await api.setTime(null);
 });

@@ -25,8 +25,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |
 |---|---|---|
-| availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | building |
-| event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | queued |
+| availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | done |
+| event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | building |
 | event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | queued |
 
 ### Milestone 3: real calendars and video links
