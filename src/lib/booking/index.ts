@@ -36,6 +36,7 @@ export {
   createReservation,
   getReservationStatus,
   isBlockedInvitee,
+  isReschedulableSource,
   resendReservationCode,
   RESERVATION_HOLD_MS,
   resultForInvitee,

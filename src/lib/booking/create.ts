@@ -1078,6 +1078,11 @@ export async function completeReservation(
     };
   } catch (e) {
     if (isUniqueViolation(e, "invitees_reservation_uq")) return (await done()) ?? slotTaken();
+    // The hold's client request id was meanwhile used by another booking of this form (BK-19): never a 500.
+    if (isUniqueViolation(e, "invitees_client_request_uq")) {
+      await cancelHold("stale_form");
+      return fail("validation", MESSAGES.staleForm);
+    }
     const mapped = mapTxError(e);
     if (mapped) {
       await db.update(bookingReservations).set({ status: "canceled", updatedAt: at }).where(and(eq(bookingReservations.id, reservationId), eq(bookingReservations.status, "pending")));
