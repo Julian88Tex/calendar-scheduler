@@ -32,8 +32,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 3: real calendars and video links
 | Module | What it gives you | Status |
 |---|---|---|
-| calendar-integrations | Google Calendar: conflict checking, adding events, syncing moves and deletes | building |
-| conferencing | Google Meet links on created events, plus the stable join link | queued |
+| calendar-integrations | Google Calendar: conflict checking, adding events, detecting moves and deletes (applied by lifecycle-core) | done |
+| conferencing | Google Meet links on created events, plus the stable join link | building |
 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |

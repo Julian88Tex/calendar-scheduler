@@ -47,7 +47,8 @@ test.describe("booking pages", () => {
   test("books the 30 minute event from the landing page", async ({ page, axe }) => {
     await page.goto("/julianjoseph");
     await page.getByRole("link", { name: "30 Minute Virtual" }).click();
-    await expect(page).toHaveURL(/\/julianjoseph\/30min\?back=1&month=2030-10$/);
+    // Dev servers compile routes on first use: allow for it.
+    await expect(page).toHaveURL(/\/julianjoseph\/30min\?back=1&month=2030-10$/, { timeout: 60_000 });
     await expect(page).toHaveTitle(/Select a Date & Time/);
     await expect(page.getByRole("heading", { level: 1, name: "30 Minute Virtual" })).toBeVisible();
     await expect(page.getByText("Web conferencing details provided upon confirmation.")).toBeVisible();
@@ -88,7 +89,7 @@ test.describe("booking pages", () => {
     await page.getByLabel("What would you like to discuss?").fill("Roadmap review");
     await page.getByRole("button", { name: "Schedule Event" }).click();
 
-    await expect(page).toHaveURL(/\/booking\/[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/booking\/[0-9a-f-]{36}$/, { timeout: 60_000 });
     await expect(page.getByRole("heading", { level: 1, name: "You are scheduled" })).toBeVisible();
     await expect(page.getByText("You are scheduled with Julian Joseph.")).toBeVisible();
     await expect(page.getByText("A confirmation has been sent to your email address.")).toBeVisible();
