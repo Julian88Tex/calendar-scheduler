@@ -13,6 +13,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { calendarConnections } from "@/db/schema";
 import { revokeGoogleToken } from "@/lib/auth/oauth/google";
 import { decryptOrNull } from "@/lib/crypto";
+import { getFeatures } from "@/lib/env";
 import { isUuid } from "@/lib/ids";
 import { enqueueJob, RetryLaterError, type JobHandlers, type PeriodicJob } from "@/lib/jobs";
 import { CALENDAR_LIST_JOB, REVOKE_JOB, syncCalendarList, WATCH_JOB } from "./connections";
@@ -80,6 +81,7 @@ export const handlers: JobHandlers = {
     }
     const token = await decryptOrNull(str(payload?.tokenEnc));
     if (!token) return;
+    if (!getFeatures().googleOAuth) return { result: "google_oauth_not_configured" };
     // Revoking ends the whole grant of that Google account for this OAuth client: keep it while another live
     // connection (another account here, or a second user) still uses the same Google account.
     const accountId = str(payload?.providerAccountId);
