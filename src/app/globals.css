@@ -27,6 +27,8 @@
   --slot-selected: rgba(10, 37, 64, 0.5);
   --on-primary: #ffffff;
   --row-hover: #f0f3f8;
+  /* Booking calendar tints derived from --primary-color (#006BFF gives #F4F8FF days, #E6F0FF hover, #004EBA text). */
+  --day-tint: 4.5%; --day-hover-tint: 10%; --day-text-pct: 73%; --day-text-mix: #000000;
   color-scheme: light;
 }
 
@@ -44,6 +46,7 @@
   --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
   --focus: #7ab4ff;
   --row-hover: #1b222b;
+  --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -60,6 +63,7 @@
     --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
     --focus: #7ab4ff;
     --row-hover: #1b222b;
+    --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
     color-scheme: dark;
   }
 }
@@ -262,6 +266,24 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.72px;
+}
+
+/* Brand-derived colors for public pages (SPEC GEN-03: every blue reads from --primary-color). */
+@utility cal-day-available {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-tint), transparent);
+  color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
+}
+@utility cal-day-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-hover-tint), transparent);
+}
+@utility text-brand-strong {
+  color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
+}
+@utility bg-brand-soft {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-tint), transparent);
+}
+@utility bg-brand-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-hover-tint), transparent);
 }
 
 /* Thin, quiet scrollbars for scroll containers (ScrollArea, slot lists, menus). */

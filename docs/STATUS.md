@@ -25,7 +25,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |
 |---|---|---|
-| availability | Schedules, weekly hours, date-specific hours, schedule time zone | next |
+| availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | next |
 | event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | queued |
 | event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | queued |
 
@@ -33,7 +33,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | calendar-integrations | Google Calendar: conflict checking, adding events, syncing moves and deletes | queued |
-| conferencing | Google Meet, Zoom, Jitsi and custom links, plus the stable join link | queued |
+| conferencing | Google Meet links on created events, plus the stable join link | queued |
 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |
@@ -51,13 +51,13 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |
 |---|---|---|
-| workflows (lite) | Default email reminders before meetings, on/off and timing per event type | queued |
+| workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | queued |
 | settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | queued |
 | golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
 
 ### Skipped (owner decision, see docs/SCOPE.md)
 Teams and round robin, single-use links and one-off meetings, payments, contacts, routing forms, public API,
-webhooks and embed, analytics, admin tools, marketing site, translations, Microsoft/iCloud/ICS calendars,
+webhooks and embed, analytics, admin tools, marketing site, translations, Microsoft/iCloud/ICS calendars, Zoom and Jitsi,
 Teams/Webex video, the custom workflow builder and SMS. Any of these can be added back later.
 
 ## Setup you can do now
