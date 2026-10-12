@@ -17,7 +17,7 @@ import type { DB } from "@/db";
 import { inviteeGuests, inviteeNoShows, invitees, scheduledEventHosts, scheduledEvents, users, workflowExecutions, workflows } from "@/db/schema";
 import { emailBrandForUser, isValidEmailAddress, meetingSender, renderMeetingEmail, sendEmail, type MeetingEmailKind } from "@/lib/email";
 import { sanitizeRichText } from "@/lib/html";
-import { resolveLocale } from "@/lib/i18n";
+import { getT, resolveLocale } from "@/lib/i18n";
 import { reminderDecision } from "@/lib/jobs/timing";
 import { PermanentJobError, RetryLaterError, type JobContext } from "@/lib/jobs/types";
 import { log } from "@/lib/logger";
@@ -179,8 +179,14 @@ export async function executeWorkflowJob(payload: unknown, ctx: JobContext): Pro
       hostUserId: r.hostUserId ?? null,
       db,
     });
+    let ctxVars = vars;
     // Guests are greeted with "Hi," (the default greeting names the invitee).
-    const ctxVars = r.kind === "guest" && !bodyTemplate ? { ...vars, invitee_first_name: "" } : vars;
+    if (r.kind === "guest" && !bodyTemplate) ctxVars = { ...vars, invitee_first_name: "" };
+    // Slot-level host reminders of group events name the slot's invitee count ("with 3 invitees").
+    if (r.kind === "host" && !invitee) {
+      const n = Number(vars.invitees_count ?? 0);
+      ctxVars = { ...vars, invitee_full_name: `${n} ${n === 1 ? "invitee" : "invitees"}` };
+    }
     const kind: MeetingEmailKind = r.kind === "host" ? "host_reminder" : "invitee_reminder";
     const locale = r.kind === "host" ? "en" : resolveLocale(r.kind === "other" ? meetingLocale : (invitee?.locale ?? meetingLocale));
     const email = renderMeetingEmail({
@@ -191,9 +197,12 @@ export async function executeWorkflowJob(payload: unknown, ctx: JobContext): Pro
       location: event.location,
       questions: invitee?.questionsAndAnswers ?? null,
       includeAnswers: event.settingsSnapshot?.includeAnswersInNotifications !== false,
-      manageLinks: r.kind === "invitee" && snapshot.includeCancelRescheduleLinks,
+      // The event type's "Include cancel and reschedule links in email invitations and reminders" (meeting snapshot)
+      // and the reminder's own option must both allow them; never for guests, hosts or other recipients.
+      manageLinks: r.kind === "invitee" && snapshot.includeCancelRescheduleLinks && event.settingsSnapshot?.includeCancelRescheduleLinks !== false,
       meetingUrl: r.kind === "host" ? absoluteUrl(`/app/meetings?event=${encodeURIComponent(event.id)}`) : null,
-      subjectTemplate: snapshot.subject,
+      // Default subjects come from the workflows namespace in the recipient's language (GEN-10).
+      subjectTemplate: snapshot.subject ?? getT(locale, "workflows")(`reminders.${r.kind === "host" ? "host" : "invitee"}.subject`),
       bodyTemplate,
     });
     const sender =

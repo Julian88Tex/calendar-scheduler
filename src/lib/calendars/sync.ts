@@ -8,24 +8,28 @@
 // by the host -> { type: "declined" }, start or end different from what we last wrote -> { type: "moved", start,
 // end } (buffer events: the buffer changed). Each change goes to lifecycle-core's applyExternalCalendarChange, which
 // cancels or reschedules the meeting with the CR-17 reasons and notifies invitees. Rows are batched per connection;
-// a transient provider failure stops that connection's batch until the next run.
+// a transient provider failure stops that connection's batch until the next run. A permanent failure of one event (a
+// calendar that was unshared or deleted answers "calendarUnavailable", never a delete) skips that row only and asks
+// for a calendar list refresh, so one bad row never blocks the others and no meeting is canceled by mistake.
 import "server-only";
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { calendarConnections, calendarLinkedEvents, calendars, scheduledEvents } from "@/db/schema";
+import { enqueueJob } from "@/lib/jobs";
 import { applyExternalCalendarChange, type ExternalCalendarChange } from "@/lib/lifecycle";
 import { log } from "@/lib/logger";
-import { now } from "@/lib/time/now";
+import { now, nowMs } from "@/lib/time/now";
 import { invalidateCalendarCache } from "./busy";
 import { withConnection } from "./credentials";
 import { markConnectionHealthy, recordConnectionFailure } from "./health";
 import { getProvider } from "./providers/registry";
-import { isProviderAuthError, isProviderTransientError, type RemoteEvent } from "./providers/types";
+import { isProviderAuthError, isProviderRequestError, isProviderTransientError, type RemoteEvent } from "./providers/types";
 
 /** CAL-14: each linked event is checked at most this often (push notifications bypass it). */
 export const SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 export const SYNC_HORIZON_DAYS = 90;
 const BATCH = 100;
+const CALENDAR_LIST_REFRESH_JOB = "calendars.refresh_calendar_list";
 
 type SyncRow = {
   id: string;
@@ -76,7 +80,9 @@ export async function syncBookedEvents(opts: { calendarId?: string; limit?: numb
     .where(
       and(
         inArray(calendarLinkedEvents.purpose, ["meeting", "buffer_before", "buffer_after"]),
-        eq(calendarLinkedEvents.status, "synced"),
+        // "failed" rows that have a provider event too: a write that failed (a reconnect was needed, say) leaves the
+        // last synced times in place, so comparing against them is still right.
+        inArray(calendarLinkedEvents.status, ["synced", "failed"]),
         isNotNull(calendarLinkedEvents.externalId),
         eq(calendars.syncChanges, true),
         isNull(calendars.deletedAt),
@@ -94,13 +100,30 @@ export async function syncBookedEvents(opts: { calendarId?: string; limit?: numb
   for (const r of rows) byConnection.set(r.connectionId, [...(byConnection.get(r.connectionId) ?? []), r]);
   let checked = 0;
   let changes = 0;
+  let firstError: unknown = null;
   for (const [connectionId, list] of byConnection) {
     const impl = getProvider(list[0]!.provider);
     if (!impl?.capabilities.changeSync) continue;
     try {
       await withConnection(connectionId, async (ctx) => {
         for (const row of list) {
-          const ev = await impl.getEvent(ctx, row.calendarExternalId, row.externalId!);
+          let ev: RemoteEvent | null;
+          try {
+            ev = await impl.getEvent(ctx, row.calendarExternalId, row.externalId!);
+          } catch (e) {
+            if (!isProviderRequestError(e)) throw e;
+            // This row only (forbidden, bad id, calendar no longer readable): look again next run, never cancel.
+            log.warn("calendars.sync_row_skipped", { linkedEventId: row.id, error: e });
+            await db.update(calendarLinkedEvents).set({ lastCheckedAt: now() }).where(eq(calendarLinkedEvents.id, row.id));
+            if (e.reason === "calendarUnavailable") {
+              await enqueueJob(db, {
+                type: CALENDAR_LIST_REFRESH_JOB,
+                payload: { connectionId },
+                idempotencyKey: `callist:${connectionId}:${Math.floor(nowMs() / (15 * 60_000))}`,
+              });
+            }
+            continue;
+          }
           checked++;
           const change = detectChange(row, ev);
           const stamp = now();
@@ -134,9 +157,10 @@ export async function syncBookedEvents(opts: { calendarId?: string; limit?: numb
     } catch (e) {
       log.warn("calendars.sync_booked_events_failed", { connectionId, error: e });
       if (isProviderTransientError(e)) await recordConnectionFailure(connectionId, (e as Error).message);
-      else if (!isProviderAuthError(e)) throw e;
+      else if (!isProviderAuthError(e)) firstError ??= e; // other connections still get their turn
     }
   }
+  if (firstError) throw firstError;
   return { checked, changes };
 }
 

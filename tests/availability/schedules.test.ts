@@ -88,6 +88,28 @@ describe("create, rename, clone", () => {
     expect(created.timezone).toBe("Europe/Berlin");
   });
 
+  it("still creates the named schedule when the user has schedules but none is marked default", async () => {
+    const user = await createUser(t.db, { timezone: "America/Los_Angeles" });
+    const old = await seedSchedule(t.db, { userId: user.id, name: "Old", isDefault: false, timezone: "America/Chicago" });
+    const created = await createSchedule(t.db, user.id, { name: "Evenings" });
+    expect(created.id).not.toBe(old.id);
+    expect(created.name).toBe("Evenings");
+    expect(created.isDefault).toBe(false);
+    expect(created.timezone).toBe("America/Chicago");
+    const list = await listSchedules(user.id);
+    expect(list.map((s) => [s.name, s.isDefault])).toEqual([
+      ["Old", true],
+      ["Evenings", false],
+    ]);
+  });
+
+  it("validates names in the service too (1 to 60 characters, trimmed)", async () => {
+    const { user, defaultId } = await userWithDefault();
+    await expectAppError(createSchedule(t.db, user.id, { name: "   " }), "validation", "Enter a schedule name.");
+    await expectAppError(renameSchedule(t.db, user.id, defaultId, "x".repeat(61)), "validation", "Use 60 characters or fewer.");
+    expect((await renameSchedule(t.db, user.id, defaultId, `  ${"y".repeat(60)}  `)).name).toBe("y".repeat(60));
+  });
+
   it("limits a user to 50 schedules", async () => {
     const { user } = await userWithDefault();
     for (let i = 0; i < 49; i++) await seedSchedule(t.db, { userId: user.id, name: `S${i}`, isDefault: false });
@@ -215,6 +237,20 @@ describe("hours, zone and date-specific hours", () => {
       updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: h(9), end: h(12) }, { start: h(11), end: h(13) }], [], [], [], [], []]),
       "validation",
     );
+    // The service reports the same AV-04 message as the form, and rejects times outside the day.
+    await expectAppError(
+      updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: h(9), end: h(12) }, { start: h(11), end: h(13) }], [], [], [], [], []]),
+      "validation",
+      "Times overlap with another set of times.",
+    );
+    await expectAppError(
+      updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: h(17), end: h(9) }], [], [], [], [], []]),
+      "validation",
+      "Choose an end time later than the start time.",
+    );
+    await expectAppError(updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: -60, end: h(9) }], [], [], [], [], []]), "validation", "Enter a time.");
+    await expectAppError(updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: h(9), end: 2000 }], [], [], [], [], []]), "validation", "Enter a time.");
+    await expectAppError(updateWeeklyHours(t.db, user.id, defaultId, [[], [], []] as unknown as WeeklyHours), "validation");
     // touching intervals stay separate rows
     await updateWeeklyHours(t.db, user.id, defaultId, [[], [{ start: h(9), end: h(12) }, { start: h(12), end: h(17) }], [], [], [], [], []]);
     expect((await getSchedule(user.id, defaultId))?.weeklyHours[1]).toHaveLength(2);
@@ -239,6 +275,19 @@ describe("hours, zone and date-specific hours", () => {
     await deleteDateOverride(t.db, user.id, defaultId, "2030-10-21");
     detail = await getSchedule(user.id, defaultId);
     expect(detail?.overrides.map((o) => o.date)).toEqual(["2030-10-22"]);
+  });
+
+  it("validates date-specific hours in the service (dates and hours)", async () => {
+    const { user, defaultId } = await userWithDefault();
+    await expectAppError(upsertDateOverrides(t.db, user.id, defaultId, { dates: ["2030-02-30"], intervals: [] }), "validation", "Choose a valid date.");
+    await expectAppError(upsertDateOverrides(t.db, user.id, defaultId, { dates: [], intervals: [] }), "validation", "Choose a valid date.");
+    await expectAppError(
+      upsertDateOverrides(t.db, user.id, defaultId, { dates: ["2030-10-22"], intervals: [{ start: h(10), end: h(12) }, { start: h(11), end: h(13) }] }),
+      "validation",
+      "Times overlap with another set of times.",
+    );
+    await expectAppError(deleteDateOverride(t.db, user.id, defaultId, "yesterday"), "validation", "Choose a valid date.");
+    expect((await getSchedule(user.id, defaultId))?.overrides).toEqual([]);
   });
 
   it("limits a schedule to 1,000 date-specific hours", async () => {

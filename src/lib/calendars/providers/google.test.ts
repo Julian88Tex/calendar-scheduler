@@ -1,7 +1,7 @@
 // Google Calendar provider against mocked endpoints (SPEC CAL-02, CAL-11, CAL-12, SCH-12, VID-07).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockFetch, mockResponse, type MockFetch, type MockRequest } from "../../../../tests/helpers/fake-providers";
-import { GOOGLE_BUSY_EVENT_TYPES, googleProvider, googleTiming, mapGoogleEvent, readGoogleConference, watchGoogleEvents } from "./google";
+import { differsFromInput, GOOGLE_BUSY_EVENT_TYPES, googleProvider, googleTiming, mapGoogleEvent, readGoogleConference, watchGoogleEvents, type GoogleEvent } from "./google";
 import { ProviderAuthError, ProviderRequestError, ProviderTransientError, type ConnectionContext, type WriteEventInput } from "./types";
 
 const G = "https://www.googleapis.com/calendar/v3";
@@ -176,7 +176,19 @@ describe("googleProvider", () => {
       {
         method: "GET",
         url: `${G}/calendars/me%40example.com/events/0f8fad5bd9cb469fa16570867728950e`,
-        handler: () => ({ id: "0f8fad5bd9cb469fa16570867728950e", status: "confirmed", iCalUID: "dup@google.com", htmlLink: "https://g/1", hangoutLink: "https://meet.google.com/xyz" }),
+        // What the first attempt wrote (same times, title, details and guests).
+        handler: () => ({
+          id: "0f8fad5bd9cb469fa16570867728950e",
+          status: "confirmed",
+          summary: "Sam Lee and Julian",
+          description: "Event Name: 30 Minute Virtual",
+          start: { dateTime: "2026-10-20T10:00:00-07:00" },
+          end: { dateTime: "2026-10-20T10:30:00-07:00" },
+          attendees: [{ email: "sam@example.com" }, { email: "guest@example.com" }],
+          iCalUID: "dup@google.com",
+          htmlLink: "https://g/1",
+          hangoutLink: "https://meet.google.com/xyz",
+        }),
       },
     );
     const res = await googleProvider.createEvent(ctx, "me@example.com", write());
@@ -206,6 +218,7 @@ describe("googleProvider", () => {
       { method: "PATCH", url: `${G}/calendars/me%40example.com/events/e1`, handler: (req) => ((body = req.body as Record<string, unknown>), { id: "e1", etag: '"2"', hangoutLink: "https://meet.google.com/same" }) },
       { method: "DELETE", url: `${G}/calendars/me%40example.com/events/e2`, handler: () => mockResponse({ error: { code: 410, message: "Resource has been deleted" } }, { status: 410 }) },
       { method: "GET", url: `${G}/calendars/me%40example.com/events/e3`, handler: () => mockResponse({ error: { code: 404, message: "Not Found" } }, { status: 404 }) },
+      { method: "GET", url: (u) => u.pathname.endsWith("/calendars/me%40example.com"), handler: () => ({ id: "me@example.com", summary: "Me" }) },
     );
     const res = await googleProvider.updateEvent(ctx, "me@example.com", "e1", write({ idempotencyKey: "e1", sendInvitations: false }));
     expect(f.calls[0]!.url.searchParams.get("sendUpdates")).toBe("none");
@@ -216,6 +229,63 @@ describe("googleProvider", () => {
     await expect(googleProvider.deleteEvent(ctx, "me@example.com", "e2", { notifyAttendees: true })).resolves.toBeUndefined();
     expect(f.calls[1]!.url.searchParams.get("sendUpdates")).toBe("all");
     expect(await googleProvider.getEvent(ctx, "me@example.com", "e3")).toBeNull();
+  });
+
+  it("brings the event of an earlier attempt up to date when the meeting changed before the retry (409)", async () => {
+    const created: GoogleEvent = { id: "0f8fad5bd9cb469fa16570867728950e", status: "confirmed", summary: "Sam Lee and Julian", description: "Event Name: 30 Minute Virtual", start: { dateTime: "2026-10-20T17:00:00Z" }, end: { dateTime: "2026-10-20T17:30:00Z" }, attendees: [{ email: "julian@example.com", organizer: true, self: true }, { email: "sam@example.com" }, { email: "guest@example.com" }], hangoutLink: "https://meet.google.com/xyz", iCalUID: "dup@google.com" };
+    let patched: Record<string, unknown> | null = null;
+    f = mockFetch(
+      { method: "POST", url: `${G}/calendars/`, handler: () => mockResponse({ error: { code: 409, message: "The requested identifier already exists.", errors: [{ reason: "duplicate" }] } }, { status: 409 }) },
+      { method: "GET", url: `${G}/calendars/me%40example.com/events/0f8fad5bd9cb469fa16570867728950e`, handler: () => created },
+      { method: "PATCH", url: `${G}/calendars/me%40example.com/events/0f8fad5bd9cb469fa16570867728950e`, handler: (req) => ((patched = req.body as Record<string, unknown>), { ...created, ...patched, etag: '"2"' }) },
+    );
+    // Same meeting: the earlier event is used as is (the full attendee list was read, not only our own entry).
+    expect(differsFromInput(created, write())).toBe(false);
+    await googleProvider.createEvent(ctx, "me@example.com", write());
+    expect(f.callsTo("/events/0f8fad5bd9cb469fa16570867728950e", "GET")[0]!.url.searchParams.get("maxAttendees")).toBeNull();
+    expect(patched).toBeNull();
+    // The meeting moved by an hour between the attempts: the event is patched, so CAL-14 never sees a host-side move.
+    const moved = write({ start: new Date("2026-10-20T18:00:00Z"), end: new Date("2026-10-20T18:30:00Z") });
+    expect(differsFromInput(created, moved)).toBe(true);
+    expect(differsFromInput(created, write({ attendees: [{ email: "sam@example.com" }] }))).toBe(true);
+    const res = await googleProvider.createEvent(ctx, "me@example.com", moved);
+    expect(patched).toMatchObject({ start: { dateTime: "2026-10-20T18:00:00.000Z" }, end: { dateTime: "2026-10-20T18:30:00.000Z" } });
+    expect(f.callsTo("/events/0f8fad5bd9cb469fa16570867728950e", "PATCH")[0]!.url.searchParams.get("sendUpdates")).toBe("all");
+    expect(res).toMatchObject({ externalId: "0f8fad5bd9cb469fa16570867728950e", etag: '"2"' });
+  });
+
+  it("counts an event as deleted only while its calendar still answers (404 is also what an unshared calendar returns)", async () => {
+    let calendarGone = false;
+    f = mockFetch(
+      { method: "GET", url: `${G}/calendars/team%40group.calendar.google.com/events/`, handler: () => mockResponse({ error: { code: 404, message: "Not Found", errors: [{ reason: "notFound" }] } }, { status: 404 }) },
+      {
+        method: "GET",
+        url: (u) => u.pathname.endsWith("/calendars/team%40group.calendar.google.com"),
+        handler: () => (calendarGone ? mockResponse({ error: { code: 404, message: "Not Found", errors: [{ reason: "notFound" }] } }, { status: 404 }) : { id: "team@group.calendar.google.com" }),
+      },
+    );
+    expect(await googleProvider.getEvent(ctx, "team@group.calendar.google.com", "e1")).toBeNull();
+    calendarGone = true;
+    await expect(googleProvider.getEvent(ctx, "team@group.calendar.google.com", "e1")).rejects.toMatchObject({ name: "ProviderRequestError", reason: "calendarUnavailable" });
+  });
+
+  it("reads a calendar that refuses the eventTypes filter without it, still dropping working locations", async () => {
+    f = mockFetch({
+      method: "GET",
+      url: `${G}/calendars/`,
+      handler: (req) =>
+        req.url.searchParams.getAll("eventTypes").length
+          ? mockResponse({ error: { code: 400, message: "Invalid event type", errors: [{ reason: "invalid" }] } }, { status: 400 })
+          : {
+              items: [
+                { id: "busy", start: { dateTime: "2026-10-20T15:00:00Z" }, end: { dateTime: "2026-10-20T16:00:00Z" } },
+                { id: "wl", eventType: "workingLocation", start: { date: "2026-10-20" }, end: { date: "2026-10-21" } },
+              ],
+            },
+    });
+    const res = await googleProvider.listEvents(ctx, ["odd@group.calendar.google.com"], { start: new Date("2026-10-01T00:00:00Z"), end: new Date("2026-11-01T00:00:00Z") });
+    expect(res["odd@group.calendar.google.com"]?.map((e) => e.externalId)).toEqual(["busy"]);
+    expect(f.calls).toHaveLength(2);
   });
 
   it("maps errors to auth, transient and request errors", async () => {

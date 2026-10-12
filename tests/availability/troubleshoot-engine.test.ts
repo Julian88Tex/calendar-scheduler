@@ -103,7 +103,7 @@ describe("Troubleshoot end to end", () => {
     // 4:45pm would end after 5:00pm; from 5:00pm on, outside working hours again.
     expect(views.get("4:30pm")?.status).toBe("available");
     expect(views.get("4:45pm")?.status).toBe("DURATION");
-    expect(views.get("4:45pm")?.reasons).toEqual(["Not enough time: a 30 min meeting at 4:45pm would run past the end of your available hours."]);
+    expect(views.get("4:45pm")?.reasons).toEqual(["Not enough time: the meeting (30 min) would run past the end of your available hours."]);
     expect(views.get("5:00pm")?.status).toBe("outside_hours");
     // The day summary lists the busy times with titles.
     expect(day.result!.busy.map((b) => b.title)).toEqual(expect.arrayContaining(["Dentist", "In-Person Meal or Coffee"]));

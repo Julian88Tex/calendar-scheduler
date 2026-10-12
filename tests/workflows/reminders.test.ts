@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { jobs, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
 import { loadActorCtx } from "@/lib/authz";
 import { resetFakeTime } from "@/lib/time/now";
-import { getEventTypeReminders, saveEventTypeReminders, setEventTypeRemindersEnabled } from "@/lib/workflows/reminders";
+import { copyEventTypeReminders, getEventTypeReminders, saveEventTypeReminders, setEventTypeRemindersEnabled } from "@/lib/workflows/reminders";
 import { seedDemo } from "@/lib/workflows/seed";
 import { workflowSubscribers } from "@/lib/workflows/subscriber-handlers";
 import * as f from "../factories";
@@ -250,6 +250,28 @@ describe("Email reminders to host", () => {
     // Basic notifications do not count.
     const ok = await setEventTypeRemindersEnabled(actor, { eventTypeId: eventType.id, kind: "invitee", enabled: true }, t.db);
     expect(ok.view.invitee.enabled).toBe(true);
+  });
+});
+
+describe("copyEventTypeReminders (duplicate)", () => {
+  it("copies both rows with their timings, state and messages, once", async () => {
+    const { actor, eventType, owner } = await setupOwner(t.db);
+    await saveEventTypeReminders(
+      actor,
+      saveInput(eventType.id, { timings: [{ amount: 24, unit: "hours" }, { amount: 1, unit: "hours" }], subject: "Soon: {{event_name}}" }),
+      t.db,
+    );
+    await saveEventTypeReminders(actor, saveInput(eventType.id, { kind: "host", enabled: false, timings: [{ amount: 30, unit: "minutes" }] }), t.db);
+    const { eventType: copy } = await f.createEventType(t.db, { owner, name: "30 Minute Virtual (copy)" });
+    expect(await t.db.transaction((tx) => copyEventTypeReminders(tx, actor, { fromEventTypeId: eventType.id, toEventTypeId: copy.id }))).toBe(3);
+    expect(await t.db.transaction((tx) => copyEventTypeReminders(tx, actor, { fromEventTypeId: eventType.id, toEventTypeId: copy.id }))).toBe(0);
+    const view = await getEventTypeReminders(actor, copy.id, t.db);
+    expect(view.invitee).toMatchObject({ enabled: true, offsets: [1440, 60], subject: "Soon: {{event_name}}" });
+    expect(view.host).toMatchObject({ enabled: false, configured: true, offsets: [30] });
+    const stranger = await setupOwner(t.db);
+    await expect(
+      t.db.transaction((tx) => copyEventTypeReminders(tx, stranger.actor, { fromEventTypeId: eventType.id, toEventTypeId: stranger.eventType.id })),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
 });
 

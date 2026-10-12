@@ -33,7 +33,8 @@ export function GoogleCalendarIntegration({ view, appName, isAdmin }: GoogleCale
   const total = view.connections.length;
   const howItWorks = [
     `${appName} checks the calendars you choose for conflicts, so invitees only see times when you're free.`,
-    "Events marked Free, invitations you declined and working locations don't block your availability. Busy events, out of office and all-day events do.",
+    "Busy events, out of office and all-day events marked Busy block your availability (all-day ones for the whole day). Events marked Free, invitations you declined and working locations don't.",
+    "Google Calendar creates all-day events as Free, so they don't block a day until you set them to Busy.",
     "New meetings are added to the calendar you choose, with the invitee as a guest and a Google Meet link when the event type uses Google Meet.",
     `Moving or deleting a meeting's event in Google Calendar reschedules or cancels the meeting in ${appName} and notifies your invitees.`,
   ];

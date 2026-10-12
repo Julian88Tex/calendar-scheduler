@@ -4,7 +4,7 @@
 // scopes), error (repeated fetch failures or a disabled API) and disconnected.
 // - markConnectionBroken: moves a connection to needs_reauth or error, publishes calendar.connection_broken on the
 //   transition and enqueues the "There is a problem with your calendar connection" email job, which sends at most one
-//   email per user per 24 hours (and only when Settings > Notifications > "Calendar connection problems" is on).
+//   email per user per 24 hours (and only when the "Calendar connection problems" notification preference is on).
 // - recordConnectionFailure: counts transient failures; the third in a row marks the connection error.
 // - markConnectionHealthy: a successful provider call resets the counter and heals an error connection (never a
 //   needs_reauth one: only a reconnect fixes credentials).

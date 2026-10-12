@@ -1,57 +1,32 @@
-// OWNER: booking-pages. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: booking-pages.
 //
-// /d/{code}/{slug}/{start} placeholder (ARCHITECTURE section 3.1, SPEC BK-27, BK-09): renders inside PublicPageShell and answers 404 for unknown
-// code, slug, start. The owner replaces it with the real page.
+// /d/{code}/{slug}/{ISO start} (SPEC BK-27, BK-09): the details form of a link's slot; an old slug redirects
+// permanently to the current one with the same start and query. Always noindex.
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { PublicCard } from "@/components/public/public-card";
-import { PublicPageShell } from "@/components/public/public-page-shell";
-import { and, eq, isNull } from "drizzle-orm";
-import { eventTypes, oneOffMeetings, singleUseLinks } from "@/db/schema";
-import { getDb } from "@/db";
-import { notFound } from "next/navigation";
-import { parseStartParam } from "@/lib/url";
-
-export const metadata: Metadata = { title: "Enter Details", robots: { index: false, follow: false } };
+import type { Route } from "next";
+import { notFound, permanentRedirect } from "next/navigation";
+import { bookingMetadata, BookingPageView } from "@/components/booking/booking-page-view";
+import { queryOf, resolveCodePage } from "@/components/booking/server/resolve";
 
 type Props = {
   params: Promise<{ code: string; slug: string; start: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function Page({ params, searchParams }: Props) {
-  const [{ code, start }] = await Promise.all([params, searchParams]);
-  if (!parseStartParam(start)) notFound();
-  const db = await getDb();
-  const value = decodeURIComponent(code);
-  const [link] = await db
-    .select({ eventTypeId: singleUseLinks.eventTypeId })
-    .from(singleUseLinks)
-    .where(and(eq(singleUseLinks.code, value), isNull(singleUseLinks.deletedAt)))
-    .limit(1);
-  const [oneOff] = link
-    ? []
-    : await db
-        .select({ eventTypeId: oneOffMeetings.eventTypeId })
-        .from(oneOffMeetings)
-        .where(and(eq(oneOffMeetings.code, value), isNull(oneOffMeetings.deletedAt)))
-        .limit(1);
-  const eventTypeId = link?.eventTypeId ?? oneOff?.eventTypeId ?? null;
-  const [eventType] = await db
-    .select({ name: eventTypes.name })
-    .from(eventTypes)
-    .where(and(eventTypeId ? eq(eventTypes.id, eventTypeId) : eq(eventTypes.shareCode, value), isNull(eventTypes.deletedAt)))
-    .limit(1);
-  if (!eventType) notFound();
-  return (
-    <PublicPageShell>
-      <PublicCard width="wide">
-        <div className="p-8">
-          <PageHeader title={eventType.name} />
-          <EmptyState heading="This page is being built." />
-        </div>
-      </PublicCard>
-    </PublicPageShell>
-  );
+async function resolve({ params, searchParams }: Props) {
+  const [{ code, slug, start }, sp] = await Promise.all([params, searchParams]);
+  return resolveCodePage(code, slug, "details", start, queryOf(sp));
+}
+
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const r = await resolve(props);
+  const m = bookingMetadata(r && r.state !== "redirect" ? r : null);
+  return { ...m, robots: { index: false, follow: false } };
+}
+
+export default async function Page(props: Props) {
+  const r = await resolve(props);
+  if (!r) notFound();
+  if (r.state === "redirect") permanentRedirect(r.location as Route);
+  return <BookingPageView result={r} />;
 }

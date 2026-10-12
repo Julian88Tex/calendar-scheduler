@@ -261,7 +261,13 @@ test.describe("advanced settings and troubleshoot", () => {
     // the session started in beforeEach: sign in again at the new time.
     await api.setTime("2030-10-08T15:00:00Z");
     await loginAs(page, OWNER);
-    await api.fakeCalendar({ email: OWNER, events: [{ start: "2030-10-08T20:00:00Z", end: "2030-10-08T21:00:00Z", title: "Dentist" }] });
+    await api.fakeCalendar({
+      email: OWNER,
+      events: [
+        { start: "2030-10-08T20:00:00Z", end: "2030-10-08T21:00:00Z", title: "Dentist" },
+        { start: "2030-10-09T07:00:00Z", end: "2030-10-10T07:00:00Z", title: "Offsite", allDay: true },
+      ],
+    });
 
     await open(page, "/app/availability");
     await page.getByRole("link", { name: "Troubleshoot" }).click();
@@ -289,6 +295,17 @@ test.describe("advanced settings and troubleshoot", () => {
     await page.getByRole("radio", { name: "Available", exact: true }).click();
     await expect(card.getByText("CALENDAR")).toHaveCount(0);
     await axe(page);
+
+    // The next day has an all-day "Offsite" event: the summary says "All day" and every working start names it.
+    await page.getByRole("radio", { name: "All times", exact: true }).click();
+    await page.getByRole("button", { name: "Next day" }).click();
+    await expect(page.getByRole("heading", { name: "Wednesday, October 9, 2030" })).toBeVisible();
+    await expect(page.getByText("All day · Calendar event")).toBeVisible();
+    await expect(card.getByRole("button", { name: /CALENDAR Conflicts with "Offsite" on your calendar \(all day\)\./ }).first()).toBeVisible();
+    // The last start of the day lists every reason on its row: not enough time, and the all-day event.
+    await expect(
+      card.getByRole("button", { name: /^10:45pm, unavailable: Not enough time: the meeting \(30 min\) would run past the end of your available hours\. Conflicts with "Offsite"/ }),
+    ).toBeVisible();
     expect(errors).toEqual([]);
   });
 });

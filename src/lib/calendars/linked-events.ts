@@ -12,7 +12,8 @@
 // - Buffer events (CAL-13): after a meeting write, a destination calendar with "Include buffers on this calendar"
 //   gets "Buffer: {title}" busy events for the before and after buffers (kept in sync, deleted when no longer wanted).
 // - deleteLinkedEvent: deletes the provider event (with or without notifying attendees) and the meeting's buffer
-//   events; transient failures retry in a job.
+//   events; transient failures retry in a job. A row whose create was attempted but never confirmed (a timeout) may
+//   still have an event at Google under its deterministic id: that id is deleted too, so no orphan is left behind.
 // - repointLinkedEvents: reschedule continuity (the provider event now belongs to the new scheduled event).
 import "server-only";
 import { createHash } from "node:crypto";
@@ -378,8 +379,11 @@ export async function deleteLinkedEventNow(p: { linkedEventId: string; notifyAtt
   if (!row || row.status === "deleted") return "deleted";
   const t = now();
   const target = row.calendarId ? await loadCalendar(db, row.calendarId) : null;
+  // A create that timed out may have reached the provider under the row's deterministic id (or the id derived after
+  // a 409 on a deleted event) although we never learned it.
+  const unconfirmed = !row.externalId && row.attempts > 0;
   // No provider event, or its calendar is gone (disconnected: events already added stay there, CAL-16).
-  if (!row.externalId || !target) {
+  if ((!row.externalId && !unconfirmed) || !target) {
     await db.update(calendarLinkedEvents).set({ status: "deleted", updatedAt: t }).where(eq(calendarLinkedEvents.id, row.id));
     return "deleted";
   }
@@ -388,14 +392,20 @@ export async function deleteLinkedEventNow(p: { linkedEventId: string; notifyAtt
     await db.update(calendarLinkedEvents).set({ status: "failed", lastError: "Calendar connection needs attention", updatedAt: t }).where(eq(calendarLinkedEvents.id, row.id));
     return "kept";
   }
+  const first = providerEventIdFor(row.id);
+  const externalIds = row.externalId ? [row.externalId] : [first, providerEventIdFor(row.id, first)];
   try {
-    await withConnection(target.connectionId, (ctx) => impl.deleteEvent(ctx, target.externalId, row.externalId!, { notifyAttendees: p.notifyAttendees, comment: p.comment }));
+    await withConnection(target.connectionId, async (ctx) => {
+      // deleteEvent treats 404 and 410 as already deleted.
+      for (const externalId of externalIds) await impl.deleteEvent(ctx, target.externalId, externalId, { notifyAttendees: p.notifyAttendees, comment: p.comment });
+    });
   } catch (e) {
     if (isProviderTransientError(e)) {
       await db.update(calendarLinkedEvents).set({ attempts: row.attempts + 1, lastError: (e as Error).message.slice(0, 500), updatedAt: t }).where(eq(calendarLinkedEvents.id, row.id));
       throw e;
     }
-    if (!isProviderGone(e)) {
+    // An unconfirmed create that the provider refuses to delete most likely never happened (nothing to keep).
+    if (!isProviderGone(e) && !(unconfirmed && isProviderRequestError(e))) {
       await db.update(calendarLinkedEvents).set({ status: "failed", lastError: (e as Error).message?.slice(0, 500) ?? "delete failed", updatedAt: t }).where(eq(calendarLinkedEvents.id, row.id));
       return "kept";
     }

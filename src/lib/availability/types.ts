@@ -47,6 +47,8 @@ export type TroubleshootScheduleHours = {
   name: string;
   timezone: string;
   custom: boolean;
+  /** Custom hours: the event type they belong to (edited in the event type editor). */
+  eventTypeId?: string | null;
   /** The day's wall-clock hours in the schedule's zone (empty = unavailable). */
   intervals: MinuteRange[];
   source: "override" | "weekly" | "holiday";

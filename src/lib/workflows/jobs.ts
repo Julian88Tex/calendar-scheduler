@@ -1,9 +1,11 @@
-// OWNER: workflows. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: workflows.
 //
-// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). Keys are prefixed with
-// the module domain. Planned types: workflows.execute, workflows.backfill (payload { workflowId, eventTypeIds }), the NT-22 daily agenda periodic job.
-// A job enqueued for a type that has no handler yet is rescheduled one hour later (last_error 'no_handler').
+// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2): workflows.execute
+// { executionId } sends one scheduled reminder; workflows.backfill { workflowId, eventTypeIds } applies a workflow to
+// meetings already booked (job-handlers.ts). No periodic jobs: the daily agenda email (NT-22) is not part of this build
+// (docs/SCOPE.md).
 import type { JobHandlers, PeriodicJob } from "@/lib/jobs/types";
+import { workflowJobHandlers } from "./job-handlers";
 
-export const handlers: JobHandlers = {};
+export const handlers: JobHandlers = workflowJobHandlers;
 export const periodic: PeriodicJob[] = [];

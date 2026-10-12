@@ -16,7 +16,7 @@ import { now } from "@/lib/time/now";
 import { zoneOrUtc } from "@/lib/time/zones";
 import { isValidTimeZone } from "@/lib/validation";
 import { ensureDefaultSchedule, getDefaultSchedule } from "./core";
-import { dayIsValid, isIsoDate, sortIntervals, sortWeekly, weeklyIsValid, type ScheduleContent } from "./intervals";
+import { dayProblem, isIsoDate, sortIntervals, sortWeekly, weeklyProblem, type ScheduleContent } from "./intervals";
 import { getScheduleDetailById, lockUserSchedules, weeklyOf, writeOverrides, type ScheduleDetail, type ScheduleRow } from "./schedules";
 import { MAX_OVERRIDES, OVERRIDE_LIMIT_MESSAGE } from "./schemas";
 
@@ -32,16 +32,18 @@ export const CUSTOM_SCHEDULE_NAME = "Custom hours";
 
 /** Throws AppError("validation") unless the content is a valid schedule (AV-04, AV-06, AV-08). */
 export function assertValidContent(content: ScheduleContent): void {
+  if (!content || typeof content !== "object") throw new AppError("validation", "Choose a valid schedule.");
   if (!isValidTimeZone(content.timezone)) throw new AppError("validation", "Choose a valid time zone.");
-  if (!Array.isArray(content.weeklyHours) || content.weeklyHours.length !== 7 || !weeklyIsValid(content.weeklyHours)) {
-    throw new AppError("validation", "Times overlap with another set of times.");
-  }
+  const weeklyIssue = weeklyProblem(content.weeklyHours);
+  if (weeklyIssue) throw new AppError("validation", weeklyIssue);
+  if (!Array.isArray(content.overrides)) throw new AppError("validation", "Choose a valid date.");
   if (content.overrides.length > MAX_OVERRIDES) throw new AppError("validation", OVERRIDE_LIMIT_MESSAGE);
   const seen = new Set<string>();
   for (const o of content.overrides) {
-    if (!isIsoDate(o.date) || seen.has(o.date)) throw new AppError("validation", "Choose a valid date.");
+    if (!o || !isIsoDate(o.date) || seen.has(o.date)) throw new AppError("validation", "Choose a valid date.");
     seen.add(o.date);
-    if (!dayIsValid(o.intervals)) throw new AppError("validation", "Times overlap with another set of times.");
+    const dayIssue = dayProblem(o.intervals);
+    if (dayIssue) throw new AppError("validation", dayIssue);
   }
 }
 
@@ -185,7 +187,8 @@ export async function resolveEventTypeSchedule(eventTypeId: string, userId: stri
       .limit(1);
     if (!row || row.singleUseLinkId) continue;
     if (row.eventTypeId && row.eventTypeId !== eventTypeId) continue;
-    if (!row.eventTypeId && row.userId !== userId && et.availabilitySetting !== "shared") continue;
+    // Like the availability service: outside "shared" hours, only the host's own schedules (named or custom) apply.
+    if (row.userId !== userId && et.availabilitySetting !== "shared") continue;
     return { scheduleId: row.id, custom: Boolean(row.eventTypeId), schedule: await getScheduleDetailById(row.id, d) };
   }
   const fallback = await getDefaultSchedule(userId, d);

@@ -48,12 +48,42 @@ export function intervalErrors(list: readonly MinuteRange[]): (string | null)[] 
   });
 }
 
+export const INVALID_TIME_MESSAGE = "Enter a time.";
+export const TOO_MANY_INTERVALS_MESSAGE = `Add up to ${MAX_INTERVALS_PER_DAY} sets of times per day.`;
+
+/** Whole minutes within the day (0..1440). */
+const inDay = (r: unknown): r is MinuteRange => {
+  const x = r as MinuteRange | null;
+  return Boolean(x) && typeof x === "object" && Number.isInteger(x!.start) && Number.isInteger(x!.end) && x!.start >= 0 && x!.end <= 1440;
+};
+
+/**
+ * The first problem of one day's intervals (the AV-04 messages, a time outside the day, too many rows), or null when
+ * the day is valid. Services use it so a direct call gets the same message as the form.
+ */
+export function dayProblem(list: readonly MinuteRange[]): string | null {
+  if (!Array.isArray(list)) return INVALID_TIME_MESSAGE;
+  if (list.length > MAX_INTERVALS_PER_DAY) return TOO_MANY_INTERVALS_MESSAGE;
+  if (!list.every(inDay)) return INVALID_TIME_MESSAGE;
+  return intervalErrors(list).find((e) => e !== null) ?? null;
+}
+
 export function dayIsValid(list: readonly MinuteRange[]): boolean {
-  return list.length <= MAX_INTERVALS_PER_DAY && intervalErrors(list).every((e) => e === null);
+  return dayProblem(list) === null;
+}
+
+/** The first problem of a weekly schedule (seven days, each valid), or null. */
+export function weeklyProblem(weekly: WeeklyHours): string | null {
+  if (!Array.isArray(weekly) || weekly.length !== 7) return INVALID_TIME_MESSAGE;
+  for (const day of weekly) {
+    const problem = dayProblem(day);
+    if (problem) return problem;
+  }
+  return null;
 }
 
 export function weeklyIsValid(weekly: WeeklyHours): boolean {
-  return weekly.length === 7 && weekly.every((day) => dayIsValid(day));
+  return weeklyProblem(weekly) === null;
 }
 
 /** A sorted copy (by start, then end). */

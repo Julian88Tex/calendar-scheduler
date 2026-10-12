@@ -118,6 +118,30 @@ describe("linkCalendarFromOAuth (CAL-17)", () => {
     expect(rows[0]!.status).toBe("disconnected");
   });
 
+  it("keeps an explicit None destination through later sign-ins; an explicit connect still sets one (CAL-08)", async () => {
+    const user = await createUser(t.db);
+    const p = { userId: user.id, provider: "google" as const, providerAccountId: "sub-none", accountEmail: "me@gmail.com", oauthAccountId: await oauthAccount(user.id, "sub-none", "me@gmail.com"), tokens: tokens() };
+    await conn.linkCalendarFromOAuth(p);
+    expect(await destinationOf(user.id)).not.toBeNull();
+    await conn.setDestinationCalendar({ user }, null);
+    // A routine sign-in, and a first sign-in with another Google account, leave "None" alone.
+    await conn.linkCalendarFromOAuth({ ...p, tokens: tokens({ refreshToken: null }) });
+    expect(await destinationOf(user.id)).toBeNull();
+    calendarList = [{ id: "other@gmail.com", summary: "other@gmail.com", primary: true, accessRole: "owner" }];
+    await conn.linkCalendarFromOAuth({ ...p, providerAccountId: "sub-none-2", accountEmail: "other@gmail.com", oauthAccountId: await oauthAccount(user.id, "sub-none-2", "other@gmail.com") });
+    expect(await destinationOf(user.id)).toBeNull();
+    const [u] = await t.db.select({ prefs: users.preferences }).from(users).where(eq(users.id, user.id));
+    expect(u?.prefs).toMatchObject({ [conn.DESTINATION_NONE_PREF]: true });
+    // Connecting an account on purpose (Calendar settings) picks its primary calendar and forgets the choice.
+    calendarList = [{ id: "work@company.com", summary: "Work", primary: true, accessRole: "owner" }];
+    const res = await conn.connectGoogleAccount({ userId: user.id, providerAccountId: "sub-none-3", accountEmail: "work@company.com", tokens: tokens(), via: "connect" });
+    expect(res.destinationSet).toBe(true);
+    const [work] = await calendarsOf(res.connectionId);
+    expect(await destinationOf(user.id)).toBe(work!.id);
+    const [after] = await t.db.select({ prefs: users.preferences }).from(users).where(eq(users.id, user.id));
+    expect(after?.prefs?.[conn.DESTINATION_NONE_PREF]).toBeUndefined();
+  });
+
   it("falls back to the account's primary calendar when the list cannot be read", async () => {
     f.add({ method: "GET", url: `${G}/users/me/calendarList`, handler: () => new Response(JSON.stringify({ error: { code: 503 } }), { status: 503 }) });
     const user = await createUser(t.db);

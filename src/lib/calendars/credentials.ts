@@ -18,6 +18,7 @@ import { isInvalidGrant, OAuthProviderError } from "@/lib/auth/oauth/tokens";
 import { refreshGoogleAccessToken } from "@/lib/auth/oauth/google";
 import { decryptOrNull, encrypt } from "@/lib/crypto";
 import { isAppError } from "@/lib/errors";
+import { getSecret } from "@/lib/secrets";
 import { nowMs } from "@/lib/time/now";
 import { markConnectionBroken } from "./health";
 import { ProviderAuthError, ProviderTransientError, isProviderAuthError, type ConnectionContext } from "./providers/types";
@@ -55,6 +56,9 @@ type RefreshOutcome =
  */
 export async function refreshAccessToken(connectionId: string, opts: { staleToken?: string | null; force?: boolean } = {}): Promise<ConnectionContext> {
   const db = await getDb();
+  // Load the encryption key outside the transaction (its first read may query the database; PGlite runs one
+  // statement stream at a time, so a query outside an open transaction would wait for it).
+  await getSecret("encryption_key");
   const outcome: RefreshOutcome = await db.transaction(async (tx) => {
     await advisoryXactLock(tx, lockKey(connectionId));
     const [row] = await tx.select().from(calendarConnections).where(eq(calendarConnections.id, connectionId)).limit(1);

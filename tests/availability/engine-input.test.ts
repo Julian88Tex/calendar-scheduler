@@ -3,7 +3,7 @@
 // substitute days by key), the schedule zone, and limits with their period counts.
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { userHolidayOverrides, users } from "@/db/schema";
+import { scheduledEventHosts, scheduledEvents, userHolidayOverrides, users } from "@/db/schema";
 import {
   countHostMeetings,
   getMeetingLimits,
@@ -149,5 +149,16 @@ describe("host meeting limits (AV-14)", () => {
     await createBooking(t.db, { eventType: a, start: "2030-10-23T18:00:00Z", status: "canceled" });
     const counts = await countHostMeetings(user.id, "2030-10-23");
     expect(counts).toMatchObject({ day: 3, week: 4, month: 5, zone: "America/New_York", weekStart: 0 });
+  });
+
+  it("counts like the availability service: a canceled meeting never counts, even with a stale host row", async () => {
+    const { user } = await setup("America/New_York");
+    const et = (await createEventType(t.db, { owner: user })).eventType;
+    await createBooking(t.db, { eventType: et, start: "2030-10-23T14:00:00Z" });
+    const stale = await createBooking(t.db, { eventType: et, start: "2030-10-23T16:00:00Z" });
+    // A cancellation that only flipped the meeting status (the host row still says active).
+    await t.db.update(scheduledEvents).set({ status: "canceled" }).where(eq(scheduledEvents.id, stale.scheduledEvent.id));
+    await t.db.update(scheduledEventHosts).set({ isActive: true }).where(eq(scheduledEventHosts.scheduledEventId, stale.scheduledEvent.id));
+    expect(await countHostMeetings(user.id, "2030-10-23")).toMatchObject({ day: 1, week: 1, month: 1 });
   });
 });

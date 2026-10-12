@@ -26,7 +26,7 @@ import { assertAccess, assertEventTypesEditable, eventTypeAccess, eventTypeAcces
 import { AppError, notFoundError, validationError } from "@/lib/errors";
 import { escapeHtml, richTextToPlain, sanitizeRichText } from "@/lib/html";
 import { getT } from "@/lib/i18n";
-import { listTemplateVariables, renderTemplate } from "@/lib/template";
+import { listTemplateVariables } from "@/lib/template";
 import { now as clockNow } from "@/lib/time/now";
 import { absoluteUrl } from "@/lib/url";
 import { enqueueBackfill } from "./backfill";
@@ -102,18 +102,12 @@ async function reminderRows(db: DbOrTx, eventTypeId: string, kind: ReminderKind,
 
 /** The default subject and message of each reminder kind, in the event type's language (NT-09, GEN-10). */
 export function reminderDefaults(locale: string): Record<ReminderKind, ReminderDefaults> {
-  const t = getT(locale, "common");
-  const greeting = (name: string) => escapeHtml(renderTemplate(t("meetingEmail.greeting.named"), { name }));
-  return {
-    invitee: {
-      subject: t("meetingEmail.subjects.reminder"),
-      bodyHtml: `<p>${greeting("{{invitee_first_name}}")}</p><p>${escapeHtml(t("meetingEmail.intro.reminder"))}</p>`,
-    },
-    host: {
-      subject: t("meetingEmail.subjects.hostReminder"),
-      bodyHtml: `<p>${greeting("{{my_name}}")}</p><p>${escapeHtml(t("meetingEmail.intro.hostReminder"))}</p>`,
-    },
-  };
+  const t = getT(locale, "workflows");
+  const make = (kind: ReminderKind): ReminderDefaults => ({
+    subject: t(`reminders.${kind}.subject`),
+    bodyHtml: `<p>${escapeHtml(t(`reminders.${kind}.greeting`))}</p><p>${escapeHtml(t(`reminders.${kind}.body`))}</p>`,
+  });
+  return { invitee: make("invitee"), host: make("host") };
 }
 
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -375,4 +369,35 @@ export async function setEventTypeRemindersEnabled(actor: ActorCtx, input: Toggl
     }
     return { view: await buildView(tx, actor, et, true, null), backfillJobs };
   });
+}
+
+/**
+ * Copies the reminder rows of one event type to another (the event type editor's Duplicate, ET-11): both kinds,
+ * their timings, on/off state, subject, message and links option. Runs in the caller's transaction; both event types
+ * must be editable by the actor. The copy has no meetings yet, so nothing is backfilled. Returns the rows created.
+ */
+export async function copyEventTypeReminders(tx: DbOrTx, actor: ActorCtx, p: { fromEventTypeId: string; toEventTypeId: string }): Promise<number> {
+  await assertEventTypesEditable(tx, actor, [p.fromEventTypeId, p.toEventTypeId]);
+  const target = await loadEventType(tx, p.toEventTypeId);
+  if (!target || target.deletedAt) throw notFoundError("This event type no longer exists.");
+  if (target.type !== "standard") return 0;
+  await advisoryXactLock(tx, `workflows:reminders:${target.id}`);
+  const at = clockNow();
+  let created = 0;
+  for (const kind of ["invitee", "host"] as const) {
+    const source = await reminderRows(tx, p.fromEventTypeId, kind);
+    const existing = await reminderRows(tx, target.id, kind);
+    const missing = source.filter((r) => !existing.some((e) => e.workflow.offsetMinutes === r.workflow.offsetMinutes));
+    if (kind === "host") await assertWorkflowLimit(tx, actor, missing.length);
+    for (const r of missing) {
+      const config: RowConfig = {
+        subject: r.step?.subject ?? null,
+        bodyHtml: r.step?.bodyHtml ?? null,
+        includeCancelRescheduleLinks: r.step?.includeCancelRescheduleLinks ?? target.includeCancelRescheduleLinks,
+      };
+      await createTiming(tx, actor, target, kind, r.workflow.offsetMinutes, r.workflow.active, config, [], at);
+      created++;
+    }
+  }
+  return created;
 }

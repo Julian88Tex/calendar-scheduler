@@ -80,6 +80,7 @@ export async function getTroubleshootDay(
       name: et.custom ? `${et.name} custom hours` : (scheduleNames[id] ?? "Schedule"),
       timezone: loaded.timeZone,
       custom: et.custom,
+      eventTypeId: et.custom ? et.id : null,
       intervals: h.source === "holiday" ? h.holidayRanges : h.ranges,
       source: h.source,
     };

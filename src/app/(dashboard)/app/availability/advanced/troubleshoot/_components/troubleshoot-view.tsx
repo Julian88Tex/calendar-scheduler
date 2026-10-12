@@ -25,12 +25,22 @@ import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import type { TroubleshootEntry } from "@/lib/booking/types";
 import { cn } from "@/lib/cn";
-import { formatDuration, formatTimeRange } from "@/lib/time/format";
+import { formatDuration } from "@/lib/time/format";
 import { friendlyZoneName } from "@/lib/time/zones";
 import { formatInterval, formatLongDate } from "@/lib/availability/intervals";
 import { ADVANCED_SETTINGS_PATH, scheduleHref, troubleshootHref } from "@/lib/availability/links";
 import type { TroubleshootDay } from "@/lib/availability/types";
-import { blockerTitle, countViews, describeCandidate, groupRows, settingsSummary, type CandidateView, type DescribeContext, type ViewRow } from "@/lib/availability/troubleshoot-view";
+import {
+  blockerTitle,
+  blockerWhen,
+  countViews,
+  describeCandidate,
+  groupRows,
+  settingsSummary,
+  type CandidateView,
+  type DescribeContext,
+  type ViewRow,
+} from "@/lib/availability/troubleshoot-view";
 import { CandidateSheet } from "./candidate-sheet";
 
 type Filter = "all" | "available" | "unavailable";
@@ -215,7 +225,7 @@ function DaySummary({ day }: { day: TroubleshootDay }) {
   const busy = day.result?.busy ?? [];
   const limits = (["day", "week", "month"] as const).filter((p) => day.hostLimits[p]);
   const periodWord = { day: "Per day", week: "Per week", month: "Per month" } as const;
-  const currentWord = { day: "this day", week: "this week", month: "this month" } as const;
+  const currentWord = { day: "on this date", week: "this week", month: "this month" } as const;
   return (
     <Card padding="none" className="h-fit">
       <section className="border-b border-line p-4" aria-labelledby="ts-zone">
@@ -240,10 +250,14 @@ function DaySummary({ day }: { day: TroubleshootDay }) {
                 </span>
                 <span className="text-body-sm text-ink-2">
                   {s.source === "override" ? "Date-specific hours" : s.source === "holiday" ? "Marked as a holiday" : "Weekly hours"}
-                  {!s.custom && (
+                  {(!s.custom || s.eventTypeId) && (
                     <>
                       {" · "}
-                      <Link href={scheduleHref(s.scheduleId)} className="font-semibold text-primary-text hover:underline">
+                      <Link
+                        href={s.custom && s.eventTypeId ? (`/app/event-types/${s.eventTypeId}` as Route) : scheduleHref(s.scheduleId)}
+                        aria-label={`Edit ${s.name}`}
+                        className="font-semibold text-primary-text hover:underline"
+                      >
                         Edit
                       </Link>
                     </>
@@ -263,12 +277,11 @@ function DaySummary({ day }: { day: TroubleshootDay }) {
         ) : (
           <ul className="mt-2 flex flex-col gap-2.5">
             {busy.map((b, i) => {
-              const core = b.core ?? { start: b.start, end: b.end };
               return (
                 <li key={`${b.start}-${b.end}-${i}`} className="flex flex-col gap-0.5">
                   <span className="text-body-md font-semibold break-words text-ink">{blockerTitle(b)}</span>
                   <span className="text-body-sm text-ink-2">
-                    {formatTimeRange(core.start, core.end, day.zone, "en", day.hour12)}
+                    {blockerWhen(b, day)}
                     {" · "}
                     {b.source === "calendar" ? "Calendar event" : b.source === "reserved" ? "Held" : "Meeting"}
                     {b.core && (b.core.start !== b.start || b.core.end !== b.end) ? " (with buffers)" : ""}
@@ -299,7 +312,7 @@ function DaySummary({ day }: { day: TroubleshootDay }) {
               return (
                 <li key={p} className="flex flex-wrap items-center gap-2 text-body-md text-ink">
                   <span className="font-semibold">{periodWord[p]}:</span>
-                  <span>{c !== undefined ? `${c} of ${n} meetings ${currentWord[p]}` : `max ${n}`}</span>
+                  <span>{c !== undefined ? `${c} of ${n} ${n === 1 ? "meeting" : "meetings"} ${currentWord[p]}` : `max ${n}`}</span>
                   {reached && <Badge variant="warning" size="sm">Reached</Badge>}
                 </li>
               );
@@ -351,6 +364,15 @@ function EntryCard({ entry, day, filter, onOpen }: { entry: TroubleshootEntry; d
           </Button>
         </div>
       </div>
+      {!et.active && (
+        <p className="border-b border-line bg-pebble px-4 py-3 text-body-md text-ink sm:px-5">
+          This event type is turned off, so invitees can&apos;t book it at any time. Turn it on from{" "}
+          <Link href="/app/scheduling" className="font-semibold text-primary-text hover:underline">
+            Scheduling
+          </Link>
+          .
+        </p>
+      )}
       <div className="p-2 sm:p-3">
         {views.length === 0 ? (
           <p className="px-2 py-4 text-body-md text-ink-2">
@@ -412,8 +434,8 @@ function Row({ row, onOpen }: { row: ViewRow; onOpen: (v: CandidateView) => void
           {row.first.timeLabel} to {row.last.timeLabel}
         </span>
         <StatusChip view={row} />
-        <span className="min-w-0 flex-1 text-body-md text-ink">
-          {row.reasons[0]}
+        <span className="min-w-[min(100%,14rem)] flex-1 text-body-md break-words text-ink">
+          <ReasonText reasons={row.reasons} />
           <span className="text-ink-2"> ({row.items.length} start times)</span>
         </span>
         <ChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-ink-2 transition-transform", expanded && "rotate-180")} />
@@ -429,8 +451,18 @@ function Row({ row, onOpen }: { row: ViewRow; onOpen: (v: CandidateView) => void
   );
 }
 
+/** Every reason of a row: the primary one, then the others in secondary text. */
+function ReasonText({ reasons }: { reasons: readonly string[] }) {
+  const [primary, ...rest] = reasons;
+  return (
+    <>
+      {primary}
+      {rest.length > 0 && <span className="text-ink-2"> {rest.join(" ")}</span>}
+    </>
+  );
+}
+
 function CandidateRow({ view, onOpen }: { view: CandidateView; onOpen: (v: CandidateView) => void }) {
-  const extra = view.reasons.length - 1;
   return (
     <li>
       <button
@@ -441,9 +473,8 @@ function CandidateRow({ view, onOpen }: { view: CandidateView; onOpen: (v: Candi
       >
         <TimePill view={view} />
         <StatusChip view={view} />
-        <span className="min-w-0 flex-1 text-body-md break-words text-ink">
-          {view.status === "available" ? <span className="text-ink-2">Invitees can book this time.</span> : view.reasons[0]}
-          {extra > 0 && <span className="text-ink-2"> (+{extra} more)</span>}
+        <span className="min-w-[min(100%,14rem)] flex-1 text-body-md break-words text-ink">
+          {view.status === "available" ? <span className="text-ink-2">Invitees can book this time.</span> : <ReasonText reasons={view.reasons} />}
         </span>
       </button>
     </li>

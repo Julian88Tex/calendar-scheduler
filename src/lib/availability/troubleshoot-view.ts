@@ -67,7 +67,7 @@ export function formatNotice(minutes: number): string {
 }
 
 /** "9:00am - 10:00am", or "all day" for blocks covering whole local days. */
-function rangeLabel(start: number, end: number, ctx: Pick<DescribeContext, "zone" | "hour12">): string {
+export function rangeLabel(start: number, end: number, ctx: Pick<DescribeContext, "zone" | "hour12">): string {
   const startDate = isoDateInZone(start, ctx.zone);
   const wholeDay = end - start >= DAY - 2 * 3_600_000 && formatTime(start, ctx.zone, "en", false) === "00:00" && formatTime(end, ctx.zone, "en", false) === "00:00";
   if (wholeDay) {
@@ -108,6 +108,13 @@ function blockerName(b: TroubleshootBlocker): string {
 
 const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end;
 
+/** When a busy interval happens (its meeting time without buffers): "1:00pm - 2:00pm" or "All day". */
+export function blockerWhen(b: TroubleshootBlocker, ctx: Pick<DescribeContext, "zone" | "hour12">): string {
+  const core = coreOf(b);
+  const label = rangeLabel(core.start, core.end, ctx);
+  return label.startsWith("all day") ? `A${label.slice(1)}` : label;
+}
+
 /** A busy interval's display title: the event title (meetings: with their invitees), else "Busy", "Held time" or "Meeting". */
 export function blockerTitle(b: TroubleshootBlocker): string {
   const names = b.source === "meeting" ? inviteesOf(b) : [];
@@ -131,7 +138,7 @@ export function blockerSentence(c: Pick<TroubleshootCandidate, "start" | "end">,
     case "OVERLAP":
       return b.title || inviteesOf(b).length ? `Overlaps another meeting: ${blockerName(b)} (${range}).` : `Overlaps another meeting (${range}).`;
     case "RESERVED":
-      return b.title ? `Held for "${b.title}" (${range}).` : `Held by a pending booking, meeting poll or one-off meeting (${range}).`;
+      return b.title ? `Held for "${b.title}" (${range}).` : `Held by a pending booking or a meeting poll (${range}).`;
     case "BUFFER": {
       const name = blockerName(b);
       const before = ctx.settings.bufferBeforeMinutes;
@@ -213,9 +220,8 @@ export function reasonSentences(c: TroubleshootCandidate, ctx: DescribeContext):
         out.push(rangeSentence(ctx));
         break;
       case "DURATION":
-        out.push(
-          `Not enough time: a ${formatDuration(ctx.durationMinutes)} meeting at ${formatTime(c.start, ctx.zone, "en", ctx.hour12)} would run past the end of your available hours.`,
-        );
+        // No start time in the sentence, so a run of such starts collapses into one row.
+        out.push(`Not enough time: the meeting (${formatDuration(ctx.durationMinutes)}) would run past the end of your available hours.`);
         break;
       case "HOLIDAY":
         out.push("This date is marked as a holiday.");

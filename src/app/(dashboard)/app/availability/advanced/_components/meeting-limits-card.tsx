@@ -87,18 +87,31 @@ export function MeetingLimitsCard({ limits, counts }: MeetingLimitsCardProps) {
     }
   };
 
-  // Save a pending edit when leaving the page (in-app navigation unmounts the card).
+  // Save a pending edit when leaving: in-app navigation unmounts the card; a hidden tab or a closing page may never
+  // reach the debounce.
   const saveRef = useRef(save);
   useEffect(() => {
     saveRef.current = save;
   });
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const flush = () => {
       if (timer.current) clearTimeout(timer.current);
-      if (pending.current) saveRef.current(pending.current);
-    },
-    [],
-  );
+      timer.current = null;
+      const list = pending.current;
+      pending.current = null;
+      if (list) saveRef.current(list);
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
 
   const used = new Set(rows.map((r) => r.period));
   const free = LIMIT_PERIODS.filter((p) => !used.has(p));
@@ -111,8 +124,8 @@ export function MeetingLimitsCard({ limits, counts }: MeetingLimitsCardProps) {
             Meeting limits
           </h2>
           <p className="mt-1 max-w-2xl text-body-md text-ink-2">
-            Set a maximum number of meetings you can have across all event types. Meetings from every event type, meeting poll and one-off
-            meeting count toward these limits; once a limit is reached, the remaining times of that period are hidden from your booking pages.
+            Set a maximum number of meetings you can have across all event types. Meetings from every event type and meeting poll count
+            toward these limits; once a limit is reached, the remaining times of that period are hidden from your booking pages.
           </p>
         </div>
         <SaveIndicator state={state} />

@@ -4,7 +4,7 @@
 import "server-only";
 import { and, count, eq, gte, isNull, lt } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
-import { scheduledEventHosts, users } from "@/db/schema";
+import { scheduledEventHosts, scheduledEvents, users } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { addDays, DateTime, localDateOf, startOfLocalDay } from "@/lib/time/luxon";
 import { now } from "@/lib/time/now";
@@ -78,16 +78,20 @@ export async function countHostMeetings(userId: string, date?: string | null, db
   const zone = zoneOrUtc(schedule?.timezone ?? user?.timezone);
   const weekStart: 0 | 1 = user?.weekStart === 1 ? 1 : 0;
   const bounds = periodBounds(date ?? localDateOf(now(), zone), zone, weekStart);
+  // Same counting as the availability service (booking-core loadHostMeetingStarts): the user's active host rows of
+  // active meetings, by the meeting's start.
   const countIn = async (b: PeriodBounds) => {
     const [row] = await d
       .select({ n: count() })
       .from(scheduledEventHosts)
+      .innerJoin(scheduledEvents, eq(scheduledEvents.id, scheduledEventHosts.scheduledEventId))
       .where(
         and(
           eq(scheduledEventHosts.userId, userId),
           eq(scheduledEventHosts.isActive, true),
-          gte(scheduledEventHosts.startAt, b.start),
-          lt(scheduledEventHosts.startAt, b.end),
+          eq(scheduledEvents.status, "active"),
+          gte(scheduledEvents.startAt, b.start),
+          lt(scheduledEvents.startAt, b.end),
         ),
       );
     return Number(row?.n ?? 0);

@@ -1,53 +1,31 @@
-// OWNER: booking-pages. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: booking-pages.
 //
-// /{handle}/{eventSlug}/{start} placeholder (ARCHITECTURE section 3.1, SPEC BK-09..BK-14): renders inside PublicPageShell and answers 404 for unknown
-// handle, eventSlug, start. The owner replaces it with the real page.
+// /{handle}/{eventSlug}/{ISO start}: the "Enter Details" step for one slot (SPEC BK-08, BK-09 to BK-14, BK-17, BK-19;
+// observed URL shape /julianjoseph/30min/2026-10-13T18:00:00Z, `Z` or offset forms accepted). The same client flow as
+// the calendar page renders the details form; a start that is not bookable any more shows the calendar with that date
+// preselected and "Sorry, that time is no longer available." Invalid starts, handles and slugs are 404.
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { PublicCard } from "@/components/public/public-card";
-import { PublicPageShell } from "@/components/public/public-page-shell";
-import { and, eq, isNull } from "drizzle-orm";
-import { eventTypes, handles } from "@/db/schema";
-import { getDb } from "@/db";
 import { notFound } from "next/navigation";
-import { parseStartParam } from "@/lib/url";
-
-export const metadata: Metadata = { title: "Enter Details", robots: { index: false, follow: false } };
+import { bookingMetadata, BookingPageView } from "@/components/booking/booking-page-view";
+import { queryOf, resolveEventPage } from "@/components/booking/server/resolve";
 
 type Props = {
   params: Promise<{ handle: string; eventSlug: string; start: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function Page({ params, searchParams }: Props) {
-  const [{ handle, eventSlug, start }] = await Promise.all([params, searchParams]);
-  if (!parseStartParam(start)) notFound();
-  const db = await getDb();
-  const slug = decodeURIComponent(handle).toLowerCase();
-  const [owner] = await db
-    .select({ userId: handles.userId, teamId: handles.teamId })
-    .from(handles)
-    .where(eq(handles.slug, slug))
-    .limit(1);
-  if (!owner) notFound();
-  const ownerCondition = owner.teamId
-    ? eq(eventTypes.teamId, owner.teamId)
-    : and(eq(eventTypes.ownerUserId, String(owner.userId)), eq(eventTypes.scope, "personal"), isNull(eventTypes.teamId));
-  const [eventType] = await db
-    .select({ name: eventTypes.name })
-    .from(eventTypes)
-    .where(and(ownerCondition, eq(eventTypes.slug, decodeURIComponent(eventSlug)), eq(eventTypes.type, "standard"), isNull(eventTypes.deletedAt)))
-    .limit(1);
-  if (!eventType) notFound();
-  return (
-    <PublicPageShell>
-      <PublicCard width="wide">
-        <div className="p-8">
-          <PageHeader title={eventType.name} />
-          <EmptyState heading="This page is being built." />
-        </div>
-      </PublicCard>
-    </PublicPageShell>
-  );
+async function resolve({ params, searchParams }: Props) {
+  const [{ handle, eventSlug, start }, sp] = await Promise.all([params, searchParams]);
+  return resolveEventPage(handle, eventSlug, "details", start, queryOf(sp));
+}
+
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const r = await resolve(props);
+  return bookingMetadata(r && r.state !== "redirect" ? r : null);
+}
+
+export default async function Page(props: Props) {
+  const r = await resolve(props);
+  if (!r || r.state === "redirect") notFound();
+  return <BookingPageView result={r} />;
 }

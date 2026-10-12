@@ -12,7 +12,7 @@ import { formatDateLong, formatTimeRange } from "@/lib/time/format";
 import { reasonLabel } from "@/lib/slots/reasons";
 import { ADVANCED_SETTINGS_PATH, scheduleHref } from "@/lib/availability/links";
 import type { TroubleshootDay } from "@/lib/availability/types";
-import { blockerTitle, fixTarget, statusHint, type CandidateView } from "@/lib/availability/troubleshoot-view";
+import { blockerTitle, blockerWhen, fixTarget, statusHint, type CandidateView } from "@/lib/availability/troubleshoot-view";
 
 export type CandidateSheetProps = {
   view: CandidateView;
@@ -29,7 +29,10 @@ export function CandidateSheet({ view, entry, day, onOpenChange }: CandidateShee
     target === "event_type"
       ? { href: `/app/event-types/${et.id}` as Route, label: "Edit event type" }
       : target === "availability"
-        ? { href: scheduleHref(et.scheduleId && day.scheduleNames[et.scheduleId] ? et.scheduleId : null), label: "Edit availability" }
+        ? et.scheduleId && !day.scheduleNames[et.scheduleId]
+          ? // Custom hours live in the event type editor.
+            { href: `/app/event-types/${et.id}` as Route, label: "Edit custom hours" }
+          : { href: scheduleHref(et.scheduleId), label: "Edit availability" }
         : target === "limits"
           ? { href: ADVANCED_SETTINGS_PATH as Route, label: "Edit meeting limits" }
           : target === "calendar"
@@ -108,12 +111,11 @@ export function CandidateSheet({ view, entry, day, onOpenChange }: CandidateShee
             </h3>
             <ul className="mt-2 flex flex-col divide-y divide-line rounded-[var(--radius-card)] border border-line">
               {blockers.map((b, i) => {
-                const core = b.core ?? { start: b.start, end: b.end };
                 return (
                   <li key={`${b.start}-${i}`} className="flex flex-col gap-0.5 px-4 py-3">
                     <span className="text-body-md font-semibold break-words text-ink">{blockerTitle(b)}</span>
                     <span className="text-body-sm text-ink-2">
-                      {formatTimeRange(core.start, core.end, day.zone, "en", day.hour12)} ·{" "}
+                      {blockerWhen(b, day)} ·{" "}
                       {b.source === "calendar" ? "Calendar event" : b.source === "reserved" ? "Held" : "Meeting"}
                       {b.code ? ` · ${reasonLabel(b.code)}` : ""}
                     </span>

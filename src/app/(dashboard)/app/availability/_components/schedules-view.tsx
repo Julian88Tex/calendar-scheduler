@@ -309,7 +309,10 @@ export function SchedulesView({ schedules, schedule, eventTypes, today: serverTo
         <div className="flex flex-wrap items-center gap-2 md:justify-end">
           <SaveIndicator state={saveState} className="mr-1" />
           <Button asChild variant="secondary" size="sm" leftIcon={<Stethoscope aria-hidden="true" />}>
-            <Link href={troubleshootHref()}>Troubleshoot</Link>
+            <Link href={troubleshootHref()}>
+              {/* Icon only on phones, so the controls fit one row next to the kebab. */}
+              <span className="max-sm:sr-only">Troubleshoot</span>
+            </Link>
           </Button>
           <SegmentedControl
             aria-label="View"

@@ -4,6 +4,7 @@ import type { TroubleshootBlocker, TroubleshootCandidate, TroubleshootEventType 
 import type { ReasonCode } from "@/lib/slots/types";
 import {
   blockerSentence,
+  blockerWhen,
   chipLabel,
   describeCandidate,
   fixTarget,
@@ -161,6 +162,31 @@ describe("rows", () => {
     expect(group.last.timeLabel).toBe("8:45am");
     expect(group.items).toHaveLength(4);
     expect(group.chip).toBe("OUTSIDE HOURS");
+  });
+
+  it("collapses a run of DURATION starts (the sentence names no start time)", () => {
+    const views = [0, 15, 30].map((m) => describeCandidate(cand(la(16, m), { reasons: ["DURATION"], status: "DURATION" }), ctx));
+    expect(views[0]!.reasons).toEqual(["Not enough time: the meeting (30 min) would run past the end of your available hours."]);
+    const rows = groupRows(views);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("group");
+  });
+
+  it("keeps outside-hours runs with different secondary reasons apart, with every reason on the row", () => {
+    const past = [0, 15, 30].map((m) => describeCandidate(cand(la(7, m), { outsideHours: true, reasons: ["PAST"] }), ctx));
+    const soon = [0, 15, 30].map((m) => describeCandidate(cand(la(8, m), { outsideHours: true, reasons: ["TOOSOON"] }), ctx));
+    const rows = groupRows([...past, ...soon]);
+    expect(rows).toHaveLength(2);
+    const [a, b] = rows;
+    if (a?.kind !== "group" || b?.kind !== "group") throw new Error("expected groups");
+    expect(a.reasons).toEqual(['Outside your working hours (schedule "Working hours").', "This time has already passed."]);
+    expect(b.reasons[1]).toBe("Too soon: invitees must schedule at least 4 hours in advance.");
+  });
+
+  it("labels when a busy interval happens, all-day events included", () => {
+    expect(blockerWhen(blocker("CALENDAR", la(13), la(14)), ctx)).toBe("1:00pm - 2:00pm");
+    expect(blockerWhen(blocker("CALENDAR", la(0), la(24)), ctx)).toBe("All day");
+    expect(blockerWhen(blocker("OVERLAP", la(9, 45), la(10, 45), { core: { start: la(10), end: la(10, 30) } }), ctx)).toBe("10:00am - 10:30am");
   });
 
   it("summarizes event type rules and fix targets", () => {

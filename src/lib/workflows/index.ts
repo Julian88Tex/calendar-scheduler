@@ -32,6 +32,7 @@ export { BACKFILL_PAGE_SIZE, backfillKey, enqueueBackfill, runBackfill, type Bac
 export { executeWorkflowJob, type ExecuteOutcome } from "./execute";
 export { getReminderDeliveryHealth, OVERDUE_AFTER_MS, type ReminderDeliveryHealth } from "./health";
 export {
+  copyEventTypeReminders,
   getEventTypeReminders,
   reminderDefaults,
   saveEventTypeReminders,

@@ -160,10 +160,7 @@ export async function handleReschedule(
   const at = p.now ?? clockNow();
   if (p.oldInviteeId === p.newInviteeId) {
     // In-place move: same invitee and executions, new times.
-    const retimed = await retimeExecutions(
-      tx,
-      and(eq(workflowExecutions.scheduledEventId, p.newScheduledEventId))!,
-    );
+    const retimed = await retimeExecutions(tx, eq(workflowExecutions.scheduledEventId, p.newScheduledEventId));
     return { canceled: 0, retimed, scheduled: 0, skipped: 0 };
   }
   let canceled = (await cancelExecutions(tx, eq(workflowExecutions.inviteeId, p.oldInviteeId), "rescheduled")).length;
@@ -182,10 +179,8 @@ export async function handleReschedule(
   if (!meeting || !invitee || invitee.scheduledEventId !== meeting.id || meeting.status !== "active" || invitee.status !== "active") {
     return { canceled, retimed: 0, scheduled: 0, skipped: 0 };
   }
-  const outcome = await scheduleExecutions(tx, meeting, [invitee], [...TIMED_TRIGGERS, "rescheduled"], {
-    now: at,
-    eventAt: invitee.createdAt,
-  });
+  // "Event is rescheduled" runs from the time of the change (this subscriber runs right after it).
+  const outcome = await scheduleExecutions(tx, meeting, [invitee], [...TIMED_TRIGGERS, "rescheduled"], { now: at, eventAt: at });
   return { canceled, retimed: 0, ...outcome };
 }
 

@@ -18,7 +18,7 @@ import { now } from "@/lib/time/now";
 import { zoneOrUtc } from "@/lib/time/zones";
 import { isValidTimeZone } from "@/lib/validation";
 import { ensureDefaultSchedule } from "./core";
-import { sortIntervals, sortOverrides, sortWeekly, weeklyIsValid, type DateOverride } from "./intervals";
+import { dayProblem, isIsoDate, sortIntervals, sortOverrides, sortWeekly, weeklyProblem, type DateOverride } from "./intervals";
 import { MAX_OVERRIDES, MAX_SCHEDULES, OVERRIDE_LIMIT_MESSAGE, SCHEDULE_LIMIT_MESSAGE, SCHEDULE_NAME_MAX } from "./schemas";
 import type { ActiveOnEventType, ScheduleDetail, ScheduleSummary } from "./types";
 
@@ -175,6 +175,14 @@ async function personalCount(db: DbOrTx, userId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** The trimmed schedule name (AV-02: 1 to 60 characters), else AppError("validation") with the form's message. */
+export function assertScheduleName(name: string): string {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  const message = !trimmed ? "Enter a schedule name." : trimmed.length > SCHEDULE_NAME_MAX ? `Use ${SCHEDULE_NAME_MAX} characters or fewer.` : null;
+  if (message) throw new AppError("validation", message, { fieldErrors: { name: [message] } });
+  return trimmed;
+}
+
 /** "{name} (copy)", shortened to fit the 60 character limit. */
 export function copyName(name: string): string {
   const suffix = " (copy)";
@@ -187,23 +195,20 @@ export function copyName(name: string): string {
  * The user's first schedule becomes the default.
  */
 export async function createSchedule(db: DbOrTx, userId: string, input: { name: string; timezone?: string | null }): Promise<ScheduleRow> {
+  const name = assertScheduleName(input.name);
   return withTx(db, async (tx) => {
     await lockUserSchedules(tx, userId);
-    if ((await personalCount(tx, userId)) >= MAX_SCHEDULES) throw new AppError("conflict", SCHEDULE_LIMIT_MESSAGE);
-    const [existingDefault] = await tx
-      .select()
-      .from(availabilitySchedules)
-      .where(and(personalScheduleWhere(userId), eq(availabilitySchedules.isDefault, true)))
-      .limit(1);
-    if (!existingDefault) {
-      const created = await ensureDefaultSchedule(tx, userId, { timezone: input.timezone, name: input.name });
-      return created;
-    }
+    const existing = await personalCount(tx, userId);
+    if (existing >= MAX_SCHEDULES) throw new AppError("conflict", SCHEDULE_LIMIT_MESSAGE);
+    // The user's first schedule becomes the default (named as asked). With schedules but no default (repaired here),
+    // the oldest one is promoted and the new schedule is still created next to it.
+    if (existing === 0) return ensureDefaultSchedule(tx, userId, { timezone: input.timezone, name });
+    const existingDefault = await ensureDefaultSchedule(tx, userId, { timezone: input.timezone });
     const [row] = await tx
       .insert(availabilitySchedules)
       .values({
         userId,
-        name: input.name.trim(),
+        name,
         timezone: zoneOrUtc(existingDefault.timezone),
         isDefault: false,
         weeklyHours: weeklyOf(existingDefault),
@@ -215,12 +220,13 @@ export async function createSchedule(db: DbOrTx, userId: string, input: { name: 
 }
 
 export async function renameSchedule(db: DbOrTx, userId: string, scheduleId: string, name: string): Promise<ScheduleRow> {
+  const trimmed = assertScheduleName(name);
   return withTx(db, async (tx) => {
     await lockUserSchedules(tx, userId);
     await loadOwnedSchedule(tx, userId, scheduleId);
     const [row] = await tx
       .update(availabilitySchedules)
-      .set({ name: name.trim(), updatedAt: now() })
+      .set({ name: trimmed, updatedAt: now() })
       .where(eq(availabilitySchedules.id, scheduleId))
       .returning();
     if (!row) throw new AppError("not_found", NOT_FOUND);
@@ -326,7 +332,8 @@ export async function deleteSchedule(
 
 /** Replaces the weekly hours (validated: no inverted or overlapping intervals; touching allowed; stored sorted). */
 export async function updateWeeklyHours(db: DbOrTx, userId: string, scheduleId: string, weeklyHours: WeeklyHours): Promise<void> {
-  if (!weeklyIsValid(weeklyHours)) throw new AppError("validation", "Times overlap with another set of times.");
+  const problem = weeklyProblem(weeklyHours);
+  if (problem) throw new AppError("validation", problem);
   await withTx(db, async (tx) => {
     await loadOwnedSchedule(tx, userId, scheduleId);
     await tx
@@ -380,6 +387,11 @@ export async function upsertDateOverrides(
   scheduleId: string,
   input: { dates: readonly string[]; intervals: readonly MinuteRange[] },
 ): Promise<void> {
+  if (!Array.isArray(input.dates) || input.dates.length === 0 || !input.dates.every(isIsoDate)) {
+    throw new AppError("validation", "Choose a valid date.");
+  }
+  const problem = dayProblem(input.intervals);
+  if (problem) throw new AppError("validation", problem);
   await withTx(db, async (tx) => {
     await lockUserSchedules(tx, userId);
     await loadOwnedSchedule(tx, userId, scheduleId);
@@ -389,6 +401,7 @@ export async function upsertDateOverrides(
 }
 
 export async function deleteDateOverride(db: DbOrTx, userId: string, scheduleId: string, date: string): Promise<void> {
+  if (!isIsoDate(date)) throw new AppError("validation", "Choose a valid date.");
   await withTx(db, async (tx) => {
     await loadOwnedSchedule(tx, userId, scheduleId);
     await tx
@@ -401,7 +414,7 @@ export async function deleteDateOverride(db: DbOrTx, userId: string, scheduleId:
 // ---------------------------------------------------------------------------------------------------------------
 // "Active on" (AV-09): which personal event types a schedule drives.
 
-type EventTypeRef = { id: string; scheduleId: string | null };
+type EventTypeRef = { id: string; scheduleId: string | null; availabilitySetting?: "host" | "shared" | null };
 
 /** Personal single-host standard event types of the user, in their list order. */
 async function personalEventTypes(db: DbOrTx, userId: string) {
@@ -415,6 +428,7 @@ async function personalEventTypes(db: DbOrTx, userId: string) {
       durationMinutes: eventTypes.durationMinutes,
       durationOptions: eventTypes.durationOptions,
       scheduleId: eventTypes.scheduleId,
+      availabilitySetting: eventTypes.availabilitySetting,
     })
     .from(eventTypes)
     .where(
@@ -432,7 +446,7 @@ async function personalEventTypes(db: DbOrTx, userId: string) {
 /**
  * The schedule each event type uses for the user, like the availability service (booking-core section 8 step 1):
  * the user's host-level schedule, else the event type's schedule when it is the user's (named or custom), else the
- * default schedule.
+ * default schedule ("shared" hours: the event type's schedule first).
  */
 export async function effectiveSchedules(
   db: DbOrTx,
@@ -462,7 +476,10 @@ export async function effectiveSchedules(
     return s;
   };
   for (const et of list) {
-    const chosen = usable(hostSchedule.get(et.id), et.id) ?? usable(et.scheduleId, et.id);
+    const chosen =
+      et.availabilitySetting === "shared"
+        ? (usable(et.scheduleId, et.id) ?? usable(hostSchedule.get(et.id), et.id))
+        : (usable(hostSchedule.get(et.id), et.id) ?? usable(et.scheduleId, et.id));
     if (chosen) out.set(et.id, { scheduleId: chosen.id, custom: Boolean(chosen.eventTypeId) });
     else out.set(et.id, { scheduleId: defaultId, custom: false });
   }

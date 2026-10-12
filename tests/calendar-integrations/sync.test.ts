@@ -154,6 +154,42 @@ describe("syncBookedEvents (CAL-14)", () => {
   });
 });
 
+describe("syncBookedEvents with a refusing provider", () => {
+  it("skips one refused row without blocking the others and never reports an unreadable calendar as a delete", async () => {
+    const bad = await booked();
+    const good = await booked();
+    const moved = good.providerEvent();
+    moved.start = new Date(moved.start.getTime() + HOUR);
+    moved.end = new Date(moved.end.getTime() + HOUR);
+    const provider = google();
+    const real = provider.getEvent.bind(provider);
+    const refused = bad.providerEvent().externalId;
+    provider.getEvent = async (ctx, calendarExternalId, externalId) => {
+      if (externalId === refused) {
+        throw Object.assign(new Error("The calendar is no longer available to this account."), { name: "ProviderRequestError", status: 404, reason: "calendarUnavailable" });
+      }
+      return real(ctx, calendarExternalId, externalId);
+    };
+    // Rows of earlier tests in this file are checked too: assert on these two meetings only.
+    await expect(syncBookedEvents()).resolves.toBeDefined();
+    expect(h.changes).toContainEqual({ linkedEventId: good.linkedEventId, change: { type: "moved", start: moved.start, end: moved.end } });
+    expect(h.changes.filter((c) => c.linkedEventId === bad.linkedEventId)).toEqual([]);
+    const [row] = await t.db.select().from(calendarLinkedEvents).where(eq(calendarLinkedEvents.id, bad.linkedEventId));
+    expect(row?.status).toBe("synced");
+    expect(row?.lastCheckedAt).not.toBeNull();
+    const refresh = await t.db.select().from(jobs).where(eq(jobs.type, "calendars.refresh_calendar_list"));
+    expect(refresh.map((j) => (j.payload as { connectionId: string }).connectionId)).toContain(bad.g.connectionId);
+  });
+
+  it("still checks a meeting whose last write failed (for example during a reconnect)", async () => {
+    const m = await booked();
+    await t.db.update(calendarLinkedEvents).set({ status: "failed", lastError: "Calendar connection needs attention" }).where(eq(calendarLinkedEvents.id, m.linkedEventId));
+    google().events.set(`${m.g.connectionId}:me@example.com`, []);
+    await syncBookedEvents();
+    expect(h.changes).toContainEqual({ linkedEventId: m.linkedEventId, change: { type: "deleted" } });
+  });
+});
+
 describe("Google push notifications", () => {
   const env = process.env as Record<string, string | undefined>;
   let f: ReturnType<typeof mockFetch> | null = null;

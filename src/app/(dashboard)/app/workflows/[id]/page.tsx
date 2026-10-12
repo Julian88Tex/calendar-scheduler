@@ -1,11 +1,9 @@
-// OWNER: workflows. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: workflows.
 //
-// /app/workflows/[id] placeholder (ARCHITECTURE section 3.1, SPEC NT-11..NT-13). The owner replaces it with the real page.
-import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-
-export const metadata: Metadata = { title: "Edit workflow" };
+// /app/workflows/[id]: The custom workflow builder is not part of this build (docs/SCOPE.md: workflows lite); email reminders are set
+// up in each event type's "Notifications and workflows" section (src/components/workflows).
+// There is no navigation to this route; it answers 404 so no placeholder UI is shown.
+import { notFound } from "next/navigation";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -14,10 +12,5 @@ type Props = {
 
 export default async function EditWorkflowPage({ params, searchParams }: Props) {
   await Promise.all([params, searchParams]);
-  return (
-    <>
-      <PageHeader title="Edit workflow" />
-      <EmptyState heading="This page is being built." />
-    </>
-  );
+  notFound();
 }

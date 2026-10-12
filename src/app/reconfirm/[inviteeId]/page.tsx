@@ -1,19 +1,12 @@
-// OWNER: workflows. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: workflows.
 //
-// /reconfirm/{inviteeId} placeholder (ARCHITECTURE section 3.1, SPEC NT-18): renders inside PublicPageShell and answers 404 for unknown
-// inviteeId. Never framed (frame-ancestors 'none'). The owner replaces it with the real page.
+// /reconfirm/{inviteeId} (SPEC NT-18): reconfirmation requests are not part of this build (docs/SCOPE.md: workflows lite
+// sends email reminders only, no reconfirmation templates), so no reminder ever links here; the route answers 404 for
+// every invitee. Never framed (frame-ancestors 'none', src/lib/net/frame-policy.ts).
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { PublicCard } from "@/components/public/public-card";
-import { PublicPageShell } from "@/components/public/public-page-shell";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { invitees } from "@/db/schema";
-import { isUuid } from "@/lib/ids";
 import { notFound } from "next/navigation";
 
-export const metadata: Metadata = { title: "Confirm your attendance", robots: { index: false, follow: false } };
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 type Props = {
   params: Promise<{ inviteeId: string }>;
@@ -21,19 +14,6 @@ type Props = {
 };
 
 export default async function Page({ params, searchParams }: Props) {
-  const [{ inviteeId }] = await Promise.all([params, searchParams]);
-  if (!isUuid(inviteeId)) notFound();
-  const db = await getDb();
-  const [invitee] = await db.select({ id: invitees.id }).from(invitees).where(eq(invitees.id, inviteeId)).limit(1);
-  if (!invitee) notFound();
-  return (
-    <PublicPageShell>
-      <PublicCard width="narrow">
-        <div className="p-8">
-          <PageHeader title={"Confirm your attendance"} />
-          <EmptyState heading="This page is being built." />
-        </div>
-      </PublicCard>
-    </PublicPageShell>
-  );
+  await Promise.all([params, searchParams]);
+  notFound();
 }

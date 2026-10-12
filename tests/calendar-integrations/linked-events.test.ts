@@ -236,6 +236,46 @@ describe("deleteLinkedEvent and repointLinkedEvents", () => {
     expect(row?.status).toBe("synced");
   });
 
+  it("deletes the event a timed out create left at Google, so canceling first leaves no orphan", async () => {
+    const { g, scheduledEvent: se } = await meeting();
+    const store = new Map<string, unknown>();
+    const deletes: string[] = [];
+    const f = mockFetch(
+      {
+        method: "POST",
+        url: `${G}/calendars/me%40example.com/events`,
+        // Google creates the event, but the answer never reaches us.
+        handler: (req) => (store.set((req.body as { id: string }).id, req.body), mockResponse({ error: { code: 503, message: "Backend Error" } }, { status: 503 })),
+      },
+      {
+        method: "DELETE",
+        url: new RegExp(`^${G.replace(/\./g, "\\.")}/calendars/me%40example\\.com/events/([^/?]+)`),
+        handler: (req) => (deletes.push(req.params[0]!), store.delete(req.params[0]!) ? new Response(null, { status: 204 }) : mockResponse({ error: { code: 404, message: "Not Found" } }, { status: 404 })),
+      },
+    );
+    try {
+      const r = await upsertLinkedEvent({ userId: g.user.id, purpose: "meeting", scheduledEventId: se.id, event: event(se) });
+      expect(r).toMatchObject({ status: "pending", externalId: null });
+      await deleteLinkedEvent({ linkedEventId: r.linkedEventId, notifyAttendees: true });
+      expect(store.size).toBe(0);
+      expect(deletes[0]).toBe(providerEventIdFor(r.linkedEventId));
+      expect(f.callsTo("/events/", "DELETE")[0]!.url.searchParams.get("sendUpdates")).toBe("all");
+      const [row] = await t.db.select().from(calendarLinkedEvents).where(eq(calendarLinkedEvents.id, r.linkedEventId));
+      expect(row?.status).toBe("deleted");
+      // A row that never reached the provider needs no call at all.
+      const { scheduledEvent: other } = await createBooking(t.db, { eventType: (await createEventType(t.db, { owner: g.user })).eventType, start: new Date(Date.now() + 5 * 86_400_000) });
+      const [fresh] = await t.db
+        .insert(calendarLinkedEvents)
+        .values({ userId: g.user.id, connectionId: g.connectionId, calendarId: g.calendarIds[0]!, purpose: "meeting", scheduledEventId: other.id, idempotencyKey: `meeting:${other.id}:${g.user.id}`, status: "pending" })
+        .returning();
+      const before = deletes.length;
+      await deleteLinkedEvent({ linkedEventId: fresh!.id, notifyAttendees: false });
+      expect(deletes.length).toBe(before);
+    } finally {
+      f.restore();
+    }
+  });
+
   it("re-points linked events to the new scheduled event", async () => {
     h.useFake = true;
     const { g, eventType, scheduledEvent: se } = await meeting();

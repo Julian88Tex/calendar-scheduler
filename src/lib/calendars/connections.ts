@@ -17,7 +17,7 @@
 // - getDestinationCalendar: the event type override (CAL-20) or the user's destination when usable.
 // - replaceImportedBusy (CAL-22): the read-only "Imported from Calendly" connection.
 import "server-only";
-import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { getDb, isUniqueViolation, type DbOrTx, type Tx } from "@/db";
 import { advisoryXactLock } from "@/db/helpers";
 import {
@@ -71,6 +71,9 @@ export async function applyCalendarList(
   tx: Tx,
   p: { connectionId: string; userId: string; provider: CalendarProviderId; remote: RemoteCalendar[]; initial: boolean },
 ): Promise<{ added: number; removed: number }> {
+  // One writer per connection: a connect and the list refresh job (or a double submitted consent) never race on the
+  // calendars_conn_ext_uq index.
+  await advisoryXactLock(tx, `calendar_list:${p.connectionId}`);
   const t = now();
   const existing = await tx.select().from(calendars).where(eq(calendars.connectionId, p.connectionId));
   const byExt = new Map(existing.map((c) => [c.externalId, c]));
@@ -181,9 +184,31 @@ async function hasUsableDestination(tx: DbOrTx, userId: string): Promise<boolean
   return Boolean(row);
 }
 
-/** CAL-08 and CAL-17: the primary writable calendar of the connection becomes the destination when there is none. */
-async function defaultDestination(tx: Tx, userId: string, connectionId: string): Promise<boolean> {
+/** users.preferences key: the user chose "None" as the calendar to add events to (CAL-08). */
+export const DESTINATION_NONE_PREF = "calendarDestinationNone";
+
+/** Records (or clears) an explicit "None" choice, merged into users.preferences so other preferences are kept. */
+async function setDestinationNoneChoice(tx: DbOrTx, userId: string, chosen: boolean): Promise<void> {
+  await tx
+    .update(users)
+    .set({
+      preferences: chosen
+        ? sql`coalesce(${users.preferences}, '{}'::jsonb) || ${JSON.stringify({ [DESTINATION_NONE_PREF]: true })}::jsonb`
+        : sql`coalesce(${users.preferences}, '{}'::jsonb) - ${DESTINATION_NONE_PREF}::text`,
+    })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * CAL-08 and CAL-17: the primary writable calendar of the connection becomes the destination when there is none. A
+ * routine sign-in (`respectNone`) leaves an explicit "None" choice alone.
+ */
+async function defaultDestination(tx: Tx, userId: string, connectionId: string, opts: { respectNone: boolean }): Promise<boolean> {
   if (await hasUsableDestination(tx, userId)) return false;
+  if (opts.respectNone) {
+    const [u] = await tx.select({ prefs: users.preferences }).from(users).where(eq(users.id, userId)).limit(1);
+    if (u?.prefs?.[DESTINATION_NONE_PREF] === true) return false;
+  }
   const rows = await tx
     .select({ id: calendars.id, isPrimary: calendars.isPrimary })
     .from(calendars)
@@ -192,6 +217,7 @@ async function defaultDestination(tx: Tx, userId: string, connectionId: string):
   const pick = rows.find((r) => r.isPrimary) ?? rows[0];
   if (!pick) return false;
   await tx.update(users).set({ destinationCalendarId: pick.id }).where(eq(users.id, userId));
+  await setDestinationNoneChoice(tx, userId, false);
   return true;
 }
 
@@ -341,7 +367,10 @@ export async function connectGoogleAccount(input: ConnectGoogleInput): Promise<C
 
   let remote = input.remoteCalendars ?? null;
   let calendarsSynced = Boolean(remote);
-  if (!remote) {
+  // A routine sign-in of an account that is already connected and healthy refreshes its list in the background
+  // (no Google round trip on the login path); new, repaired and explicitly connected accounts list synchronously.
+  const listNow = conn.created || conn.reactivated || input.via === "connect";
+  if (!remote && listNow) {
     try {
       remote = await withConnection(conn.id, (ctx) => getProvider("google")!.listCalendars(ctx));
       calendarsSynced = true;
@@ -365,7 +394,7 @@ export async function connectGoogleAccount(input: ConnectGoogleInput): Promise<C
     if (!remote) {
       await enqueueJob(tx, { type: CALENDAR_LIST_JOB, payload: { connectionId: conn.id }, idempotencyKey: `callist:${conn.id}:${Math.floor(nowMs() / 60_000)}` });
     }
-    const set = await defaultDestination(tx, input.userId, conn.id);
+    const set = await defaultDestination(tx, input.userId, conn.id, { respectNone: input.via === "sign_in" });
     await enqueueJob(tx, { type: WATCH_JOB, payload: { connectionId: conn.id }, idempotencyKey: `watch:${conn.id}:${Math.floor(nowMs() / 3_600_000)}` });
     if (conn.created || conn.reactivated) {
       await audit(
@@ -383,7 +412,7 @@ export async function connectGoogleAccount(input: ConnectGoogleInput): Promise<C
     return set;
   });
   // Cached windows of a reconnected account may predate the outage.
-  if (!conn.created) {
+  if (conn.reactivated) {
     const ids = (await db.select({ id: calendars.id }).from(calendars).where(eq(calendars.connectionId, conn.id))).map((c) => c.id);
     await invalidateCalendarCache(ids, db);
   }
@@ -553,6 +582,8 @@ export async function setDestinationCalendar(actor: CalendarActor, calendarId: s
   await db.transaction(async (tx) => {
     if (calendarId) await assertCalendarOwnedBy(tx, calendarId, actor.user.id, { purpose: "destination" });
     await tx.update(users).set({ destinationCalendarId: calendarId }).where(eq(users.id, actor.user.id));
+    // "None" is a choice to keep: a later Google sign-in must not pick a calendar again (CAL-08, CAL-17).
+    await setDestinationNoneChoice(tx, actor.user.id, calendarId === null);
     if (calendarId) {
       const [c] = await tx.select({ connectionId: calendars.connectionId }).from(calendars).where(eq(calendars.id, calendarId)).limit(1);
       if (c) await enqueueJob(tx, { type: WATCH_JOB, payload: { connectionId: c.connectionId }, idempotencyKey: `watch:${c.connectionId}:${Math.floor(nowMs() / 60_000)}` });

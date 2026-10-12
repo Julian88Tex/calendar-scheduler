@@ -15,12 +15,13 @@ import { revokeGoogleToken } from "@/lib/auth/oauth/google";
 import { decryptOrNull } from "@/lib/crypto";
 import { getFeatures } from "@/lib/env";
 import { isUuid } from "@/lib/ids";
+import { log } from "@/lib/logger";
 import { enqueueJob, RetryLaterError, type JobHandlers, type PeriodicJob } from "@/lib/jobs";
 import { CALENDAR_LIST_JOB, REVOKE_JOB, syncCalendarList, WATCH_JOB } from "./connections";
 import { CONNECTION_PROBLEM_JOB, sendConnectionProblemEmail } from "./health";
 import { deleteLinkedEventNow, LINKED_EVENT_RETRY_JOB, syncBufferEvents } from "./linked-events";
 import { stopGoogleChannel } from "./providers/google";
-import { isProviderAuthError, isProviderTransientError } from "./providers/types";
+import { isProviderAuthError, isProviderRequestError, isProviderTransientError } from "./providers/types";
 import { syncBookedEvents, syncCalendar } from "./sync";
 import { ensureWatchChannels, renewWatchChannels, SYNC_CALENDAR_JOB } from "./watch";
 
@@ -131,6 +132,12 @@ export const handlers: JobHandlers = {
       return { result: await ensureWatchChannels(connectionId) };
     } catch (e) {
       if (isProviderAuthError(e)) return;
+      // Google refused the channel (for example an unverified callback domain): the periodic sync covers it, and the
+      // renewal job tries again in 6 hours.
+      if (isProviderRequestError(e)) {
+        log.info("calendars.watch_refused", { connectionId, error: e });
+        return { result: "refused" };
+      }
       throw e;
     }
   },

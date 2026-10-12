@@ -9,9 +9,16 @@
 //   (focusTime included) is busy unless transparency = transparent; tentative and unanswered invitations are busy
 //   (CAL-09). All-day events keep their calendar dates (start.date, end.date exclusive) and get UTC midnight bounds as
 //   placeholders; the busy layer expands them as whole local days in the host's zone.
+//   A calendar that refuses the eventTypes filter (400) is read once more without it (working locations are still
+//   dropped by the mapping), so one odd calendar never breaks the whole busy fetch.
+// - getEvent: a 404 also answers for a calendar the user can no longer read, so the event counts as deleted only when
+//   its calendar still answers (otherwise ProviderRequestError "calendarUnavailable": CAL-14 must never cancel
+//   meetings because a calendar was unshared).
 // - createEvent / updateEvent / deleteEvent: events.insert, patch and delete with conferenceDataVersion=1 and
 //   sendUpdates=all (calendar invitation mode) or none (email confirmation mode, no attendees). The event id is our
-//   deterministic base32hex key, so a retry after a timeout answers 409 and resolves to the event already created.
+//   deterministic base32hex key, so a retry after a timeout answers 409 and resolves to the event already created
+//   (patched to the current input when it differs, so a change made between the attempts is not lost and CAL-14 never
+//   mistakes the stale copy for a host-side move).
 //   Google Meet: conferenceData.createRequest (hangoutsMeet) with a stable requestId; a pending conference is re-read
 //   up to 3 times. Writes return iCalUID and htmlLink (stored on the meeting by lifecycle-core).
 // - watchEvents / stopChannel: push notification channels (events.watch, channels.stop).
@@ -52,11 +59,13 @@ export type GoogleEvent = {
   id?: string;
   status?: "confirmed" | "tentative" | "cancelled";
   summary?: string;
+  description?: string;
+  location?: string;
   start?: GoogleDate;
   end?: GoogleDate;
   transparency?: "opaque" | "transparent";
   eventType?: string;
-  attendees?: { email?: string; self?: boolean; responseStatus?: string }[];
+  attendees?: { email?: string; self?: boolean; organizer?: boolean; responseStatus?: string }[];
   iCalUID?: string;
   recurringEventId?: string;
   extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
@@ -285,13 +294,16 @@ export function googleEventBody(input: WriteEventInput, mode: "create" | "update
     attendees,
     transparency: input.transparency === "free" ? "transparent" : "opaque",
     visibility: input.visibility ?? "default",
-    reminders: { useDefault: true },
     guestsCanModify: false,
     extendedProperties: { private: input.privateProperties },
   };
   if (input.location) body.location = input.location;
   else if (mode === "update") body.location = "";
-  if (mode === "create") body.id = input.idempotencyKey;
+  if (mode === "create") {
+    body.id = input.idempotencyKey;
+    // Provider default reminders (CAL-11); updates leave whatever the host set on the event since.
+    body.reminders = { useDefault: true };
+  }
   if (input.conference === "google_meet") {
     // Stable requestId: Google ignores a repeated request with the same id, so updates never create a second conference.
     body.conferenceData = { createRequest: { requestId: input.idempotencyKey, conferenceSolutionKey: { type: "hangoutsMeet" } } };
@@ -331,22 +343,29 @@ async function listCalendars(ctx: ConnectionContext): Promise<RemoteCalendar[]> 
   return out.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || Number(b.canWrite) - Number(a.canWrite) || a.name.localeCompare(b.name));
 }
 
-async function listEventsOf(ctx: ConnectionContext, calendarId: string, range: { start: Date; end: Date }): Promise<RemoteEvent[]> {
+async function listEventsOf(ctx: ConnectionContext, calendarId: string, range: { start: Date; end: Date }, withTypes = true): Promise<RemoteEvent[]> {
   const out: RemoteEvent[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await googleFetch<{ items?: GoogleEvent[]; nextPageToken?: string }>(ctx, "GET", `${calPath(calendarId)}/events`, {
-      query: {
-        timeMin: range.start.toISOString(),
-        timeMax: range.end.toISOString(),
-        singleEvents: "true",
-        showDeleted: "false",
-        maxResults: "2500",
-        maxAttendees: "1",
-        eventTypes: GOOGLE_BUSY_EVENT_TYPES,
-        pageToken,
-      },
-    });
+    let res: { items?: GoogleEvent[]; nextPageToken?: string } | null;
+    try {
+      res = await googleFetch<{ items?: GoogleEvent[]; nextPageToken?: string }>(ctx, "GET", `${calPath(calendarId)}/events`, {
+        query: {
+          timeMin: range.start.toISOString(),
+          timeMax: range.end.toISOString(),
+          singleEvents: "true",
+          showDeleted: "false",
+          maxResults: "2500",
+          maxAttendees: "1",
+          eventTypes: withTypes ? GOOGLE_BUSY_EVENT_TYPES : undefined,
+          pageToken,
+        },
+      });
+    } catch (e) {
+      // A calendar that does not support the eventTypes filter: read every type (the mapping drops working locations).
+      if (withTypes && page === 0 && e instanceof ProviderRequestError && e.status === 400) return listEventsOf(ctx, calendarId, range, false);
+      throw e;
+    }
     for (const item of res?.items ?? []) {
       const ev = mapGoogleEvent(item);
       if (ev && ev.status !== "cancelled") out.push(ev);
@@ -373,18 +392,36 @@ async function listEvents(ctx: ConnectionContext, calendarExternalIds: string[],
   return out;
 }
 
-async function readEvent(ctx: ConnectionContext, calendarId: string, eventId: string): Promise<GoogleEvent | null> {
+async function readEvent(ctx: ConnectionContext, calendarId: string, eventId: string, opts: { allAttendees?: boolean } = {}): Promise<GoogleEvent | null> {
   try {
-    return await googleFetch<GoogleEvent>(ctx, "GET", `${calPath(calendarId)}/events/${encodeURIComponent(eventId)}`, { query: { maxAttendees: "1" } });
+    return await googleFetch<GoogleEvent>(ctx, "GET", `${calPath(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+      query: opts.allAttendees ? {} : { maxAttendees: "1" },
+    });
   } catch (e) {
     if (isProviderGone(e)) return null;
     throw e;
   }
 }
 
+/** Throws ProviderRequestError("calendarUnavailable") when the calendar itself is gone or no longer readable. */
+async function assertCalendarReadable(ctx: ConnectionContext, calendarId: string): Promise<void> {
+  try {
+    await googleFetch(ctx, "GET", calPath(calendarId));
+  } catch (e) {
+    if (isProviderGone(e) || (e instanceof ProviderRequestError && e.status === 403)) {
+      throw new ProviderRequestError(404, "The calendar is no longer available to this account.", "calendarUnavailable");
+    }
+    throw e;
+  }
+}
+
 async function getEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string): Promise<RemoteEvent | null> {
   const ev = await readEvent(ctx, calendarExternalId, externalId);
-  if (!ev) return null;
+  if (!ev) {
+    // Google answers 404 both for a purged event and for a calendar we can no longer read: only the first is a delete.
+    await assertCalendarReadable(ctx, calendarExternalId);
+    return null;
+  }
   return mapGoogleEvent(ev, { keepAllTypes: true });
 }
 
@@ -399,6 +436,23 @@ async function settleConference(ctx: ConnectionContext, calendarId: string, ev: 
   return current;
 }
 
+/** Whether the event a previous attempt created differs from what this write wants (409 resolution). */
+export function differsFromInput(ev: GoogleEvent, input: WriteEventInput): boolean {
+  const body = googleEventBody(input, "create");
+  const instant = (d?: GoogleDate) => (d?.date ? `date:${d.date}` : d?.dateTime ? `at:${new Date(d.dateTime).getTime()}` : "");
+  const wanted = (k: "start" | "end") => instant(body[k] as GoogleDate);
+  if (instant(ev.start) !== wanted("start") || instant(ev.end) !== wanted("end")) return true;
+  if ((ev.summary ?? "") !== input.title || (ev.description ?? "") !== input.descriptionText) return true;
+  if ((ev.location ?? "") !== (input.location ?? "")) return true;
+  if ((ev.transparency ?? "opaque") !== body.transparency) return true;
+  const emails = (list: { email?: string }[]) => [...new Set(list.map((a) => (a.email ?? "").trim().toLowerCase()).filter(Boolean))].sort().join(",");
+  // Our attendees are the invitee and guests; the calendar owner (organizer) may be listed by Google too.
+  const guests = (ev.attendees ?? []).filter((a) => !a.self && !a.organizer);
+  if (emails(guests) !== emails(body.attendees as { email: string }[])) return true;
+  if (input.conference === "google_meet" && !ev.conferenceData && !ev.hangoutLink) return true;
+  return false;
+}
+
 async function createEvent(ctx: ConnectionContext, calendarExternalId: string, input: WriteEventInput): Promise<WriteEventResult> {
   const wantsMeet = input.conference === "google_meet";
   let ev: GoogleEvent | null;
@@ -410,8 +464,10 @@ async function createEvent(ctx: ConnectionContext, calendarExternalId: string, i
   } catch (e) {
     if (!(e instanceof ProviderRequestError) || e.status !== 409) throw e;
     // Our deterministic id already exists: a previous attempt created it (retry after a timeout).
-    const existing = await readEvent(ctx, calendarExternalId, input.idempotencyKey);
+    const existing = await readEvent(ctx, calendarExternalId, input.idempotencyKey, { allAttendees: true });
     if (!existing || existing.status === "cancelled") throw new ProviderRequestError(409, "The event id is already used by a deleted event.", "duplicate");
+    // The meeting may have changed between the attempts (time, guests, details): bring the event up to date.
+    if (differsFromInput(existing, input)) return updateEvent(ctx, calendarExternalId, input.idempotencyKey, input);
     ev = existing;
   }
   if (!ev?.id) throw new ProviderTransientError("Google Calendar did not return the created event");

@@ -46,6 +46,8 @@ export function connectionProblemEmail(p: {
         text: "Reconnecting keeps your settings: the calendars checked for conflicts and the calendar new events are added to.",
       },
     ],
-    reason: `You're receiving this email because a calendar is connected to your ${app} account. You can turn off calendar connection emails in Settings > Notifications.`,
+    // docs/SCOPE.md does not build Settings > Notifications, so the email does not point there (the stored preference
+    // is still honored).
+    reason: `You're receiving this email because a calendar is connected to your ${app} account.`,
   });
 }

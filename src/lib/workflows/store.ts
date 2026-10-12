@@ -132,7 +132,9 @@ export type UpsertResult = {
  * canceled with one of `reviveReasons`, in which case it is scheduled again with the new run time and snapshot.
  * Scheduled rows get their workflows.execute job (one bulk insert, revived jobs one by one) and keep the job id.
  */
-export async function upsertExecutions(tx: DbOrTx, rows: readonly ExecutionInsert[], opts: { reviveReasons?: readonly string[] } = {}): Promise<UpsertResult> {
+export async function upsertExecutions(tx: DbOrTx, input: readonly ExecutionInsert[], opts: { reviveReasons?: readonly string[] } = {}): Promise<UpsertResult> {
+  // One row per key (ON CONFLICT DO UPDATE cannot touch a row twice in one statement).
+  const rows = [...new Map(input.map((r) => [r.idempotencyKey, r])).values()];
   if (!rows.length) return { written: [] };
   const at = now();
   const keys = rows.map((r) => r.idempotencyKey);
