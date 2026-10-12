@@ -3,7 +3,8 @@
 // Conference lifecycle (SPEC VID-07, VID-10, VID-12, VID-13, VID-14; ARCHITECTURE section 11). Links are generated at
 // provisioning time (lifecycle-core jobs), never at event type creation (VID-12).
 //
-//   createConference   google_conference: "processing" when the organizer's destination calendar can host Meet (the
+//   createConference   idempotent: a location that already holds a created conference of the kind is returned as is;
+//                      google_conference: "processing" when the organizer's destination calendar can host Meet (the
 //                      provisioning job then writes the calendar event with calendarConferenceFor(kind) and folds the
 //                      result in with applyLinkedEventConference), else "failed" (VID-07 fallback);
 //                      jitsi_conference: a unique unguessable room right away ("pushed", VID-10);
@@ -18,7 +19,7 @@ import { scheduledEvents } from "@/db/schema";
 import type { ResolvedLocation } from "@/db/types";
 import { isUuid } from "@/lib/ids";
 import { jitsiConference } from "./jitsi";
-import { conferenceMode, type ConferenceKind } from "./kinds";
+import { conferenceJoinUrl, conferenceMode, type ConferenceKind } from "./kinds";
 import { conferenceLocationBase, failedConference, requestNativeConference } from "./native";
 
 export type CreateConferenceInput = {
@@ -44,9 +45,14 @@ async function eventTypeOfMeeting(scheduledEventId: string): Promise<string | nu
   return row?.eventTypeId ?? null;
 }
 
-/** Creates the conference for a booked meeting (provisioning job). See the file header. */
+/**
+ * Creates the conference for a booked meeting (provisioning job). See the file header. Idempotent: when the booked
+ * location already holds a created conference of this kind (a retried job, a reschedule that kept the location), it
+ * is returned unchanged, so invitees keep the link they were sent. resetConference first to force a new one.
+ */
 export async function createConference(p: CreateConferenceInput): Promise<ResolvedLocation> {
   const base = p.location ?? null;
+  if (base && base.kind === p.kind && base.status === "pushed" && conferenceJoinUrl(base)) return base;
   if (p.kind === "jitsi_conference") return { ...jitsiConference(), configId: base?.configId ?? null, additionalInfo: base?.additionalInfo ?? null };
   if (p.kind === "google_conference") {
     const eventTypeId = p.eventTypeId ?? (await eventTypeOfMeeting(p.scheduledEventId));

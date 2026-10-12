@@ -7,9 +7,11 @@
 // Provisioning recipe for lifecycle-core (Google Meet):
 //   const organizer = resolveConferenceOrganizer({ organizerUserId, hosts, preferredOrganizerUserId });
 //   let location = await createConference({ kind, organizerUserId: organizer, scheduledEventId, ..., location: meeting.location });
-//   // status "processing": write the calendar event and ask for the conference
+//   // idempotent: an already created conference comes back unchanged. Write (or update) the calendar event and ask
+//   // for the conference; a Meet link that already exists is kept (same request id, VID-14).
 //   const res = await upsertLinkedEvent({ ..., event: { ..., conference: calendarConferenceFor(location.kind) } });
 //   location = applyLinkedEventConference(location, res);   // pushed | initiated (Meet pending) | processing | failed
+//   // store it on scheduled_events.location (also the reschedule-safe join link's source, VID-11)
 //   // initiated: retry later with refreshMeetingConference(scheduledEventId); failed: email the host (VID-12)
 //   // with conferenceErrorMessage(location.error, location.kind) and show "Web conferencing details to follow."
 // Reschedules keep the conference (updateConference; Meet moves with its calendar event) unless

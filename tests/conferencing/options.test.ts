@@ -120,6 +120,8 @@ describe("listMeetEventTypes", () => {
     await t.db.update(eventTypes).set({ deletedAt: new Date() }).where(eq(eventTypes.id, gone.id));
     const other = await createUser(t.db);
     await createEventType(t.db, { owner: other, name: "Someone else", locations: [meet] });
+    // Review regression: the hidden adhoc types behind meeting polls and one-off meetings are not listed.
+    await createEventType(t.db, { owner: user, name: "Poll: Planning", locations: [meet], overrides: { type: "adhoc" } });
 
     const list = await listMeetEventTypes(user.id);
     expect(list.map((e) => e.name).sort()).toEqual(["30 Minute Virtual", "Coffee or Meet"]);

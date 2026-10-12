@@ -35,7 +35,7 @@ test.describe("Integrations > Google Meet", () => {
     const errors = trackPageErrors(page);
     await page.goto(MEET);
     await expect(page.getByRole("heading", { level: 1, name: "Google Meet" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Integrations & apps" })).toBeVisible();
+    await expect(page.locator("#main").getByRole("link", { name: "Integrations & apps" })).toBeVisible();
     if (googleConfigured) {
       await expect(page.getByText("Connect Google Calendar to use Google Meet")).toBeVisible();
       await expect(page.getByRole("link", { name: "Connect Google Calendar" })).toHaveAttribute(
@@ -62,6 +62,8 @@ test.describe("Integrations > Google Meet", () => {
     await connectGoogle(api, { accountEmail: "owner.calendar@gmail.com", calendars: [{ id: "owner.calendar@gmail.com", name: "owner.calendar@gmail.com", primary: true }] });
     await page.goto(`${MEET}?connected=google`);
     await expect(page.getByRole("status").filter({ hasText: "Google Calendar connected" })).toBeVisible();
+    // Shown once: the connect result leaves the address bar, so a reload does not repeat it.
+    await expect(page).toHaveURL(/\/app\/integrations\/conferencing\/google-meet$/);
     await expect(page.getByText("Google Meet is ready")).toBeVisible();
     await expect(page.getByText("New meetings on event types that use Google Meet get a Meet link from owner.calendar@gmail.com.")).toBeVisible();
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
@@ -93,9 +95,11 @@ test.describe("Integrations > Google Meet", () => {
   });
 
   test("answers 404 for conferencing providers out of scope", async ({ page }) => {
+    // The dashboard streams behind its loading skeleton, so the not-found page arrives with the shell (status 200).
     for (const provider of ["zoom", "microsoft-teams", "jitsi", "webex", "gotomeeting", "nope"]) {
-      const res = await page.goto(`/app/integrations/conferencing/${provider}`);
-      expect(res?.status(), provider).toBe(404);
+      await page.goto(`/app/integrations/conferencing/${provider}`);
+      await expect(page.getByRole("heading", { name: "Page not found" }), provider).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Google Meet" }), provider).toHaveCount(0);
     }
   });
 

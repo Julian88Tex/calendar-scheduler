@@ -17,6 +17,8 @@ import { ProviderLogo } from "@/components/ui/provider-logo";
 import { cn } from "@/lib/cn";
 import { CALENDAR_SETTINGS_PAGE_PATH, googleMeetConnectHref, type GoogleMeetStatus, type MeetEventType } from "@/lib/conferencing/options";
 import { CONFERENCING_COPY } from "@/lib/conferencing/kinds";
+import { MeetConnectNotices } from "./meet-connect-notices";
+import type { MeetNotice } from "./notices";
 
 export type GoogleMeetIntegrationProps = {
   status: GoogleMeetStatus;
@@ -25,33 +27,6 @@ export type GoogleMeetIntegrationProps = {
   isAdmin: boolean;
   notices: MeetNotice[];
 };
-
-export type MeetNotice = { tone: "success" | "error" | "warning"; message: string };
-
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-
-/** Messages for the query parameters the Google Calendar connect flow returns with (oauth-connect and the callback). */
-export function meetConnectNotices(sp: Record<string, string | string[] | undefined>, appName: string): MeetNotice[] {
-  const out: MeetNotice[] = [];
-  if (first(sp.connected) === "google") out.push({ tone: "success", message: "Google Calendar connected" });
-  if (first(sp.connected) === "google" && first(sp.reconnect_mismatch) === "1") {
-    out.push({ tone: "warning", message: "You connected a different Google account than the one that needs attention. Reconnect it with its own account." });
-  }
-  const calendarError = first(sp.calendar_error);
-  if (calendarError === "permissions") {
-    out.push({ tone: "error", message: `${appName} needs permission to see and edit events on your Google Calendar. Connect again and keep both calendar permissions checked on Google's consent screen.` });
-  } else if (calendarError === "limit") {
-    out.push({ tone: "error", message: "You can connect up to 20 calendar accounts. Disconnect one to add another." });
-  } else if (calendarError) {
-    out.push({ tone: "error", message: "We couldn't connect your calendar. Please try again." });
-  }
-  const oauth = first(sp.oauth_error);
-  if (oauth === "canceled") out.push({ tone: "warning", message: "Connecting Google Calendar was canceled." });
-  else if (oauth === "not_configured") out.push({ tone: "error", message: "Google Calendar is not configured on this server." });
-  else if (oauth === "expired") out.push({ tone: "error", message: "Your connection attempt expired. Please try again." });
-  else if (oauth) out.push({ tone: "error", message: "We couldn't connect your calendar. Please try again." });
-  return out;
-}
 
 type StateView = { badge: { label: string; variant: "success" | "warning" | "danger" | "neutral" }; title: string; body: string; tone: "success" | "info" | "warning" | "error" };
 
@@ -69,7 +44,7 @@ function stateView(s: GoogleMeetStatus, isAdmin: boolean): StateView {
       return {
         badge: { label: "Not configured on this server", variant: "neutral" },
         tone: "info",
-        title: "Not configured on this server",
+        title: "Google isn't set up on this server yet",
         body: isAdmin
           ? "Google Meet links come from Google Calendar. Create a Google Cloud OAuth client and add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the server environment. docs/GOOGLE_SETUP.md walks through every step."
           : "Ask your administrator to set up Google sign in and Calendar access for this server.",
@@ -182,11 +157,7 @@ export function GoogleMeetIntegration({ status, eventTypes, appName, isAdmin, no
   ];
   return (
     <div className="flex flex-col gap-6">
-      {notices.map((n) => (
-        <Banner key={n.message} variant={n.tone === "success" ? "success" : n.tone === "warning" ? "warning" : "error"}>
-          {n.message}
-        </Banner>
-      ))}
+      <MeetConnectNotices notices={notices} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-6">
           <Card>

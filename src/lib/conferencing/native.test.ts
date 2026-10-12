@@ -83,6 +83,34 @@ describe("applyLinkedEventConference", () => {
     expect(applyLinkedEventConference(pushed, { status: "pending", linkedEventId: "le-1", externalId: "ev-1" })).toMatchObject({ status: "pushed" });
   });
 
+  it("never drops a link the invitee already has for a write that yields no new one (review regression)", () => {
+    const pushed = queued({ status: "pushed", joinUrl: "https://meet.google.com/abc-defg-hij", location: "https://meet.google.com/abc-defg-hij" });
+    // The destination calendar was disconnected since: the Meet stays on the Google event that holds it.
+    expect(applyLinkedEventConference(pushed, { status: "skipped_no_calendar", linkedEventId: "le-1", externalId: "ev-1" })).toMatchObject({
+      status: "pushed",
+      joinUrl: "https://meet.google.com/abc-defg-hij",
+      error: null,
+    });
+    // An update answering with a pending, refused or unsafe conference keeps the existing link.
+    for (const conference of [
+      { status: "processing" as const, joinUrl: null },
+      { status: "failed" as const, joinUrl: null },
+      { status: "pushed" as const, joinUrl: "http://meet.google.com/insecure" },
+    ]) {
+      const loc = applyLinkedEventConference(pushed, { status: "synced", linkedEventId: "le-1", externalId: "ev-1", conference });
+      expect(loc).toMatchObject({ status: "pushed", joinUrl: "https://meet.google.com/abc-defg-hij", location: "https://meet.google.com/abc-defg-hij" });
+      expect(loc.data).toMatchObject({ linkedEventId: "le-1" });
+    }
+    // A new link from the provider replaces the old one.
+    const moved = applyLinkedEventConference(pushed, {
+      status: "synced",
+      linkedEventId: "le-1",
+      externalId: "ev-1",
+      conference: { status: "pushed", joinUrl: "https://meet.google.com/new-link-xyz", data: { conferenceId: "new-link-xyz" } },
+    });
+    expect(moved).toMatchObject({ status: "pushed", joinUrl: "https://meet.google.com/new-link-xyz", providerMeetingId: "new-link-xyz" });
+  });
+
   it("leaves other locations alone and refuses unsafe URLs", () => {
     const physical: ResolvedLocation = { ...queued(), kind: "physical", status: null, location: "Blue Bottle" };
     expect(applyLinkedEventConference(physical, { status: "skipped_no_calendar", linkedEventId: "", externalId: null })).toBe(physical);

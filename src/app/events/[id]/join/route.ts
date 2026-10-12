@@ -16,7 +16,8 @@ const BASE_HEADERS: Record<string, string> = {
   "X-Robots-Tag": "noindex, nofollow",
 };
 
-const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
+// /events is never framed (src/lib/net/frame-policy.ts): this page's own policy keeps frame-ancestors 'none'.
+const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 function html(page: { status: number; html: string }): Response {
   return new Response(page.html, {

@@ -120,18 +120,25 @@ export function applyLinkedEventConference(location: ResolvedLocation, result: U
   const kind = location.kind;
   if (!kind || !isConferenceKind(kind) || !calendarConferenceFor(kind)) return location;
   const linked = result.linkedEventId ? { linkedEventId: result.linkedEventId } : {};
+  const withLinked = (): ResolvedLocation => ({ ...location, data: { ...(location.data ?? {}), ...linked } });
+  // A link that already reached the invitee stays until the provider hands a new one: a later write that cannot
+  // reach the calendar (disconnected, read only, transient error) or answers without a usable conference keeps it.
+  const hasLink = location.status === "pushed" && isSafeJoinUrl(location.joinUrl);
   switch (result.status) {
     case "skipped_no_calendar":
-      return { ...location, joinUrl: null, location: null, status: "failed", error: "meet_requires_google_calendar", data: { ...(location.data ?? {}), ...linked } };
+      if (hasLink) return withLinked();
+      return { ...withLinked(), joinUrl: null, location: null, status: "failed", error: "meet_requires_google_calendar" };
     case "pending":
       // A transient calendar error: still queued, the provisioning job retries with backoff.
-      return { ...location, status: location.status === "pushed" ? "pushed" : "processing", data: { ...(location.data ?? {}), ...linked } };
+      return { ...withLinked(), status: hasLink ? "pushed" : "processing" };
     case "failed":
-      if (location.status === "pushed" && location.joinUrl) return location;
-      return { ...location, joinUrl: null, location: null, status: "failed", error: "calendar_write_failed", data: { ...(location.data ?? {}), ...linked } };
-    case "synced":
-      if (!result.conference && location.status === "pushed" && location.joinUrl) return { ...location, data: { ...(location.data ?? {}), ...linked } };
+      if (hasLink) return location;
+      return { ...withLinked(), joinUrl: null, location: null, status: "failed", error: "calendar_write_failed" };
+    case "synced": {
+      const fresh = result.conference?.status === "pushed" && isSafeJoinUrl(result.conference.joinUrl);
+      if (hasLink && !fresh) return withLinked();
       return applyCalendarConference(location, result.conference, linked);
+    }
     default:
       return location;
   }
@@ -182,18 +189,21 @@ export async function refreshMeetingConference(scheduledEventId: string): Promis
     return null;
   }
   if (!conference || conference.status === "processing") return null;
-  const next = applyCalendarConference(loc, conference, { linkedEventId });
   return db.transaction(async (tx) => {
-    // Lock the row and re-check: a reschedule or cancel that changed the location meanwhile wins.
+    // Lock the row and re-check: a reschedule, reassignment or cancel that changed the meeting meanwhile wins. The
+    // result is folded into the locked row (not the snapshot read before the provider call), so fields written
+    // meanwhile survive.
     const [current] = await tx
-      .select({ status: scheduledEvents.status, location: scheduledEvents.location })
+      .select({ status: scheduledEvents.status, location: scheduledEvents.location, organizerUserId: scheduledEvents.organizerUserId })
       .from(scheduledEvents)
       .where(eq(scheduledEvents.id, scheduledEventId))
       .for("update")
       .limit(1);
     const cur = current?.location;
-    if (!current || current.status !== "active" || !cur || cur.kind !== loc.kind || cur.configId !== loc.configId) return null;
+    if (!current || current.status !== "active" || current.organizerUserId !== meeting.organizerUserId) return null;
+    if (!cur || cur.kind !== loc.kind || cur.configId !== loc.configId) return null;
     if (cur.status !== "processing" && cur.status !== "initiated") return null;
+    const next = applyCalendarConference(cur, conference, { linkedEventId });
     await tx.update(scheduledEvents).set({ location: next, updatedAt: now() }).where(eq(scheduledEvents.id, scheduledEventId));
     return next;
   });

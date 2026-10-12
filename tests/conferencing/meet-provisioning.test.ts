@@ -200,6 +200,70 @@ describe("Google Meet provisioning", () => {
     expect(r.headers.get("location")).toBe("https://meet.google.com/xyz-abcd-efg");
   });
 
+  it("returns an already created conference unchanged when provisioning runs again (review regression)", async () => {
+    const s = await setup();
+    const jitsi = await conferencing.createConference(createArgs(s, "jitsi_conference"));
+    // A retried job must not mint a second room: the invitee was already sent the first one.
+    expect(await conferencing.createConference({ ...createArgs(s, "jitsi_conference"), location: jitsi })).toBe(jitsi);
+    const meet: ResolvedLocation = { ...s.queued, status: "pushed", joinUrl: "https://meet.google.com/abc-defg-hij", location: "https://meet.google.com/abc-defg-hij" };
+    expect(await conferencing.createConference({ ...createArgs(s), location: meet })).toBe(meet);
+    // A failed or reset conference is requested again; another kind is not reused.
+    expect(await conferencing.createConference({ ...createArgs(s), location: { ...meet, status: "failed" } })).toMatchObject({ status: "processing", joinUrl: null });
+    expect(await conferencing.createConference({ ...createArgs(s), location: conferencing.resetConference(meet) })).toMatchObject({ status: "processing", joinUrl: null });
+    expect(await conferencing.createConference({ ...createArgs(s), location: jitsi })).toMatchObject({ kind: "google_conference", status: "processing" });
+  });
+
+  it("folds a refreshed link into the meeting as it is at write time and skips a changed organizer (review regression)", async () => {
+    const s = await setup();
+    const other = await createUser(t.db);
+    const pendingEvent = (id: string, link: boolean) => ({
+      id,
+      status: "confirmed",
+      iCalUID: `${id}@google.com`,
+      ...(link ? { hangoutLink: "https://meet.google.com/late-link-abc" } : {}),
+      conferenceData: { conferenceId: link ? "late-link-abc" : undefined, createRequest: { status: { statusCode: link ? "success" : "pending" } } },
+      etag: '"1"',
+    });
+    let onRead: (() => Promise<void>) | null = null;
+    let ready = false;
+    const f = mockFetch(
+      { method: "POST", url: `${G}/calendars/host%40example.com/events`, handler: (req) => pendingEvent((req.body as { id: string }).id, false) },
+      {
+        method: "GET",
+        url: `${G}/calendars/host%40example.com/events/`,
+        handler: async (req) => {
+          const id = req.url.pathname.split("/").pop()!;
+          if (ready && onRead) await onRead();
+          return pendingEvent(id, ready);
+        },
+      },
+    );
+    try {
+      const queued = await conferencing.createConference(createArgs(s));
+      const res = await upsertLinkedEvent({ userId: s.user.id, purpose: "meeting", scheduledEventId: s.scheduledEvent.id, event: writeInput(s.scheduledEvent, queued.kind) });
+      const initiated = conferencing.applyLinkedEventConference(queued, res);
+      await t.db.update(scheduledEvents).set({ location: initiated }).where(eq(scheduledEvents.id, s.scheduledEvent.id));
+      ready = true;
+
+      // The host edits the location notes while Google is being asked: the note survives the refresh.
+      onRead = async () => {
+        await t.db.update(scheduledEvents).set({ location: { ...initiated, additionalInfo: "Bring the agenda" } }).where(eq(scheduledEvents.id, s.scheduledEvent.id));
+      };
+      expect(await conferencing.refreshMeetingConference(s.scheduledEvent.id)).toMatchObject({ status: "pushed", additionalInfo: "Bring the agenda" });
+      expect(await storedLocation(s.scheduledEvent.id)).toMatchObject({ status: "pushed", joinUrl: "https://meet.google.com/late-link-abc", additionalInfo: "Bring the agenda" });
+
+      // A reassignment to another organizer while Google answered: the old organizer's link is not stored.
+      await t.db.update(scheduledEvents).set({ location: initiated }).where(eq(scheduledEvents.id, s.scheduledEvent.id));
+      onRead = async () => {
+        await t.db.update(scheduledEvents).set({ organizerUserId: other.id }).where(eq(scheduledEvents.id, s.scheduledEvent.id));
+      };
+      expect(await conferencing.refreshMeetingConference(s.scheduledEvent.id)).toBeNull();
+      expect(await storedLocation(s.scheduledEvent.id)).toEqual(initiated);
+    } finally {
+      f.restore();
+    }
+  });
+
   it("never overwrites a meeting canceled or changed while the refresh ran", async () => {
     const s = await setup();
     const initiated: ResolvedLocation = { ...s.queued, status: "initiated", data: { provider: "google_meet" } };

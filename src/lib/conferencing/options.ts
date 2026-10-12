@@ -155,7 +155,10 @@ function withReason(s: GoogleMeetStatus): GoogleMeetStatus {
   return { ...s, reason: REASONS[s.state], fixUrl };
 }
 
-/** The user's own event types with a Google Meet location (the Google Meet page lists them). */
+/**
+ * The user's own event types with a Google Meet location (the Google Meet page lists them with Edit links). Only
+ * standard event types: the hidden "adhoc" types behind meeting polls and one-off meetings are not editable there.
+ */
 export async function listMeetEventTypes(userId: string): Promise<MeetEventType[]> {
   if (!isUuid(userId)) return [];
   const db = await getDb();
@@ -167,6 +170,7 @@ export async function listMeetEventTypes(userId: string): Promise<MeetEventType[
         eq(eventTypes.ownerUserId, userId),
         isNull(eventTypes.teamId),
         isNull(eventTypes.deletedAt),
+        eq(eventTypes.type, "standard"),
         sql`${eventTypes.locations} @> '[{"kind":"google_conference"}]'::jsonb`,
       ),
     )

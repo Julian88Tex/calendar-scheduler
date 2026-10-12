@@ -61,6 +61,11 @@ describe("conference kinds", () => {
     expect(isSafeJoinUrl("/relative")).toBe(false);
     expect(isSafeJoinUrl(`https://meet.google.com/${"a".repeat(2100)}`)).toBe(false);
     expect(isSafeJoinUrl(null)).toBe(false);
+    // Review regression: the URL parser drops tabs and newlines, but the raw value goes into the Location header.
+    expect(isSafeJoinUrl("https://meet.google.com/abc\r\nSet-Cookie: sid=x")).toBe(false);
+    expect(isSafeJoinUrl("https://meet.google.com/a\tbc")).toBe(false);
+    expect(isSafeJoinUrl("https://meet.google.com/a bc")).toBe(false);
+    expect(isSafeJoinUrl("https://meet.google.com/abc\u2028")).toBe(false);
     expect(conferenceJoinUrl({ joinUrl: " https://meet.google.com/abc " })).toBe("https://meet.google.com/abc");
     expect(conferenceJoinUrl({ joinUrl: "ftp://x" })).toBeNull();
   });

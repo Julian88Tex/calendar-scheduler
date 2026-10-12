@@ -61,6 +61,8 @@ describe("GET /events/{id}/join", () => {
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
+    // Review regression: this page's own policy must not drop the frame-ancestors rule of /events.
+    expect(r.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     const html = await r.text();
     expect(html).toContain("Your meeting link is being prepared. This page will refresh automatically.");
     expect(html).toContain(`content="5;url=/events/${se.id}/join?attempt=1"`);
@@ -132,6 +134,15 @@ describe("GET /events/{id}/join", () => {
     expect(html).not.toContain("<script>alert");
     expect(html).not.toContain("<b onclick");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("never puts a stored URL with line breaks into the Location header (review regression)", async () => {
+    const se = await meeting(pushed("https://meet.google.com/abc-defg-hij\r\nSet-Cookie: sid=stolen"));
+    const r = await join(se.id);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("location")).toBeNull();
+    expect(r.headers.get("set-cookie")).toBeNull();
+    expect(await r.text()).toContain("Web conferencing details to follow.");
   });
 
   it("answers 404 for unknown and malformed ids", async () => {

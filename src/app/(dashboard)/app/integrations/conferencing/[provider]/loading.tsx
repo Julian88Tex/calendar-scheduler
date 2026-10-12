@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading integration">
+    <div className="flex flex-col gap-6" role="status" aria-busy="true" aria-label="Loading integration">
       <Skeleton width={200} height={32} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-6">

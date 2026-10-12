@@ -125,9 +125,14 @@ export function isConferencePending(location: Pick<ResolvedLocation, "status" | 
   return (status === "processing" || status === "initiated") && !conferenceJoinUrl(location);
 }
 
-/** A URL we are willing to send people to: absolute https, no credentials, at most 2048 characters. */
+/**
+ * A URL we are willing to send people to: absolute https, no credentials, at most 2048 characters, and no whitespace
+ * or control characters (the URL parser silently drops tabs and newlines, but the raw value goes into a Location
+ * header and into emails).
+ */
 export function isSafeJoinUrl(url: string | null | undefined): url is string {
   if (!url || url.length > 2048) return false;
+  if (/[\u0000-\u0020\u007f-\u009f\u2028\u2029]/.test(url)) return false;
   try {
     const u = new URL(url);
     return u.protocol === "https:" && !u.username && !u.password && Boolean(u.hostname);
