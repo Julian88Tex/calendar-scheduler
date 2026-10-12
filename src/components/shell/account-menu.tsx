@@ -34,11 +34,13 @@ export type AccountMenuProps = {
 export function AccountMenu({ user, publicUrl, compact, operatorEmail }: AccountMenuProps) {
   const logoutForm = useRef<HTMLFormElement>(null);
   const [helpCenter, setHelpCenter] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
     <>
       <form ref={logoutForm} action="/api/auth/logout" method="post" hidden />
       <DropdownMenu>
         <DropdownMenuTrigger
+          ref={triggerRef}
           aria-label="Account menu"
           className="inline-flex items-center gap-1.5 rounded-full p-0.5 pr-1.5 text-ink-2 transition-colors hover:bg-pebble data-[state=open]:bg-pebble"
         >
@@ -93,7 +95,7 @@ export function AccountMenu({ user, publicUrl, compact, operatorEmail }: Account
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} />
+      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} returnFocusRef={triggerRef} />
     </>
   );
 }

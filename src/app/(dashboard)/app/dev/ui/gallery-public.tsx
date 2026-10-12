@@ -176,7 +176,7 @@ export function PublicSection() {
               />
             }
           >
-            <BookingMainSection className="pb-[29px]">
+            <BookingMainSection className="pb-[32px]">
               <BookingPanelHeading>Select a Date &amp; Time</BookingPanelHeading>
             </BookingMainSection>
             <div className="px-3 min-[600px]:px-5">
@@ -194,7 +194,7 @@ export function PublicSection() {
                 availableDates={month === "2026-10" ? AVAILABLE : []}
               />
             </div>
-            <BookingMainSection className="pt-[25px]">
+            <BookingMainSection className="pt-[29px]">
               <TimeZoneButton value={zone} onChange={setZone} hour12={hour12} onHour12Change={setHour12} />
             </BookingMainSection>
           </BookingCard>

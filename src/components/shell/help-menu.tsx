@@ -7,7 +7,7 @@
 "use client";
 
 import { BookOpen, Bug, HelpCircle, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Tooltip } from "../ui/tooltip";
@@ -23,8 +23,10 @@ export type HelpMenuProps = {
 export function HelpMenu({ operatorEmail, collapsed }: HelpMenuProps) {
   const [helpCenter, setHelpCenter] = useState(false);
   const [whatsNew, setWhatsNew] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const trigger = (
     <DropdownMenuTrigger
+      ref={triggerRef}
       aria-label={collapsed ? "Help" : undefined}
       className={cn(
         "flex h-10 w-full items-center gap-3 rounded-full px-3 text-[14px] font-semibold text-ink transition-colors hover:bg-pebble data-[state=open]:bg-pebble",
@@ -64,8 +66,8 @@ export function HelpMenu({ operatorEmail, collapsed }: HelpMenuProps) {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} />
-      <WhatsNewDialog open={whatsNew} onOpenChange={setWhatsNew} />
+      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} returnFocusRef={triggerRef} />
+      <WhatsNewDialog open={whatsNew} onOpenChange={setWhatsNew} returnFocusRef={triggerRef} />
     </>
   );
 }

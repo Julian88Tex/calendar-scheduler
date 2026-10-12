@@ -19,7 +19,7 @@ import { normalizeBrandColor, brandingStyle } from "@/components/public/public-p
 import { reportAbuseHref } from "@/components/public/report-abuse";
 import { isCronStale } from "@/components/shell/cron-warning-banner";
 import { eventTypeNewHref } from "@/components/shell/create-menu";
-import { BOTTOM_NAV, isNavActive, PRIMARY_NAV } from "@/components/shell/nav";
+import { BOTTOM_NAV, isNavActive, isNavItemActive, PRIMARY_NAV } from "@/components/shell/nav";
 import { parseTheme, themeAttribute, themedPath } from "@/components/shell/theme";
 
 describe("TimeInput parsing", () => {
@@ -364,6 +364,12 @@ describe("misc UI helpers", () => {
     expect(isNavActive("/app/availability/advanced", "/app/availability")).toBe(true);
     expect(isNavActive("/app/scheduling/meeting-polls", "/app/scheduling")).toBe(true);
     expect(isNavActive("/app/availabilityx", "/app/availability")).toBe(false);
+    // The event type editor and meeting poll pages keep Scheduling active.
+    const scheduling = PRIMARY_NAV[0]!;
+    expect(isNavItemActive("/app/event-types/new", scheduling)).toBe(true);
+    expect(isNavItemActive("/app/polls/abc/edit", scheduling)).toBe(true);
+    expect(isNavItemActive("/app/pollsx", scheduling)).toBe(false);
+    expect(isNavItemActive("/app/event-types/new", PRIMARY_NAV[2]!)).toBe(false);
   });
 
   it("builds the ET-02 create links", () => {

@@ -24,7 +24,7 @@ import { useReturnFocus } from "../ui/use-return-focus";
 import { CreateMenu, type CreateMenuMultiHost } from "./create-menu";
 import { HelpMenu } from "./help-menu";
 import { setMobileNavOpen, useMobileNavOpen } from "./mobile-nav";
-import { BOTTOM_NAV, isNavActive, PRIMARY_NAV, type NavIcon, type NavItem } from "./nav";
+import { BOTTOM_NAV, isNavItemActive, PRIMARY_NAV, type NavIcon, type NavItem } from "./nav";
 
 const ICONS: Record<NavIcon, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
   link: LinkIcon,
@@ -54,7 +54,7 @@ export type AppSidebarProps = {
 
 function NavLink({ item, pathname, collapsed, onNavigate }: { item: NavItem; pathname: string; collapsed: boolean; onNavigate?: () => void }) {
   const Icon = ICONS[item.icon];
-  const active = isNavActive(pathname, item.href);
+  const active = isNavItemActive(pathname, item);
   const link = (
     <Link
       href={item.href}

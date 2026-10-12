@@ -6,6 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { eventDotColor } from "@/components/public/event-type-list";
+import { privacyPolicyHref } from "@/components/public/public-footer-links";
 import { mailtoAddress, reportAbuseHref } from "@/components/public/report-abuse";
 import { cronLastRunLabel, isCronStale } from "@/components/shell/cron-warning-banner";
 import { CHANGELOG, HELP_ARTICLES, reportProblemHref } from "@/components/shell/help-center";
@@ -83,6 +85,9 @@ describe("docs/SCOPE.md: the shell links only to kept areas", () => {
   });
 });
 
+/** U+2013 and U+2014 (GEN-11), built from char codes so this file stays free of them. */
+const DASHES = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+
 describe("Help center and What's new copy", () => {
   const texts = [
     ...HELP_ARTICLES.flatMap((a) => [a.title, ...a.paragraphs]),
@@ -101,7 +106,7 @@ describe("Help center and What's new copy", () => {
 
   it("follows the copy rules: no em or en dashes and no competitor name", () => {
     for (const t of texts) {
-      expect(t, t).not.toMatch(/[–—]/);
+      expect(t, t).not.toMatch(DASHES);
       expect(t.toLowerCase(), t).not.toContain("calendly");
     }
   });
@@ -145,5 +150,27 @@ describe("operator mailto links (GEN-19, GEN-21)", () => {
 
   it("builds the Report a problem link", () => {
     expect(reportProblemHref("owner@example.com")).toMatch(/^mailto:owner@example\.com\?subject=Report%20a%20problem%20with%20/);
+  });
+});
+
+describe("public page link and color hardening", () => {
+  it("keeps only http(s) or same-site privacy policy links", () => {
+    expect(privacyPolicyHref(null)).toBe("/privacy");
+    expect(privacyPolicyHref("")).toBe("/privacy");
+    expect(privacyPolicyHref("https://example.com/privacy")).toBe("https://example.com/privacy");
+    expect(privacyPolicyHref("  http://example.com/p?x=1 ")).toBe("http://example.com/p?x=1");
+    expect(privacyPolicyHref("/legal/privacy")).toBe("/legal/privacy");
+    expect(privacyPolicyHref("javascript:alert(1)")).toBe("/privacy");
+    expect(privacyPolicyHref("JaVaScRiPt:alert(1)")).toBe("/privacy");
+    expect(privacyPolicyHref("data:text/html,<script>alert(1)</script>")).toBe("/privacy");
+    expect(privacyPolicyHref("//evil.example/privacy")).toBe("/privacy");
+    expect(privacyPolicyHref("/\\evil.example")).toBe("/privacy");
+    expect(privacyPolicyHref("https://exa mple.com")).toBe("/privacy");
+  });
+
+  it("only lets hex event colors into the landing page style attribute", () => {
+    expect(eventDotColor("#17e885")).toBe("#17e885");
+    expect(eventDotColor("red; background-image: url(https://evil.example/x)")).toBe("#8247f5");
+    expect(eventDotColor(null)).toBe("#8247f5");
   });
 });

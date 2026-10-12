@@ -8,6 +8,7 @@
 // changelog dialog.
 "use client";
 
+import type * as React from "react";
 import { APP_NAME } from "@/lib/brand";
 import { mailtoAddress } from "../public/report-abuse";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
@@ -122,6 +123,8 @@ export type HelpCenterDialogProps = {
   onOpenChange: (open: boolean) => void;
   /** Instance operator email for the "Report a problem" footer link (MK-02). */
   operatorEmail?: string | null;
+  /** The menu trigger that opened the dialog (focus returns there on close). */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 };
 
 /** GEN-19 "Report a problem": mailto the instance operator with subject "Report a problem with {AppName}". */
@@ -129,9 +132,16 @@ export function reportProblemHref(operatorEmail: string): string {
   return `mailto:${mailtoAddress(operatorEmail)}?subject=${encodeURIComponent(`Report a problem with ${APP_NAME}`)}`;
 }
 
-export function HelpCenterDialog({ open, onOpenChange, operatorEmail }: HelpCenterDialogProps) {
+export function HelpCenterDialog({ open, onOpenChange, operatorEmail, returnFocusRef }: HelpCenterDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Help center" description={`How to get the most out of ${APP_NAME}.`} size="lg">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Help center"
+      description={`How to get the most out of ${APP_NAME}.`}
+      size="lg"
+      returnFocusRef={returnFocusRef}
+    >
       <Accordion type="single" collapsible className="-mt-1">
         {HELP_ARTICLES.map((a) => (
           <AccordionItem key={a.id} value={a.id}>
@@ -158,9 +168,17 @@ export function HelpCenterDialog({ open, onOpenChange, operatorEmail }: HelpCent
   );
 }
 
-export function WhatsNewDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function WhatsNewDialog({
+  open,
+  onOpenChange,
+  returnFocusRef,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
+}) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="What's new" description={`Recent improvements to ${APP_NAME}.`} size="md">
+    <Dialog open={open} onOpenChange={onOpenChange} title="What's new" description={`Recent improvements to ${APP_NAME}.`} size="md" returnFocusRef={returnFocusRef}>
       <div className="flex flex-col gap-5">
         {CHANGELOG.map((section) => (
           <section key={section.title}>

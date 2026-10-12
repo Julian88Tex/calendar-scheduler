@@ -17,10 +17,12 @@ export type NavItem = {
   icon: NavIcon;
   /** Only owners, admins and instance admins see it. */
   adminOnly?: boolean;
+  /** Other path prefixes that keep the item active (the event type editor and meeting polls belong to Scheduling). */
+  matchPrefixes?: readonly string[];
 };
 
 export const PRIMARY_NAV: readonly NavItem[] = [
-  { label: "Scheduling", href: "/app/scheduling", icon: "link" },
+  { label: "Scheduling", href: "/app/scheduling", icon: "link", matchPrefixes: ["/app/event-types", "/app/polls"] },
   { label: "Meetings", href: "/app/meetings", icon: "calendar" },
   { label: "Availability", href: "/app/availability", icon: "clock" },
   { label: "Integrations & apps", href: "/app/integrations", icon: "layout-grid" },
@@ -35,4 +37,9 @@ export const ALL_NAV: readonly NavItem[] = [...PRIMARY_NAV, ...BOTTOM_NAV];
 /** Active for the item's path and every sub-path (/app/availability/advanced keeps Availability active). */
 export function isNavActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** isNavActive for the item's href or any of its matchPrefixes (/app/event-types/new keeps Scheduling active). */
+export function isNavItemActive(pathname: string, item: Pick<NavItem, "href" | "matchPrefixes">): boolean {
+  return isNavActive(pathname, item.href) || (item.matchPrefixes ?? []).some((p) => isNavActive(pathname, p));
 }

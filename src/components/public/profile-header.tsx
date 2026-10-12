@@ -2,7 +2,8 @@
 //
 // ProfileHeader (SPEC BK-01, BK-02; owner reference .reference/profile.png): the top of a landing page: the avatar
 // (64px circle, initials on #E7EDF6 without a photo), the host or team name as the page h1 (#476788, 600, 16px) and the
-// welcome message (#476788, 14px, centered, about 280px wide). Optional logo at the card's top-left (BR-05).
+// welcome message (#476788, 14px, centered, 286px wide: in Figtree that breaks the default welcome message into the
+// same three lines as the owner's page). Optional logo at the card's top-left (BR-05).
 import { cn } from "@/lib/cn";
 import { Avatar } from "../ui/avatar";
 
@@ -28,7 +29,7 @@ export function ProfileHeader({ name, avatarUrl, welcomeMessage, logoUrl, hidden
       <Avatar src={avatarUrl} name={name} alt="" size={64} />
       <h1 className="mt-[18px] text-[16px] leading-6 font-semibold break-words text-ink-2">{name}</h1>
       {welcomeMessage && (
-        <p className="mt-[23px] max-w-[280px] text-[14px] leading-[21px] break-words whitespace-pre-line text-ink-2">{welcomeMessage}</p>
+        <p className="mt-[23px] max-w-[286px] text-[14px] leading-[21px] break-words whitespace-pre-line text-ink-2">{welcomeMessage}</p>
       )}
     </div>
   );

@@ -170,7 +170,7 @@ export function MonthCalendar({
 
   return (
     <div className={cn("relative flex min-w-0 flex-col", className)} aria-busy={loading || undefined}>
-      <div className={cn("grid grid-cols-[38px_minmax(120px,auto)_38px] items-center justify-center gap-3", size === "md" ? "mb-[19px]" : "mb-2")}>
+      <div className={cn("grid grid-cols-[38px_minmax(120px,auto)_38px] items-center justify-center gap-3", size === "md" ? "mb-[18px]" : "mb-2")}>
         <button
           type="button"
           aria-label={labels.previousMonth}

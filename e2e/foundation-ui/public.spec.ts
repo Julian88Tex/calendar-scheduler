@@ -51,19 +51,26 @@ test.describe("public components", () => {
     const landing = page.getByTestId("landing-replica");
     const ribbon = landing.getByTestId("powered-by-ribbon");
     await expect(ribbon).toHaveAccessibleName(/^Powered by /);
-    const box = (await ribbon.boundingBox())!;
-    expect(Math.round(box.width)).toBe(105);
-    expect(Math.round(box.height)).toBe(105);
-    // top -5px and right -5px from the card's padding box (inside its 1px border).
-    const inner = await ribbon.evaluate((el) => {
+    // top -5px and right -5px from the card's padding box (inside its 1px border). Both rectangles are read in one
+    // evaluate so a late scroll to #public cannot shift one measurement against the other.
+    const geometry = await ribbon.evaluate((el) => {
+      const box = el.getBoundingClientRect();
       const card = el.parentElement!;
       const r = card.getBoundingClientRect();
       const cs = getComputedStyle(card);
-      return { right: r.right - parseFloat(cs.borderRightWidth), top: r.top + parseFloat(cs.borderTopWidth), border: cs.borderTopWidth };
+      return {
+        width: box.width,
+        height: box.height,
+        overRight: box.right - (r.right - parseFloat(cs.borderRightWidth)),
+        overTop: r.top + parseFloat(cs.borderTopWidth) - box.top,
+        border: cs.borderTopWidth,
+      };
     });
-    expect(inner.border).toBe("1px");
-    expect(Math.round(box.x + box.width - inner.right)).toBe(5);
-    expect(Math.round(inner.top - box.y)).toBe(5);
+    expect(Math.round(geometry.width)).toBe(105);
+    expect(Math.round(geometry.height)).toBe(105);
+    expect(geometry.border).toBe("1px");
+    expect(Math.round(geometry.overRight)).toBe(5);
+    expect(Math.round(geometry.overTop)).toBe(5);
     const band = await ribbon.evaluate((el) => {
       const b = el.querySelector("span:last-child") as HTMLElement;
       const cs = getComputedStyle(b);
@@ -95,10 +102,12 @@ test.describe("public components", () => {
 
     // Phones: the card is full-bleed and the ribbon sits flush in the corner (no horizontal scroll).
     await page.setViewportSize({ width: 390, height: 844 });
-    const phoneBox = (await ribbon.boundingBox())!;
-    const phoneCard = (await ribbon.locator("..").boundingBox())!;
-    expect(Math.round(phoneBox.x + phoneBox.width)).toBe(Math.round(phoneCard.x + phoneCard.width));
-    expect(Math.round(phoneBox.y)).toBe(Math.round(phoneCard.y));
+    const flush = await ribbon.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const card = el.parentElement!.getBoundingClientRect();
+      return { right: Math.round(box.right - card.right), top: Math.round(box.top - card.top) };
+    });
+    expect(flush).toEqual({ right: 0, top: 0 });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

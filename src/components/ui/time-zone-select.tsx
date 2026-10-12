@@ -153,7 +153,7 @@ export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale
   const time = now !== null ? currentLocalTime(value, { hour12, locale, at: now }) : null;
   const headingId = `tz-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+    <div className={cn("flex min-w-0 flex-col items-start", className)}>
       <span id={headingId} className="text-[14px] leading-5 font-bold text-ink">
         {label}
       </span>

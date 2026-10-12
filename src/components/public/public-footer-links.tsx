@@ -27,6 +27,24 @@ export type PublicFooterLinksProps = {
 
 const noopSubscribe = () => () => {};
 
+/**
+ * The privacy policy link target: a host-configured http(s) URL or a same-site path ("/privacy"); anything else
+ * (javascript:, data:, protocol-relative "//host") falls back to /privacy.
+ */
+export function privacyPolicyHref(url: string | null | undefined): string {
+  const t = (url ?? "").trim();
+  if (/^\/(?![/\\])/.test(t)) return t;
+  if (/^https?:\/\/[^\s]+$/i.test(t)) {
+    try {
+      const parsed = new URL(t);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+    } catch {
+      // invalid URL: fall back below
+    }
+  }
+  return "/privacy";
+}
+
 const LINK = "rounded-[4px] text-[13px] leading-5 font-semibold text-brand-strong hover:underline";
 
 export function PublicFooterLinks({ operatorEmail, pageUrl, showCookieSettings = true, className, showPrivacyPolicy = true, privacyUrl }: PublicFooterLinksProps) {
@@ -38,7 +56,7 @@ export function PublicFooterLinks({ operatorEmail, pageUrl, showCookieSettings =
     window.addEventListener(OPEN_COOKIE_SETTINGS_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_COOKIE_SETTINGS_EVENT, onOpen);
   }, [showCookieSettings]);
-  const privacyHref = privacyUrl || "/privacy";
+  const privacyHref = privacyPolicyHref(privacyUrl);
   const external = /^https?:\/\//.test(privacyHref);
   return (
     <nav aria-label="Footer" className={cn("flex flex-wrap items-center gap-x-8 gap-y-2", className)}>

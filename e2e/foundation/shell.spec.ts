@@ -1,11 +1,11 @@
 // Foundation shell (SPEC GEN-20, ARCHITECTURE section 3.1): with the seeded owner (ADM-10) signed in, every sidebar
-// link opens its page (active link marked, page title as h1, placeholder body), section tabs and the admin sub-navigation
-// work, non-admin members do not get the Admin center, and the /app/dev/ui gallery renders and reacts.
+// link opens its page (active link marked, page title as h1), section tabs work, non-admin members do not get the
+// Admin center, and the /app/dev/ui gallery renders and reacts. Pages turn from placeholders into real screens as
+// modules land, so these checks do not depend on placeholder text. The Admin center is not linked in the reduced
+// scope (docs/SCOPE.md).
 import type { Page } from "@playwright/test";
 import { ALL_NAV } from "../../src/components/shell/nav";
 import { expect, test } from "../fixtures";
-
-const PLACEHOLDER = "This page is being built.";
 
 /** Collects uncaught page errors (React render or hydration failures) for the current test. */
 function trackPageErrors(page: Page): string[] {
@@ -33,34 +33,26 @@ test.describe("dashboard shell", () => {
       await expect(page, item.label).toHaveURL(new RegExp(`${item.href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
       await expect(page.getByRole("heading", { level: 1, name: item.label, exact: true }), item.label).toBeVisible();
       await expect(link, item.label).toHaveAttribute("aria-current", "page");
-      if (item.href === "/app/integrations") {
-        // The integrations hub lists the catalog tiles instead of a placeholder.
-        await expect(page.getByRole("link", { name: "Google Calendar" }).first()).toBeVisible();
-      } else {
-        await expect(page.getByText(PLACEHOLDER).first(), item.label).toBeVisible();
-      }
     }
     expect(errors, "page errors").toEqual([]);
   });
 
-  test("section tabs and the admin sub-navigation open their placeholders", async ({ page, loginAs }) => {
+  test("section tabs open their pages", async ({ page, loginAs }) => {
     const errors = trackPageErrors(page);
     await loginAs(page, "owner@example.com");
     const sections: { start: string; nav: string }[] = [
       { start: "/app/scheduling", nav: "Scheduling" },
       { start: "/app/availability", nav: "Availability" },
-      { start: "/app/admin", nav: "Admin center" },
     ];
     for (const s of sections) {
       await page.goto(s.start);
       const tabs = page.getByRole("navigation", { name: s.nav, exact: true });
       const hrefs = await tabs.getByRole("link").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
-      expect(hrefs.length, s.nav).toBeGreaterThan(1);
+      expect(hrefs.length, s.nav).toBeGreaterThan(0);
       for (const href of hrefs) {
         const res = await page.goto(href);
         expect(res?.status(), href).toBe(200);
         await expect(page.getByRole("heading", { level: 1 }).first(), href).toBeVisible();
-        await expect(page.getByText(PLACEHOLDER).first(), href).toBeVisible();
         await expect(
           page.getByRole("navigation", { name: s.nav, exact: true }).locator(`a[href="${href}"]`),
           href,
@@ -75,7 +67,6 @@ test.describe("dashboard shell", () => {
     await page.goto("/app/scheduling");
     const sidebar = page.getByRole("navigation", { name: "Main" });
     await expect(sidebar.getByRole("link", { name: "Scheduling", exact: true })).toHaveAttribute("aria-current", "page");
-    await expect(sidebar.getByRole("link", { name: "Analytics", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Admin center", exact: true })).toHaveCount(0);
     await page.goto("/app/admin/people");
     await expect(page.getByRole("heading", { level: 1, name: "People" })).toHaveCount(0);

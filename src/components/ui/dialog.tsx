@@ -35,6 +35,11 @@ export type DialogProps = {
   preventOutsideClose?: boolean;
   /** Classes for the scrollable body. */
   bodyClassName?: string;
+  /**
+   * Element to focus on close when the element that opened the dialog is gone (dialogs opened from a menu item pass
+   * the menu trigger; GEN-05 "dialogs restore focus").
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 };
 
 const WIDTHS: Record<DialogSize, string> = {
@@ -62,8 +67,9 @@ export function Dialog({
   hideTitle,
   preventOutsideClose,
   bodyClassName,
+  returnFocusRef,
 }: DialogProps) {
-  const returnFocus = useReturnFocus(!trigger);
+  const returnFocus = useReturnFocus(!trigger, returnFocusRef);
   return (
     <RadixDialog.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}

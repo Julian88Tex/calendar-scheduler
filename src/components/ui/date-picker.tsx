@@ -219,7 +219,7 @@ export function DateRangePicker({ value, onChange, min, max, maxDays, presets, w
             today={today}
             weekStart={weekStart}
             locale={locale}
-            minDate={picking ? draft.start ?? min : min}
+            minDate={min}
             maxDate={effectiveMax}
             minMonth={min ? monthOf(min) : undefined}
             maxMonth={max ? monthOf(max) : undefined}

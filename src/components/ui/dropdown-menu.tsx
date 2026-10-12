@@ -11,6 +11,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
+import { menuTriggerOf, rememberReturnTarget } from "./use-return-focus";
 
 export const DropdownMenu = RadixMenu.Root;
 export const DropdownMenuTrigger = RadixMenu.Trigger;
@@ -48,8 +49,15 @@ const ITEM =
   "relative flex min-h-10 cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[14px] leading-5 text-ink outline-none " +
   "data-[highlighted]:bg-primary-soft data-[disabled]:pointer-events-none data-[disabled]:text-ink-3 [&_svg]:size-4 [&_svg]:shrink-0";
 
-export function DropdownMenuItem({ icon, destructive, href, shortcut, className, children, asChild, ...rest }: DropdownMenuItemProps) {
+export function DropdownMenuItem({ icon, destructive, href, shortcut, className, children, asChild, onSelect, ...rest }: DropdownMenuItemProps) {
   const cls = cn(ITEM, destructive && "text-danger-text data-[highlighted]:bg-danger-soft", className);
+  // A dialog opened from this item mounts after the menu closes: remember the menu trigger as its focus return target.
+  const select = onSelect
+    ? (event: Event) => {
+        rememberReturnTarget(menuTriggerOf(event.currentTarget instanceof Element ? event.currentTarget : null));
+        onSelect(event);
+      }
+    : undefined;
   const content = (
     <>
       {icon && <span className={cn("inline-flex", destructive ? "text-danger-text" : "text-ink-2")}>{icon}</span>}
@@ -59,20 +67,20 @@ export function DropdownMenuItem({ icon, destructive, href, shortcut, className,
   );
   if (asChild) {
     return (
-      <RadixMenu.Item asChild className={cls} {...rest}>
+      <RadixMenu.Item asChild className={cls} onSelect={select} {...rest}>
         {children}
       </RadixMenu.Item>
     );
   }
   if (href) {
     return (
-      <RadixMenu.Item asChild className={cls} {...rest}>
+      <RadixMenu.Item asChild className={cls} onSelect={select} {...rest}>
         <Link href={href}>{content}</Link>
       </RadixMenu.Item>
     );
   }
   return (
-    <RadixMenu.Item className={cls} {...rest}>
+    <RadixMenu.Item className={cls} onSelect={select} {...rest}>
       {content}
     </RadixMenu.Item>
   );
