@@ -13,7 +13,7 @@ export function ResendVerificationButton() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   return (
     <div className="flex flex-col gap-4">
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:absolute">
         {result ? <Banner variant={result.ok ? "success" : "error"}>{result.message}</Banner> : null}
       </div>
       <Button

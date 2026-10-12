@@ -6,6 +6,8 @@
 //   only, auth_tokens purpose password_reset, 60 minutes) and emails /reset-password/{token} after the response.
 // - The GET page only peeks at the token; resetPassword (the POST) consumes it in a transaction with a row lock, so a
 //   link works exactly once ("This link has expired. Request a new one." afterwards).
+// - A link only works for the address it was sent to: when the account's email changed since, the link is expired
+//   (the old mailbox must not be able to set the password, and the reset must not mark the new address verified).
 // - OAuth-only accounts can set a password this way. A successful reset also proves the address, so an unverified
 //   email becomes verified, and every other outstanding reset link of the user is invalidated. The caller creates the
 //   session and revokes the user's other sessions.
@@ -67,7 +69,7 @@ export async function requestPasswordReset(
 async function findLiveResetToken(db: DbOrTx, token: string, lock: boolean) {
   if (!token || token.length > 200) return null;
   const q = db
-    .select({ id: authTokens.id, userId: authTokens.userId })
+    .select({ id: authTokens.id, userId: authTokens.userId, email: authTokens.email })
     .from(authTokens)
     .where(
       and(
@@ -82,17 +84,22 @@ async function findLiveResetToken(db: DbOrTx, token: string, lock: boolean) {
   return rows[0] ?? null;
 }
 
+/** True when the token was issued for the account's current address (requestPasswordReset always records it). */
+function sentToCurrentAddress(row: { email: string | null }, user: { emailNormalized: string }): boolean {
+  return row.email !== null && row.email === user.emailNormalized;
+}
+
 /** Validates a reset token without consuming it (for the GET page). */
 export async function peekPasswordResetToken(token: string): Promise<{ email: string } | null> {
   const db = await getDb();
   const row = await findLiveResetToken(db, token, false);
   if (!row?.userId) return null;
   const [user] = await db
-    .select({ email: users.email })
+    .select({ email: users.email, emailNormalized: users.emailNormalized })
     .from(users)
     .where(and(eq(users.id, row.userId), isNull(users.deletedAt)))
     .limit(1);
-  return user ? { email: user.email } : null;
+  return user && sentToCurrentAddress(row, user) ? { email: user.email } : null;
 }
 
 /** Consumes the token and sets the new password; returns the user id (the caller creates the session). */
@@ -108,12 +115,19 @@ export async function resetPassword(
     const row = await findLiveResetToken(tx, token, true);
     if (!row?.userId) throw new AppError("not_found", RESET_LINK_EXPIRED_MESSAGE);
     const [user] = await tx
-      .select({ id: users.id, name: users.name, email: users.email, passwordHash: users.passwordHash, emailVerifiedAt: users.emailVerifiedAt })
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        emailNormalized: users.emailNormalized,
+        passwordHash: users.passwordHash,
+        emailVerifiedAt: users.emailVerifiedAt,
+      })
       .from(users)
       .where(and(eq(users.id, row.userId), isNull(users.deletedAt)))
       .limit(1)
       .for("update");
-    if (!user) throw new AppError("not_found", RESET_LINK_EXPIRED_MESSAGE);
+    if (!user || !sentToCurrentAddress(row, user)) throw new AppError("not_found", RESET_LINK_EXPIRED_MESSAGE);
     const at = now();
     await tx
       .update(users)

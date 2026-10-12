@@ -1,12 +1,12 @@
 // OWNER: foundation-ui.
 //
-// AppSidebar (SPEC GEN-20, GEN-04, walkthrough 4.1): the 240px white sidebar with a #D4E0ED right border: logo,
-// collapse button, the full-width "+ Create" pill, the nav items in order (Scheduling, Meetings, Availability,
-// Contacts, Workflows, Integrations & apps, Routing) and the bottom group (Analytics, Admin center for owners, admins
-// and instance admins, Help flyout). The active item (its path or any sub-path) is a #F4F8FF pill with #004EBA text and
-// icon and aria-current="page". Collapsing shrinks it to a 72px icon rail with tooltips and a "+" create button; the
-// state persists through onCollapsedChange (users.preferences.sidebarCollapsed). Below 768px the sidebar is a drawer
-// (focus trap, Escape and scrim close, closes on navigation) opened from AppHeader's 56px top bar.
+// AppSidebar (SPEC GEN-20, GEN-04, walkthrough 4.1, docs/SCOPE.md): the 240px white sidebar with a #D4E0ED right
+// border: logo, collapse button, the full-width "+ Create" pill, the nav items in order (Scheduling, Meetings,
+// Availability, Integrations & apps; the areas docs/SCOPE.md skips get no entry) and the bottom group with the Help
+// flyout. The active item (its path or any sub-path) is a #F4F8FF pill with #004EBA text and icon and
+// aria-current="page". Collapsing shrinks it to a 72px icon rail with tooltips and a "+" create button; the state
+// persists through onCollapsedChange (users.preferences.sidebarCollapsed). Below 768px the sidebar is a drawer (focus
+// trap, Escape and scrim close, closes on navigation) opened from AppHeader's 56px top bar.
 "use client";
 
 import * as RadixDialog from "@radix-ui/react-dialog";
@@ -48,7 +48,7 @@ export type AppSidebarProps = {
   /** Instance operator email for Help > Report a problem. */
   operatorEmail?: string | null;
   className?: string;
-  /** Data for the Create menu's Round robin and Collective step (ET-02). */
+  /** Kept for compatibility: multi-host event types are out of scope (docs/SCOPE.md), so the Create menu ignores it. */
   createMenu?: CreateMenuMultiHost;
 };
 
@@ -89,7 +89,6 @@ function SidebarBody({
   pathname,
   canSeeAdminCenter,
   operatorEmail,
-  createMenu,
   onNavigate,
   header,
 }: {
@@ -97,7 +96,6 @@ function SidebarBody({
   pathname: string;
   canSeeAdminCenter: boolean;
   operatorEmail?: string | null;
-  createMenu?: CreateMenuMultiHost;
   onNavigate?: () => void;
   header: React.ReactNode;
 }) {
@@ -106,7 +104,7 @@ function SidebarBody({
     <div className="flex h-full min-h-0 flex-col">
       {header}
       <div className={cn("px-4 pb-4", collapsed && "flex justify-center px-0")}>
-        <CreateMenu variant={collapsed ? "compact" : "full"} multiHost={createMenu} />
+        <CreateMenu variant={collapsed ? "compact" : "full"} />
       </div>
       <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col justify-between gap-4 overflow-y-auto overflow-x-hidden px-3 pb-4 [scrollbar-width:thin]">
         <ul className="flex flex-col gap-1">
@@ -127,7 +125,7 @@ function SidebarBody({
   );
 }
 
-export function AppSidebar({ canSeeAdminCenter, initialCollapsed = false, onCollapsedChange, operatorEmail, className, createMenu }: AppSidebarProps) {
+export function AppSidebar({ canSeeAdminCenter, initialCollapsed = false, onCollapsedChange, operatorEmail, className }: AppSidebarProps) {
   const pathname = usePathname() ?? "";
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [, startTransition] = useTransition();
@@ -168,7 +166,6 @@ export function AppSidebar({ canSeeAdminCenter, initialCollapsed = false, onColl
           pathname={pathname}
           canSeeAdminCenter={canSeeAdminCenter}
           operatorEmail={operatorEmail}
-          createMenu={createMenu}
           header={
             <div className={cn("flex h-16 shrink-0 items-center gap-2", collapsed ? "flex-col justify-center gap-1 py-3 h-auto" : "justify-between pr-2 pl-5")}>
               <Logo variant={collapsed ? "mark" : "full"} href="/app/scheduling" size={collapsed ? 28 : 30} />
@@ -201,7 +198,6 @@ export function AppSidebar({ canSeeAdminCenter, initialCollapsed = false, onColl
               pathname={pathname}
               canSeeAdminCenter={canSeeAdminCenter}
               operatorEmail={operatorEmail}
-              createMenu={createMenu}
               onNavigate={() => setMobileNavOpen(false)}
               header={
                 <div className="flex h-14 shrink-0 items-center justify-between pr-2 pl-4">

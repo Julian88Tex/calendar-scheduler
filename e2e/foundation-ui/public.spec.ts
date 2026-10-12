@@ -67,14 +67,14 @@ test.describe("public components", () => {
     const band = await ribbon.evaluate((el) => {
       const b = el.querySelector("span:last-child") as HTMLElement;
       const cs = getComputedStyle(b);
-      return { width: cs.width, height: cs.height, transform: cs.transform, top: cs.top, left: cs.left };
+      return { width: cs.width, height: cs.height, rotate: cs.rotate, transform: cs.transform, top: cs.top, left: cs.left };
     });
     expect(band.width).toBe("160px");
     expect(band.height).toBe("32px");
     expect(band.top).toBe("25px");
     expect(band.left).toBe("-16px");
-    // rotate(45deg) = matrix(cos, sin, -sin, cos, 0, 0)
-    expect(band.transform).toMatch(/^matrix\(0\.707\d*, 0\.707\d*, -0\.707\d*, 0\.707\d*, 0, 0\)$/);
+    // Tailwind's rotate-45 sets the individual `rotate` property (or a matrix(cos, sin, -sin, cos, 0, 0) transform).
+    expect(band.rotate === "45deg" || /^matrix\(0\.707\d*, 0\.707\d*, -0\.707\d*, 0\.707\d*, 0, 0\)$/.test(band.transform), JSON.stringify(band)).toBe(true);
     await expect(ribbon).toContainText(/Powered by/i);
 
     const footer = landing.getByRole("navigation", { name: "Footer" });

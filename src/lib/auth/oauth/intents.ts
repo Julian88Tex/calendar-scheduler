@@ -84,7 +84,16 @@ async function finishSignIn(ctx: OAuthCallbackContext, res: OAuthResolution, opt
     await sendWelcomeEmail(res.user);
   }
   if (res.linked) {
-    await auditAuth("login_method.connected", { user: res.user, details: { provider: ctx.provider, email: ctx.profile.email, auto: true }, meta });
+    await auditAuth("login_method.connected", {
+      user: res.user,
+      details: {
+        provider: ctx.provider,
+        email: ctx.profile.email,
+        auto: true,
+        ...(res.securedUnverifiedAccount ? { securedUnverifiedAccount: true } : {}),
+      },
+      meta,
+    });
   }
   const destination = res.created ? POST_SIGNUP_PATH : safeNextPath(ctx.returnTo);
   if (res.user.twoFactorEnabled) {

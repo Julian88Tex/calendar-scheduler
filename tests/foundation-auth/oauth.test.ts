@@ -273,17 +273,34 @@ describe("login and signup intents (AU-02, CAL-17)", () => {
   });
 
   it("links a password account with the same verified email instead of creating one", async () => {
-    const existing = await createUser(t.db, { email: "gina@gmail.example", passwordHash: await hashPassword("pw-123456"), overrides: { emailVerifiedAt: null } });
+    const pw = await hashPassword("pw-123456");
+    const existing = await createUser(t.db, { email: "gina@gmail.example", passwordHash: pw });
     const res = await flow("google", "", googleClaims());
     expect(locationOf(res.callback!)).toBe("/app/scheduling");
     expect(await t.db.select().from(users)).toHaveLength(1);
     const [acct] = await t.db.select().from(oauthAccounts);
     expect(acct?.userId).toBe(existing.id);
     const [u] = await t.db.select().from(users);
-    expect(u?.emailVerifiedAt).not.toBeNull();
+    expect(u?.passwordHash).toBe(pw);
     const linked = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "login_method.connected"), eq(auditLog.targetId, existing.id)));
     expect(linked).toHaveLength(1);
     expect((await lookupSession(t.db, jar.get(SESSION_COOKIE)))?.user.id).toBe(existing.id);
+  });
+
+  it("claims an unverified account: the password and sessions set before the address was proven stop working", async () => {
+    const squatter = await createUser(t.db, { email: "gina@gmail.example", passwordHash: await hashPassword("pw-123456"), overrides: { emailVerifiedAt: null } });
+    const squatterSession = await createSessionRecord(t.db, squatter.id);
+    const res = await flow("google", "", googleClaims());
+    expect(locationOf(res.callback!)).toBe("/app/scheduling");
+    const [u] = await t.db.select().from(users);
+    expect(u).toMatchObject({ id: squatter.id, passwordHash: null });
+    expect(u?.emailVerifiedAt).not.toBeNull();
+    expect(await lookupSession(t.db, squatterSession.token)).toBeNull();
+    expect((await lookupSession(t.db, jar.get(SESSION_COOKIE)))?.user.id).toBe(squatter.id);
+    const [connected] = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "login_method.connected"), eq(auditLog.targetId, squatter.id)));
+    expect(connected?.details).toMatchObject({ provider: "google", auto: true, securedUnverifiedAccount: true });
+    const pwAudit = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "user.password_changed"), eq(auditLog.targetId, squatter.id)));
+    expect(pwAudit[0]?.details).toMatchObject({ via: "unverified_account_claimed" });
   });
 
   it("returns to login with 'Google sign in was canceled.' when consent is denied", async () => {

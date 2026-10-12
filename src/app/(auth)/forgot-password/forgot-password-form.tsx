@@ -49,7 +49,7 @@ export function ForgotPasswordForm() {
   const formError = state && !state.ok && !fieldErrors ? state.error.message : null;
   return (
     <form action={action} className="flex flex-col gap-5" noValidate>
-      <div aria-live="polite">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
+      <div aria-live="polite" className="empty:absolute">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
       <FormField label="Email address" error={fieldErrors?.email?.[0]}>
         {(control) => (
           <Input

@@ -6,7 +6,10 @@
 // - Recovery codes: 10 one-time codes, stored as HMAC-SHA256 with the session secret (hashCode), bound to the user;
 //   using one marks it used atomically, so it works exactly once.
 // - The login challenge (/login/two-factor) runs on a two_factor_pending session, limited to 5 attempts per session
-//   per 5 minutes; success clears the pending flag and audits user.login.
+//   per 5 minutes and 10 per account per 15 minutes (every pending session needs the password, but without the
+//   account window each new one would bring 5 fresh guesses); success clears the pending flag, clears the account
+//   window and audits user.login. A pending session is good for PENDING_TWO_FACTOR_TTL_MS (15 minutes) after the
+//   first factor; then the visitor logs in again.
 // - Enrollment helpers for Settings > Login (settings-onboarding owns the UI): beginTwoFactorEnrollment (secret and
 //   otpauth URI), enableTwoFactor (confirms a code, stores the secret, returns the recovery codes), disableTwoFactor
 //   and regenerateRecoveryCodes.
@@ -17,9 +20,9 @@ import { twoFactorRecoveryCodes, users } from "@/db/schema";
 import { appName } from "@/lib/brand";
 import { decryptOrNull, encrypt, hashCode, verifyPassword } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
-import { assertRateLimit } from "@/lib/rate-limit";
+import { assertRateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { now, nowMs } from "@/lib/time/now";
-import { completeTwoFactor, type UserRow } from "../session";
+import { completeTwoFactor, type SessionRow, type UserRow } from "../session";
 import {
   RECOVERY_CODE_COUNT,
   generateRecoveryCodes,
@@ -30,11 +33,23 @@ import {
   totpUri,
 } from "../totp";
 import { auditAuth } from "./audit";
-import { AUTH_RATE_LIMITS, twoFactorSessionKey } from "./rate-limits";
+import { AUTH_RATE_LIMITS, twoFactorSessionKey, twoFactorUserKey } from "./rate-limits";
 import type { RequestMeta } from "./request-context";
 
 export const INVALID_TOTP_MESSAGE = "That code didn't work. Check your authenticator app and try again.";
 export const INVALID_RECOVERY_CODE_MESSAGE = "That recovery code didn't work. Check it and try again.";
+export const TWO_FACTOR_EXPIRED_MESSAGE = "Your sign in expired. Log in again.";
+
+/** How long a two_factor_pending session may finish the second factor after the first one. */
+export const PENDING_TWO_FACTOR_TTL_MS = 15 * 60_000;
+
+/**
+ * True when a two_factor_pending session is too old to finish the challenge. A pending session is never touched
+ * (sliding expiry skips it), so last_seen_at is when the first factor passed, on the business clock.
+ */
+export function isPendingTwoFactorExpired(session: Pick<SessionRow, "lastSeenAt" | "twoFactorPending">, atMs: number = nowMs()): boolean {
+  return session.twoFactorPending && atMs - session.lastSeenAt.getTime() > PENDING_TWO_FACTOR_TTL_MS;
+}
 
 const RECOVERY_PURPOSE = "2fa_recovery";
 
@@ -108,8 +123,9 @@ export type TwoFactorMethod = "totp" | "recovery";
 
 /**
  * The /login/two-factor challenge for a two_factor_pending session. Throws AppError("rate_limited") after 5 attempts
- * per session per 5 minutes and AppError("validation") with a code field error for a wrong code. On success the
- * session becomes fully authenticated and user.login is audited.
+ * per session per 5 minutes or 10 per account per 15 minutes, and AppError("validation") with a code field error for
+ * a wrong code. On success the session becomes fully authenticated, the account window is cleared and user.login is
+ * audited.
  */
 export async function completeTwoFactorChallenge(p: {
   sessionId: string;
@@ -121,8 +137,12 @@ export async function completeTwoFactorChallenge(p: {
   db?: DbOrTx;
 }): Promise<{ remainingRecoveryCodes: number | null }> {
   const db = p.db ?? (await getDb());
-  const { limit, windowSeconds } = AUTH_RATE_LIMITS.twoFactorSession;
-  await assertRateLimit(twoFactorSessionKey(p.sessionId), limit, windowSeconds, { db });
+  const perSession = AUTH_RATE_LIMITS.twoFactorSession;
+  const perUser = AUTH_RATE_LIMITS.twoFactorUser;
+  const userKey = twoFactorUserKey(p.user.id);
+  // Both windows count the attempt before the code is checked (atomic), so parallel guesses cannot exceed them.
+  await assertRateLimit(twoFactorSessionKey(p.sessionId), perSession.limit, perSession.windowSeconds, { db });
+  await assertRateLimit(userKey, perUser.limit, perUser.windowSeconds, { db });
   if (!p.user.twoFactorEnabled) throw new AppError("forbidden", "Two-factor authentication is not enabled for this account.");
   const ok =
     p.method === "totp" ? await verifyUserTotp(db, p.user, p.code) : await consumeRecoveryCode(db, p.user.id, p.code);
@@ -136,6 +156,7 @@ export async function completeTwoFactorChallenge(p: {
     throw new AppError("validation", message, { fieldErrors: { code: [message] } });
   }
   await completeTwoFactor(p.sessionId);
+  await resetRateLimit(userKey, { db });
   await db.update(users).set({ lastLoginAt: now(), lastActiveAt: now() }).where(eq(users.id, p.user.id));
   await auditAuth("user.login", {
     user: p.user,

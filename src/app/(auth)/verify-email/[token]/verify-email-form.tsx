@@ -29,7 +29,7 @@ export function VerifyEmailForm({ token, signedIn }: { token: string; signedIn: 
   return (
     <form action={action} className="flex flex-col gap-5">
       <input type="hidden" name="token" value={token} />
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:absolute">
         {error ? (
           <Banner variant="error">
             {error.message}{" "}

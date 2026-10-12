@@ -6,6 +6,7 @@ import type { Route } from "next";
 import { notFound, redirect } from "next/navigation";
 import { canSeeAdminCenter, getActorCtx, isOrgAdmin, type ActorCtx } from "@/lib/authz";
 import { safeNextPath } from "@/lib/url";
+import { isPendingTwoFactorExpired } from "./flows/two-factor";
 import { getCurrentUser, getSession, type SessionData } from "./session";
 
 /** Auth pages: a signed-in user goes to `next` (same-site only) or /app/scheduling. */
@@ -14,14 +15,21 @@ export async function redirectIfSignedIn(next?: string | null): Promise<void> {
   if (user) redirect(safeNextPath(next) as Route);
 }
 
+/** /login?error=expired&next=... ("Your sign in attempt expired. Please try again.") after a stale second factor. */
+export function twoFactorExpiredLoginPath(next?: string | null): string {
+  return `/login?error=expired&next=${encodeURIComponent(safeNextPath(next))}`;
+}
+
 /**
  * /login/two-factor: the two_factor_pending session (AU-09). Without a session the visitor goes to /login; a fully
- * signed-in user goes on to `next`.
+ * signed-in user goes on to `next`; a pending session older than PENDING_TWO_FACTOR_TTL_MS goes back to /login with
+ * the "expired" message (the challenge action revokes it).
  */
 export async function requirePendingTwoFactorSession(next?: string | null): Promise<SessionData> {
   const data = await getSession();
   if (!data) redirect("/login" as Route);
   if (!data.session.twoFactorPending) redirect(safeNextPath(next) as Route);
+  if (isPendingTwoFactorExpired(data.session)) redirect(twoFactorExpiredLoginPath(next) as Route);
   return data;
 }
 

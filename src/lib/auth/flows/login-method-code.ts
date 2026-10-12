@@ -1,13 +1,14 @@
 // Login method change confirmation (SPEC AU-10, GEN-08): switching how a user logs in (connecting or disconnecting
 // Google or Microsoft, Calendly parity) first sends a 6-digit code to the current login email. Codes are stored as
-// HMAC-SHA256 with the session secret (hashCode), expire after 10 minutes, allow 5 wrong tries, and at most 5 codes
+// HMAC-SHA256 with the session secret (hashCode), expire after 10 minutes, allow 5 tries (each one claimed
+// atomically before the code is compared, so parallel guesses cannot exceed it), and at most 5 codes
 // are sent per user per hour. Settings > Login (settings-onboarding) calls these.
 //
 // A verified code returns a confirmation token (10 minutes, bound to the user, HMAC with the session secret). The
 // link_login_method OAuth start route requires it as ?confirm= (oauthStartPath(provider, { intent:
 // "link_login_method", confirm })), so a hijacked session cannot add its own sign-in method without the mailbox.
 import "server-only";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { users, verificationCodes } from "@/db/schema";
 import { hashCode, hmacSha256Hex, randomCode, timingSafeEqualStr, verifyCode } from "@/lib/crypto";
@@ -92,14 +93,21 @@ export async function verifyLoginMethodCode(userId: string, code: string, opts: 
     )
     .orderBy(desc(verificationCodes.createdAt))
     .limit(1);
-  if (!row || row.attempts >= LOGIN_METHOD_CODE_MAX_ATTEMPTS) throw fail();
-  if (!/^\d{6}$/.test(digits) || !(await verifyCode(PURPOSE, userId, digits, row.codeHash))) {
-    await db
-      .update(verificationCodes)
-      .set({ attempts: sql`${verificationCodes.attempts} + 1` })
-      .where(eq(verificationCodes.id, row.id));
-    throw fail();
-  }
+  if (!row) throw fail();
+  // Claim one of the 5 tries atomically BEFORE checking the code, so parallel guesses cannot all read attempts = 0.
+  const claimed = await db
+    .update(verificationCodes)
+    .set({ attempts: sql`${verificationCodes.attempts} + 1` })
+    .where(
+      and(
+        eq(verificationCodes.id, row.id),
+        isNull(verificationCodes.consumedAt),
+        lt(verificationCodes.attempts, LOGIN_METHOD_CODE_MAX_ATTEMPTS),
+      ),
+    )
+    .returning({ id: verificationCodes.id });
+  if (!claimed.length) throw fail();
+  if (!/^\d{6}$/.test(digits) || !(await verifyCode(PURPOSE, userId, digits, row.codeHash))) throw fail();
   const consumed = await db
     .update(verificationCodes)
     .set({ consumedAt: now() })

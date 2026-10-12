@@ -23,7 +23,6 @@ import {
 } from "@/lib/auth/flows/setup-status";
 import { isInstanceAdminUser } from "@/lib/authz";
 import { APP_NAME } from "@/lib/brand";
-import { cn } from "@/lib/cn";
 import { nowMs } from "@/lib/time/now";
 
 export const metadata: Metadata = { title: "Setup", robots: { index: false, follow: false } };
@@ -44,6 +43,9 @@ function StatusIcon({ status }: { status: ChecklistItem["status"] }) {
 }
 
 const STATUS_WORD: Record<ChecklistItem["status"], string> = { ok: "Configured", off: "Not configured", warning: "Action required" };
+
+// Plain strings, not cn(): tailwind-merge would treat the text-body-md size token as a color and drop it.
+const STATUS_TONE: Record<ChecklistItem["status"], string> = { ok: "text-success-text", off: "text-ink-2", warning: "text-warning-text" };
 
 function formatAgo(date: Date, nowMs: number): string {
   const minutes = Math.max(0, Math.round((nowMs - date.getTime()) / 60_000));
@@ -139,7 +141,7 @@ export default async function SetupPage({ searchParams }: Props) {
                     </p>
                   </div>
                 </div>
-                <p className={cn("pl-8 text-body-md sm:pl-0 sm:text-right", item.status === "ok" ? "text-success-text" : item.status === "warning" ? "text-warning-text" : "text-ink-2")}>
+                <p className={`pl-8 text-body-md sm:pl-0 sm:text-right ${STATUS_TONE[item.status]}`}>
                   {item.value}
                 </p>
               </li>
@@ -164,7 +166,7 @@ export default async function SetupPage({ searchParams }: Props) {
                   </p>
                 </div>
               </div>
-              <p className={cn("pl-8 text-body-md sm:pl-0 sm:text-right", background && !background.stale ? "text-success-text" : "text-ink-2")}>
+              <p className={`pl-8 text-body-md sm:pl-0 sm:text-right ${background && !background.stale ? STATUS_TONE.ok : STATUS_TONE.off}`}>
                 {background
                   ? background.lastCronAt
                     ? `Last run ${formatAgo(background.lastCronAt, renderedAt)}`

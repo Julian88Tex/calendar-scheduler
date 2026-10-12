@@ -10,8 +10,9 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { FieldError, FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { LoginEmailInput } from "@/lib/auth/schemas";
 import { OAuthButtons } from "../_components/oauth-buttons";
@@ -87,7 +88,7 @@ export function LoginForm({ next, providers = { google: false, microsoft: false 
       ) : null}
       <form action={action} onSubmit={onSubmit} className="flex flex-col gap-5" noValidate aria-label="Log in with email">
         {next ? <input type="hidden" name="next" value={next} /> : null}
-        <div aria-live="polite">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
+        <div aria-live="polite" className="empty:absolute">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
         <FormField label="Email address" error={step === "email" ? emailError : fieldErrors?.email?.[0]}>
           {(control) => (
             <div className="relative">
@@ -125,11 +126,9 @@ export function LoginForm({ next, providers = { google: false, microsoft: false 
 
         {step === "password" ? (
           <div className="flex flex-col gap-5 animate-fade-in motion-reduce:animate-none">
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
-                <label htmlFor="login-password" className="text-label text-ink">
-                  Password
-                </label>
+                <Label htmlFor="login-password">Password</Label>
                 <Link href="/forgot-password" className="text-body-md font-semibold text-primary-text hover:underline">
                   Forgot password?
                 </Link>
@@ -145,11 +144,7 @@ export function LoginForm({ next, providers = { google: false, microsoft: false 
                 aria-invalid={fieldErrors?.password ? true : undefined}
                 aria-describedby={fieldErrors?.password ? "login-password-error" : undefined}
               />
-              {fieldErrors?.password ? (
-                <p id="login-password-error" role="alert" className="text-body-sm text-danger-text">
-                  {fieldErrors.password[0]}
-                </p>
-              ) : null}
+              <FieldError id="login-password-error" error={fieldErrors?.password} />
             </div>
             <Button type="submit" size="lg" fullWidth loading={pending}>
               Log In

@@ -8,6 +8,13 @@
 //      avatar and verified email from the provider and the AU-13 default location (Google Meet for Google).
 // Unverified provider emails can only log in to an already linked account (step 1).
 //
+// Pre-account hijacking: an account whose email was never verified may have been registered by someone else (an
+// email and password signup needs no proof of the address). When a provider proves the address and is linked to such
+// an account (step 2, or an invitation accepted into it), everything set before that proof is dropped in the same
+// transaction: the password, two-factor authentication and its recovery codes, every session and every outstanding
+// emailed token (an email change started by the squatter would otherwise move the account to their address). The
+// owner logs in with the provider and can set a password again with "Forgot password?".
+//
 // linkOAuthLoginMethod (link_login_method): connects the provider to the signed-in user; refuses an account that is
 // already linked to someone else.
 //
@@ -17,15 +24,16 @@
 import "server-only";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, withTx, type DbOrTx } from "@/db";
-import { oauthAccounts, users } from "@/db/schema";
+import { authTokens, oauthAccounts, twoFactorRecoveryCodes, users } from "@/db/schema";
 import { isAppError } from "@/lib/errors";
 import { acceptInvitationInTx, getPendingInvitation, type PendingInvitation } from "@/lib/teams";
 import { now } from "@/lib/time/now";
 import { isValidTimeZone, normalizeEmail } from "@/lib/validation";
 import type { OAuthErrorCode } from "../oauth/errors";
 import type { OAuthProfile, OAuthProviderId } from "../oauth/types";
-import type { UserRow } from "../session";
+import { revokeAllSessions, type UserRow } from "../session";
 import { createAccountUnderPolicy, findUserByEmail } from "../signup";
+import { auditAuth } from "./audit";
 
 /** A resolution failure the callback turns into ?error={code}. */
 export class OAuthFlowError extends Error {
@@ -44,6 +52,11 @@ export type OAuthResolution = {
   created: boolean;
   /** The provider was connected to an existing account by this sign-in. */
   linked: boolean;
+  /**
+   * The existing account's email was unverified, so its password, 2FA and sessions were dropped when the provider
+   * proved the address (pre-account hijacking, see the file header).
+   */
+  securedUnverifiedAccount?: boolean;
 };
 
 type LinkedAccount = { oauthAccountId: string; userId: string; userDeleted: boolean };
@@ -121,12 +134,37 @@ function signupFields(provider: OAuthProviderId, profile: OAuthProfile, timezone
   };
 }
 
-/** Marks an unverified address verified (the provider vouched for it). */
-async function markVerified(db: DbOrTx, user: UserRow): Promise<UserRow> {
-  if (user.emailVerifiedAt) return user;
+/**
+ * The provider vouched for the address of an existing account. A verified account is returned as is. An unverified one
+ * becomes verified and loses everything that was set before the address was proven (password, 2FA, recovery codes,
+ * sessions, outstanding emailed tokens), so whoever registered it without owning the mailbox is locked out. Call
+ * inside the linking transaction.
+ */
+async function claimForVerifiedEmail(db: DbOrTx, stale: UserRow): Promise<{ user: UserRow; secured: boolean }> {
+  // Re-read under a row lock: the row passed in may have been read before the transaction.
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.id, stale.id), isNull(users.deletedAt)))
+    .limit(1)
+    .for("update");
+  if (!user) throw new OAuthFlowError("failed", "account vanished");
+  if (user.emailVerifiedAt) return { user, secured: false };
   const at = now();
-  await db.update(users).set({ emailVerifiedAt: at }).where(eq(users.id, user.id));
-  return { ...user, emailVerifiedAt: at };
+  await db
+    .update(users)
+    .set({ emailVerifiedAt: at, passwordHash: null, twoFactorEnabled: false, twoFactorSecretEnc: null, updatedAt: at })
+    .where(eq(users.id, user.id));
+  await db.delete(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, user.id));
+  await db.update(authTokens).set({ usedAt: at }).where(and(eq(authTokens.userId, user.id), isNull(authTokens.usedAt)));
+  await revokeAllSessions(user.id, db);
+  const details = { via: "unverified_account_claimed" };
+  if (user.passwordHash) await auditAuth("user.password_changed", { user, details, tx: db });
+  if (user.twoFactorEnabled) await auditAuth("user.two_factor_disabled", { user, details, tx: db });
+  return {
+    user: { ...user, emailVerifiedAt: at, passwordHash: null, twoFactorEnabled: false, twoFactorSecretEnc: null, updatedAt: at },
+    secured: true,
+  };
 }
 
 /** Intents login and signup (see the file header). */
@@ -150,8 +188,8 @@ export async function resolveOAuthLogin(p: {
   if (existing) {
     return withTx(db, async (tx) => {
       const oauthAccountId = await insertOAuthAccount(tx, existing.id, provider, profile);
-      const user = await markVerified(tx, existing);
-      return { user, oauthAccountId, created: false, linked: true };
+      const { user, secured } = await claimForVerifiedEmail(tx, existing);
+      return { user, oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
     });
   }
 
@@ -167,8 +205,11 @@ export async function resolveOAuthLogin(p: {
       // A concurrent signup with the same email committed first: link to it instead.
       const winner = await findUserByEmail(db, profile.email);
       if (winner) {
-        const oauthAccountId = await insertOAuthAccount(db, winner.id, provider, profile);
-        return { user: await markVerified(db, winner), oauthAccountId, created: false, linked: true };
+        return withTx(db, async (tx) => {
+          const oauthAccountId = await insertOAuthAccount(tx, winner.id, provider, profile);
+          const { user, secured } = await claimForVerifiedEmail(tx, winner);
+          return { user, oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
+        });
       }
     }
     throw e;
@@ -218,6 +259,7 @@ export async function acceptInvitationWithOAuth(p: {
       let oauthAccountId: string;
       let created = false;
       let linkedNow = false;
+      let secured = false;
       if (linked && !linked.userDeleted) {
         user = await loadUser(tx, linked.userId);
         oauthAccountId = linked.oauthAccountId;
@@ -225,7 +267,7 @@ export async function acceptInvitationWithOAuth(p: {
       } else {
         const existing = await findUserByEmail(tx, p.profile.email);
         if (existing) {
-          user = await markVerified(tx, existing);
+          ({ user, secured } = await claimForVerifiedEmail(tx, existing));
           linkedNow = true;
         } else {
           const res = await createAccountUnderPolicy(
@@ -245,7 +287,7 @@ export async function acceptInvitationWithOAuth(p: {
         oauthAccountId = await insertOAuthAccount(tx, user.id, p.provider, p.profile);
       }
       await acceptInvitationInTx(tx, { invitationId: invitation.id, userId: user.id });
-      return { user, oauthAccountId, created, linked: linkedNow, invitation };
+      return { user, oauthAccountId, created, linked: linkedNow, securedUnverifiedAccount: secured, invitation };
     });
   } catch (e) {
     if (isAppError(e) && e.code === "not_found") throw new OAuthFlowError("invitation_invalid");

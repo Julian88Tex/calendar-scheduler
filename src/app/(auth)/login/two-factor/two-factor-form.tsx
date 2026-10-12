@@ -37,7 +37,7 @@ export function TwoFactorForm({ next, loginMethod }: TwoFactorFormProps) {
       <input type="hidden" name="method" value={method} />
       <input type="hidden" name="next" value={next} />
       {loginMethod ? <input type="hidden" name="loginMethod" value={loginMethod} /> : null}
-      <div aria-live="polite">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
+      <div aria-live="polite" className="empty:absolute">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
       {method === "totp" ? (
         <FormField label="Authentication code" hint="Open your authenticator app and enter the 6-digit code." error={fieldError}>
           {(control) => (

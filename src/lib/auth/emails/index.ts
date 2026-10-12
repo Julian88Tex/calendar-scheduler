@@ -4,13 +4,10 @@
 // { subject, html, text } through renderEmailLayout. Copy follows Calendly's account emails: a short greeting, one
 // sentence of context, one pill button, the plain link for copy and paste, and the expiry. No em or en dashes (GEN-11).
 import { appName } from "@/lib/brand";
-import { escapeHtml, htmlToText, renderEmailLayout } from "@/lib/email";
+import { emailButtonHtml, escapeHtml, htmlToText, renderEmailLayout } from "@/lib/email";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 
-const BUTTON_STYLE =
-  "display:inline-block;background:#006bff;color:#ffffff;border-radius:9999px;padding:12px 24px;font-weight:600;" +
-  "font-size:16px;line-height:20px;text-decoration:none";
 const P = 'style="margin:0 0 16px;font-size:16px;line-height:24px;color:#0a2540"';
 const MUTED = 'style="margin:0 0 12px;font-size:14px;line-height:20px;color:#476788"';
 
@@ -24,8 +21,9 @@ function greeting(name: string): string {
   return first ? `<p ${P}>Hi ${escapeHtml(first)},</p>` : `<p ${P}>Hi,</p>`;
 }
 
+/** The shared table-wrapped pill button (keeps its padding in Outlook), with a little space above. */
 function button(label: string, url: string): string {
-  return `<p style="margin:24px 0"><a href="${escapeHtml(url)}" style="${BUTTON_STYLE}">${escapeHtml(label)}</a></p>`;
+  return `<div style="height:8px;line-height:8px;font-size:8px">&nbsp;</div>${emailButtonHtml(label, url)}`;
 }
 
 function plainLink(url: string): string {

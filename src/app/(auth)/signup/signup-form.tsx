@@ -9,18 +9,20 @@
 // schedule.
 "use client";
 
-import { ArrowLeft, Check, Circle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState, useSyncExternalStore, useTransition, type FormEvent, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { FieldError, FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import { passwordChecks, SignupEmailInput } from "@/lib/auth/schemas";
+import { SignupEmailInput } from "@/lib/auth/schemas";
 import { OAuthButtons } from "../_components/oauth-buttons";
 import { PasswordInput } from "../_components/password-input";
+import { PasswordRules } from "../_components/password-rules";
 import { checkSignupEmail, signUp, type SignUpState } from "./actions";
 
 const noop = () => () => {};
@@ -97,7 +99,6 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
   const fieldErrors = state && !state.ok ? state.error.fieldErrors : undefined;
   const detailsError =
     state && !state.ok && !fieldErrors && state.error.code !== "conflict" && state.error.code !== "forbidden" ? state.error.message : null;
-  const checks = passwordChecks(password);
 
   if (step === "details") {
     return (
@@ -117,7 +118,7 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
             Signing up as <span className="font-semibold text-ink">{email}</span>
           </span>
         </div>
-        <div aria-live="polite">{detailsError ? <Banner variant="error">{detailsError}</Banner> : null}</div>
+        <div aria-live="polite" className="empty:absolute">{detailsError ? <Banner variant="error">{detailsError}</Banner> : null}</div>
         <FormField label="Enter your full name" error={fieldErrors?.name?.[0]}>
           {(control) => (
             <Input
@@ -133,10 +134,8 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
             />
           )}
         </FormField>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="signup-password" className="text-label text-ink">
-            Choose a password
-          </label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="signup-password">Choose a password</Label>
           <PasswordInput
             id="signup-password"
             name="password"
@@ -147,15 +146,8 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
             aria-describedby={cn("signup-password-hint", fieldErrors?.password && "signup-password-error")}
             aria-invalid={fieldErrors?.password ? true : undefined}
           />
-          <ul id="signup-password-hint" className="mt-1 flex flex-col gap-1 text-body-sm text-ink-2">
-            <PasswordRule met={checks.length}>At least 8 characters</PasswordRule>
-            <PasswordRule met={checks.letterAndNumber}>At least one letter and one number</PasswordRule>
-          </ul>
-          {fieldErrors?.password ? (
-            <p id="signup-password-error" role="alert" className="text-body-sm text-danger-text">
-              {fieldErrors.password[0]}
-            </p>
-          ) : null}
+          <PasswordRules id="signup-password-hint" password={password} />
+          <FieldError id="signup-password-error" error={fieldErrors?.password} />
         </div>
         <Button type="submit" size="lg" fullWidth loading={pending}>
           Sign up
@@ -191,7 +183,7 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
             />
           )}
         </FormField>
-        <div aria-live="polite" id="signup-email-issue">
+        <div aria-live="polite" id="signup-email-issue" className="empty:absolute">
           {emailIssue?.kind === "taken" ? (
             <Banner variant="error">
               An account with this email already exists.{" "}
@@ -219,17 +211,5 @@ export function SignupForm({ providers = { google: false, microsoft: false }, in
         </>
       ) : null}
     </div>
-  );
-}
-
-function PasswordRule({ met, children }: { met: boolean; children: ReactNode }) {
-  return (
-    <li className={cn("flex items-center gap-2", met && "text-success-text")}>
-      {met ? <Check aria-hidden="true" className="size-4" /> : <Circle aria-hidden="true" className="size-3.5" />}
-      <span>
-        {children}
-        <span className="sr-only">{met ? " (done)" : " (required)"}</span>
-      </span>
-    </li>
   );
 }

@@ -8,9 +8,11 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
-import { passwordChecks } from "@/lib/auth/schemas";
+import { FieldError } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/cn";
 import { PasswordInput } from "../../_components/password-input";
+import { PasswordRules } from "../../_components/password-rules";
 import { submitNewPassword, type ResetPasswordState } from "./actions";
 
 export function ResetPasswordForm({ token, email }: { token: string; email: string }) {
@@ -20,7 +22,6 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
   const fieldErrors = state && !state.ok ? state.error.fieldErrors : undefined;
   const expired = state && !state.ok && state.error.code === "not_found";
   const formError = state && !state.ok && !fieldErrors && !expired ? state.error.message : null;
-  const checks = passwordChecks(password);
 
   if (expired) {
     return (
@@ -38,11 +39,9 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
       <input type="hidden" name="token" value={token} />
       {/* Lets password managers save the new password for the right account. */}
       <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
-      <div aria-live="polite">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="reset-password" className="text-label text-ink">
-          New password
-        </label>
+      <div aria-live="polite" className="empty:absolute">{formError ? <Banner variant="error">{formError}</Banner> : null}</div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="reset-password">New password</Label>
         <PasswordInput
           id="reset-password"
           name="password"
@@ -53,19 +52,11 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
           aria-describedby={cn("reset-password-hint", fieldErrors?.password && "reset-password-error")}
           aria-invalid={fieldErrors?.password ? true : undefined}
         />
-        <p id="reset-password-hint" className={cn("text-body-sm text-ink-2", checks.length && checks.letterAndNumber && "text-success-text")}>
-          At least 8 characters, with at least one letter and one number.
-        </p>
-        {fieldErrors?.password ? (
-          <p id="reset-password-error" role="alert" className="text-body-sm text-danger-text">
-            {fieldErrors.password[0]}
-          </p>
-        ) : null}
+        <PasswordRules id="reset-password-hint" password={password} />
+        <FieldError id="reset-password-error" error={fieldErrors?.password} />
       </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="reset-password-confirm" className="text-label text-ink">
-          Confirm new password
-        </label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="reset-password-confirm">Confirm new password</Label>
         <PasswordInput
           id="reset-password-confirm"
           name="confirmPassword"
@@ -76,11 +67,7 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
           aria-describedby={fieldErrors?.confirmPassword ? "reset-confirm-error" : undefined}
           aria-invalid={fieldErrors?.confirmPassword ? true : undefined}
         />
-        {fieldErrors?.confirmPassword ? (
-          <p id="reset-confirm-error" role="alert" className="text-body-sm text-danger-text">
-            {fieldErrors.confirmPassword[0]}
-          </p>
-        ) : null}
+        <FieldError id="reset-confirm-error" error={fieldErrors?.confirmPassword} />
       </div>
       <Button type="submit" size="lg" fullWidth loading={pending}>
         Reset password

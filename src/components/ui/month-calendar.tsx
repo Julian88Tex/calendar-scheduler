@@ -204,7 +204,7 @@ export function MonthCalendar({
       </div>
       <table
         aria-label={aria["aria-label"] ?? "Select a Day"}
-        aria-multiselectable={mode === "multiple" || undefined}
+        data-mode={mode}
         className="w-full table-fixed border-collapse"
       >
         <caption className="sr-only">{title}</caption>
