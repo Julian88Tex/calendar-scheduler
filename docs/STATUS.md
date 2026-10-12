@@ -38,7 +38,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |
 |---|---|---|
-| lifecycle-core | Booking emails, cancel, reschedule, host changes synced back to the calendar | queued |
+| lifecycle-core | Booking emails, cancel, reschedule, host changes synced back to the calendar | building |
 | lifecycle-ui | Cancel and reschedule pages for invitees, host meeting dialogs | queued |
 | meetings-dashboard | Meetings page: upcoming, past, filters, details, no-show, export | queued |
 
@@ -51,7 +51,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |
 |---|---|---|
-| workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | building |
+| workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | done |
 | settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | queued |
 | golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
 

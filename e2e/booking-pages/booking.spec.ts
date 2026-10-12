@@ -79,14 +79,14 @@ test.describe("booking pages", () => {
     await page.getByRole("button", { name: "Schedule Event" }).click();
     await expect(page.locator('[data-field="name"]').getByRole("alert")).toHaveText("Can't be blank.");
     await expect(page.locator('[data-field="email"]').getByRole("alert")).toHaveText("Can't be blank.");
-    await page.getByLabel("Email").fill("not-an-email");
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill("not-an-email");
     await page.getByRole("button", { name: "Schedule Event" }).click();
     await expect(page.locator('[data-field="email"]').getByRole("alert")).toHaveText("Enter a valid email address.");
     await axe(page);
 
-    await page.getByLabel("Name").fill("Ana Lima");
-    await page.getByLabel("Email").fill("ana@example.com");
-    await page.getByLabel("What would you like to discuss?").fill("Roadmap review");
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill("Ana Lima");
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill("ana@example.com");
+    await page.getByRole("textbox", { name: "What would you like to discuss?", exact: true }).fill("Roadmap review");
     await page.getByRole("button", { name: "Schedule Event" }).click();
 
     await expect(page).toHaveURL(/\/booking\/[0-9a-f-]{36}$/, { timeout: 60_000 });

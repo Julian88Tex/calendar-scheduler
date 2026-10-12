@@ -1,23 +1,18 @@
-// OWNER: conferencing. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: conferencing.
 //
-// /app/integrations/conferencing/[provider] placeholder (ARCHITECTURE section 3.1, SPEC VID-07..VID-10, VID-16): zoom,
-// google-meet, microsoft-teams, jitsi, webex and gotomeeting; other providers answer 404. The owner replaces it with
-// the real page.
+// /app/integrations/conferencing/[provider] (ARCHITECTURE section 3.1, SPEC VID-07, CAL-21). docs/SCOPE.md keeps Google
+// Meet only: "google-meet" renders the integration page; zoom, microsoft-teams, jitsi, webex, gotomeeting and anything
+// else answer 404 (no screen offers them).
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { EmptyState } from "@/components/ui/empty-state";
+import { GoogleMeetIntegration, meetConnectNotices } from "@/components/conferencing/google-meet-integration";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
+import { getActorCtx } from "@/lib/authz";
+import { appName } from "@/lib/brand";
+import { getGoogleMeetStatus, listMeetEventTypes } from "@/lib/conferencing/options";
 
-export const metadata: Metadata = { title: "Conferencing integration" };
-
-const TITLES: Record<string, string> = {
-  zoom: "Zoom",
-  "google-meet": "Google Meet",
-  "microsoft-teams": "Microsoft Teams",
-  jitsi: "Jitsi Meet",
-  webex: "Webex",
-  gotomeeting: "GoTo Meeting",
-};
+export const metadata: Metadata = { title: "Google Meet" };
 
 type Props = {
   params: Promise<{ provider: string }>;
@@ -25,13 +20,25 @@ type Props = {
 };
 
 export default async function ConferencingIntegrationPage({ params, searchParams }: Props) {
-  const [{ provider }] = await Promise.all([params, searchParams]);
-  const title = TITLES[provider];
-  if (!title) notFound();
+  const [{ provider }, sp] = await Promise.all([params, searchParams]);
+  if (provider !== "google-meet") notFound();
+  const actor = await getActorCtx();
+  const [status, eventTypes] = await Promise.all([getGoogleMeetStatus(actor.user.id), listMeetEventTypes(actor.user.id)]);
+  const connected = status.accounts.length > 0;
   return (
     <>
-      <PageHeader title={title} back={{ href: "/app/integrations", label: "Integrations & apps" }} />
-      <EmptyState heading="This page is being built." />
+      <PageHeader
+        title="Google Meet"
+        back={{ href: "/app/integrations", label: "Integrations & apps" }}
+        badge={
+          connected ? (
+            <Badge variant="success">Connected</Badge>
+          ) : !status.serverConfigured ? (
+            <Badge variant="neutral">Not configured on this server</Badge>
+          ) : undefined
+        }
+      />
+      <GoogleMeetIntegration status={status} eventTypes={eventTypes} appName={appName()} isAdmin={actor.isInstanceAdmin} notices={meetConnectNotices(sp, appName())} />
     </>
   );
 }
