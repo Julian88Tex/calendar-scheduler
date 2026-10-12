@@ -17,7 +17,7 @@ import { LocationGlyph } from "@/components/booking/location-icon";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/time/format";
-import type { MeetingSummaryView } from "./server/change-page";
+import type { MeetingSummaryView } from "./types";
 
 function Struck({ on, children }: { on: boolean; children: React.ReactNode }) {
   return on ? <s className="decoration-ink-2">{children}</s> : <>{children}</>;
