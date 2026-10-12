@@ -20,6 +20,10 @@ export function ConfirmationSection({ draft, update, errors, disabled }: Section
   const links = draft.confirmationLinks;
   const setLink = (i: number, patch: Partial<{ label: string; url: string }>) =>
     update({ confirmationLinks: links.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
+  // The links only apply to the confirmation page, but a link with an error stays visible after switching to a
+  // redirect so the error can be fixed (or the link removed) instead of blocking the save from a hidden field.
+  const linkErrors = Object.keys(errors).some((k) => k === "scheduleAnotherLabel" || k === "confirmationLinks" || k.startsWith("confirmationLinks."));
+  const showLinks = draft.afterBooking === "confirmation_page" || linkErrors;
   return (
     <div className="flex flex-col gap-7">
       <FieldGroup title="After booking">
@@ -61,7 +65,7 @@ export function ConfirmationSection({ draft, update, errors, disabled }: Section
         )}
       </FieldGroup>
 
-      {draft.afterBooking === "confirmation_page" && (
+      {showLinks && (
         <FieldGroup title="Confirmation page links" hint="Links shown to invitees after they book.">
           <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-line p-3">
             <div className="flex items-center justify-between gap-3">

@@ -94,7 +94,8 @@ export function useSortable(count: number, onMove: (from: number, to: number) =>
       disabled: opts.disabled || count < 2,
       draggable: !opts.disabled && count > 1,
       "aria-label": `Reorder ${label}`,
-      "aria-describedby": `${opts.idPrefix}-reorder-hint`,
+      // The hint is rendered by SortableAssist only when there is something to reorder.
+      ...(count > 1 ? { "aria-describedby": `${opts.idPrefix}-reorder-hint` } : {}),
       onDragStart: (e) => {
         setDragFrom(index);
         e.dataTransfer.effectAllowed = "move";

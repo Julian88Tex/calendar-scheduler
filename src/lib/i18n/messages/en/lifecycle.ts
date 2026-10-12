@@ -20,7 +20,6 @@ const messages = {
       overlapTitle: "Booked over another event",
       overlap: "This meeting overlaps with {title} at {time}.",
       overlapUntitled: "This meeting overlaps with another event at {time}.",
-      fallback: "We couldn't add {inviteeName} to your calendar invitation, so we emailed them a confirmation with a calendar file instead.",
       calendarSync: "This change was made in your connected calendar.",
     },
     requestReschedule: {
@@ -61,20 +60,16 @@ const messages = {
     joinFrom: "You can join this meeting from your computer, tablet, or smartphone.",
     joinLink: "Join link: {url}",
     toFollow: "Location: Web conferencing details to follow.",
-    notes: "{notes}",
     needChanges: "Need to make changes to this event?",
     cancel: "Cancel: {url}",
     reschedule: "Reschedule: {url}",
     footer: "Booked with {appName}",
-    poweredBy: "Powered by {appName}",
     fromPoll: "Booked from meeting poll: {title}",
   },
   reasons: {
     calendarCanceled: "Canceled from connected calendar event",
     calendarRescheduled: "Rescheduled from connected calendar event",
     hostAskedNewTime: "The host asked to find a new time",
-    hostRemoved: "The host removed you from this event",
-    accountClosed: "The host is no longer available",
   },
   changes: {
     canceled: "This event has already been canceled.",
@@ -96,7 +91,6 @@ const messages = {
     notGroup: "Only group events have an invitee limit.",
     limitTooLow: "The limit can't be lower than the {count} invitees already booked.",
     limitRange: "Enter a number between 1 and 9,999.",
-    lastInvitee: "This is the only invitee. Cancel the event instead.",
     blockWindow: "You can block an invitee within 90 days of their booking.",
     blockTarget: "Enter an email address or a domain to block.",
     blockEmail: "Enter a valid email address.",
@@ -108,9 +102,6 @@ const messages = {
     overrideMultiHost: "Override available times works for events with a single host only.",
     retryNotNeeded: "This meeting doesn't need to be provisioned again.",
     requestPast: "You can only ask for a new time before the meeting starts.",
-  },
-  activity: {
-    fallback: "Calendar invitation could not be sent; email confirmation sent instead",
   },
 };
 

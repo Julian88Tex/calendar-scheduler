@@ -37,7 +37,7 @@ export function cancelerOf(actor: LifecycleActor, invitee: Pick<InviteeRow, "nam
   const user = actorUser(actor);
   if (user) return { type: "host", userId: user.id, name: user.name };
   if (actor.type === "invitee") return { type: "invitee", userId: null, name: actor.name?.trim() || invitee.name };
-  return { type: "system", userId: null, name: actor.name ?? null };
+  return { type: "system", userId: null, name: actor.type === "system" ? (actor.name ?? null) : null };
 }
 
 /** Maps lockInviteeForChangeInTx conflicts to the CR-02 copy. */

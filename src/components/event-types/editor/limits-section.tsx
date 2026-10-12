@@ -16,7 +16,7 @@ import { ADVANCED_SETTINGS_PATH } from "@/lib/availability/links";
 import { cn } from "@/lib/cn";
 import { BUFFER_MAX, BUFFER_PRESETS, LIMIT_MAX, LIMIT_MIN, MESSAGES } from "@/lib/event-types/constants";
 import type { EventTypeDraft } from "@/lib/event-types/types";
-import { errorOf, FieldGroup, MinutesSelect, type SectionProps } from "./fields";
+import { errorOf, FieldGroup, MinutesSelect, wholeNumberIn, type SectionProps } from "./fields";
 
 type Period = "day" | "week" | "month";
 const PERIODS: Period[] = ["day", "week", "month"];
@@ -48,9 +48,8 @@ function LimitRow({
 }) {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [text, setText] = useState<string | null>(null);
-  const shown = text ?? String(value);
-  const n = Number(shown);
-  const bad = text !== null && !(Number.isInteger(n) && n >= LIMIT_MIN && n <= LIMIT_MAX);
+  const shown = text ?? (Number.isFinite(value) ? String(value) : "");
+  const bad = text !== null && wholeNumberIn(text, LIMIT_MIN, LIMIT_MAX) === null;
   return (
     <li className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2 text-body-md text-ink">
@@ -66,8 +65,8 @@ function LimitRow({
           aria-invalid={bad || error ? true : undefined}
           onChange={(e) => {
             setText(e.target.value);
-            const v = Number(e.target.value);
-            if (Number.isInteger(v) && v >= LIMIT_MIN && v <= LIMIT_MAX) onChange(v);
+            // Invalid input is kept in the draft as NaN so "Save changes" stops on this field (no silent old value).
+            onChange(wholeNumberIn(e.target.value, LIMIT_MIN, LIMIT_MAX) ?? Number.NaN);
           }}
           onBlur={() => !bad && setText(null)}
           className={cn(FIELD_BASE, "h-10 w-20 px-3 text-[14px]", (bad || error) && "border-danger")}

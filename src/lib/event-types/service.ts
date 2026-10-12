@@ -24,7 +24,7 @@ import {
   workflowEventTypes,
   workflows,
 } from "@/db/schema";
-import type { LocationConfig } from "@/db/types";
+import type { LocationConfig, NotificationTemplates } from "@/db/types";
 import { rotatedEventColor } from "@/components/ui/event-colors";
 import { audit } from "@/lib/audit";
 import {
@@ -40,6 +40,7 @@ import {
   createCustomSchedule,
   ensureDefaultSchedule,
   getScheduleContent,
+  lockUserSchedules,
   resolveEventTypeSchedule,
   setEventTypeSchedule,
 } from "@/lib/availability";
@@ -52,8 +53,8 @@ import { slugify } from "@/lib/slugs";
 import { now } from "@/lib/time/now";
 import { copyEventTypeReminders } from "@/lib/workflows";
 import { DEFAULT_NAMES, DESCRIPTION_MAX, MESSAGES, SUPPORTED_LOCALES } from "./constants";
-import { canonicalJson, copyName, copySlugCandidates, dedupeSlug, defaultDraft, draftOfRow, durationColumns } from "./draft";
-import { normalizeLocations, validateDraft, zEventSlug, type SaveEventTypeInput } from "./schemas";
+import { canonicalJson, copyName, copySlugCandidates, dedupeSlug, defaultDraft, draftOfRow, draftVersion, durationColumns } from "./draft";
+import { isHttpUrl, normalizeLocations, validateDraft, zEventSlug, type SaveEventTypeInput } from "./schemas";
 import type { EventTypeDraft, SaveEventTypeResult, ScheduleChoiceDraft } from "./types";
 
 type EventTypeRow = typeof eventTypes.$inferSelect;
@@ -76,6 +77,16 @@ async function loadRow(db: DbOrTx, id: string, opts: { forUpdate?: boolean } = {
   const [row] = opts.forUpdate ? await q.for("update") : await q;
   if (!row || row.type !== "standard") throw notFoundError(NOT_FOUND);
   return row;
+}
+
+/**
+ * Lock order (shared with the availability module, which takes the user's schedule lock and then event type rows):
+ * the owner's schedule lock first, then the event type row (FOR UPDATE), then the profile's slug lock.
+ */
+async function lockForWrite(tx: DbOrTx, id: string): Promise<EventTypeRow> {
+  const peek = await loadRow(tx, id);
+  if (peek.ownerUserId) await lockUserSchedules(tx, peek.ownerUserId);
+  return loadRow(tx, id, { forUpdate: true });
 }
 
 /** Access of the actor to a live standard event type (throws not_found when it does not exist for them). */
@@ -152,6 +163,19 @@ function descriptionColumns(html: string): { descriptionHtml: string | null; des
   return plain || /<a\s/i.test(clean) ? { descriptionHtml: clean, descriptionPlain: plain || null } : { descriptionHtml: null, descriptionPlain: null };
 }
 
+/** Rich text template bodies (NT-08) are stored sanitized like the description; plain text fields are kept as typed. */
+function templateColumns(t: NotificationTemplates): NotificationTemplates {
+  const out: NotificationTemplates = { ...t };
+  for (const key of ["confirmationBody", "invitationDescription", "cancellationBody"] as const) {
+    const value = out[key];
+    if (value === undefined) continue;
+    const clean = /<[a-z!/]/i.test(value) ? sanitizeRichText(value) : value;
+    if (clean.trim() && richTextToPlain(clean).trim()) out[key] = clean;
+    else delete out[key];
+  }
+  return out;
+}
+
 /** The event_types columns a draft writes (slug, schedule and questions are handled by the caller). */
 function columnsOfDraft(draft: EventTypeDraft, kind: "solo" | "group"): Omit<NewEventTypeRow, "organizationId" | "name" | "slug"> & { name: string } {
   const { durationMinutes, durationOptions } = durationColumns(draft.durations);
@@ -181,12 +205,13 @@ function columnsOfDraft(draft: EventTypeDraft, kind: "solo" | "group"): Omit<New
     nameFormat: draft.nameFormat,
     allowGuests: kind === "group" ? false : draft.allowGuests,
     notificationType: kind === "group" ? "email_confirmation" : draft.notificationType,
-    notificationTemplates: draft.notificationTemplates,
+    notificationTemplates: templateColumns(draft.notificationTemplates),
     includeCancelRescheduleLinks: draft.includeCancelRescheduleLinks,
     includeAnswersInNotifications: draft.includeAnswersInNotifications,
     cancellationPolicy: draft.cancellationPolicy || null,
     afterBooking: draft.afterBooking,
-    redirectUrl: draft.redirectUrl || null,
+    // A redirect URL left over from switching back to the confirmation page is kept only when it is valid.
+    redirectUrl: draft.afterBooking === "redirect" || isHttpUrl(draft.redirectUrl) ? draft.redirectUrl || null : null,
     redirectPassDetails: draft.redirectPassDetails,
     scheduleAnotherEnabled: draft.scheduleAnotherEnabled,
     scheduleAnotherLabel: draft.scheduleAnotherLabel,
@@ -262,25 +287,33 @@ async function assertDraftReferences(tx: DbOrTx, row: Pick<EventTypeRow, "id" | 
   await assertLocationConnectionsOwnedBy(tx, draft.locations, hostIds);
 }
 
+/** The stored event type as the editor draft (questions and the resolved schedule choice included). */
+async function currentDraft(db: DbOrTx, row: EventTypeRow): Promise<EventTypeDraft> {
+  const questions = await db.select().from(eventTypeQuestions).where(eq(eventTypeQuestions.eventTypeId, row.id)).orderBy(asc(eventTypeQuestions.position));
+  let schedule: ScheduleChoiceDraft = { kind: "schedule", scheduleId: row.scheduleId };
+  if (row.ownerUserId) {
+    const state = await resolveEventTypeSchedule(row.id, row.ownerUserId, db);
+    schedule =
+      state.custom && state.schedule
+        ? { kind: "custom", content: { timezone: state.schedule.timezone, weeklyHours: state.schedule.weeklyHours, overrides: state.schedule.overrides } }
+        : { kind: "schedule", scheduleId: state.scheduleId };
+  }
+  return draftOfRow(row, questions, schedule);
+}
+
+/** The editor version (draftVersion) of the stored event type. */
 async function versionOf(db: DbOrTx, id: string): Promise<string> {
-  const [row] = await db.select({ updatedAt: eventTypes.updatedAt }).from(eventTypes).where(eq(eventTypes.id, id)).limit(1);
-  return (row?.updatedAt ?? now()).toISOString();
+  const [row] = await db.select().from(eventTypes).where(eq(eventTypes.id, id)).limit(1);
+  if (!row) throw notFoundError(NOT_FOUND);
+  return draftVersion(await currentDraft(db, row));
 }
 
 /** The saved event type as an editor draft (returned by saveEventType so the editor adopts server ids). */
 async function savedResult(tx: DbOrTx, id: string, created: boolean): Promise<SaveEventTypeResult> {
   const [row] = await tx.select().from(eventTypes).where(eq(eventTypes.id, id)).limit(1);
   if (!row) throw notFoundError(NOT_FOUND);
-  const questions = await tx.select().from(eventTypeQuestions).where(eq(eventTypeQuestions.eventTypeId, id)).orderBy(asc(eventTypeQuestions.position));
-  let schedule: ScheduleChoiceDraft = { kind: "schedule", scheduleId: row.scheduleId };
-  if (row.ownerUserId) {
-    const state = await resolveEventTypeSchedule(id, row.ownerUserId, tx);
-    schedule =
-      state.custom && state.schedule
-        ? { kind: "custom", content: { timezone: state.schedule.timezone, weeklyHours: state.schedule.weeklyHours, overrides: state.schedule.overrides } }
-        : { kind: "schedule", scheduleId: state.scheduleId };
-  }
-  return { id, slug: row.slug, version: row.updatedAt.toISOString(), created, draft: draftOfRow(row, questions, schedule) };
+  const draft = await currentDraft(tx, row);
+  return { id, slug: row.slug, version: draftVersion(draft), created, draft };
 }
 
 function validationFailure(fieldErrors: Record<string, string[]>): AppError {
@@ -332,6 +365,7 @@ async function createEventType(db: DB | DbOrTx, actor: ActorCtx, raw: unknown): 
   const ownerUserId = actor.user.id;
   return withTx(db as DB, async (tx) => {
     const scopeRow = { ownerUserId, teamId: null, scope: "personal" as const };
+    await lockUserSchedules(tx, ownerUserId);
     await advisoryXactLock(tx, slugLockKey(scopeRow));
     const taken = await takenSlugs(tx, scopeRow);
     let slug: string;
@@ -388,8 +422,11 @@ async function createEventType(db: DB | DbOrTx, actor: ActorCtx, raw: unknown): 
 async function updateEventType(db: DB | DbOrTx, actor: ActorCtx, id: string, version: string | null, raw: unknown): Promise<SaveEventTypeResult> {
   return withTx(db as DB, async (tx) => {
     await requireEdit(actor, id, tx);
-    const row = await loadRow(tx, id, { forUpdate: true });
-    if (version && row.updatedAt.toISOString() !== version) throw new AppError("conflict", VERSION_CONFLICT);
+    const row = await lockForWrite(tx, id);
+    // Only changes to what the editor shows count as conflicts (draftVersion); an updated_at version is still honored.
+    if (version && version !== row.updatedAt.toISOString() && version !== draftVersion(await currentDraft(tx, row))) {
+      throw new AppError("conflict", VERSION_CONFLICT);
+    }
     const checked = validateDraft(raw, row.kind);
     if (!checked.ok) throw validationFailure(checked.fieldErrors);
     const draft = checked.draft;
@@ -453,7 +490,7 @@ export async function setEventTypeActive(db: DB | DbOrTx, actor: ActorCtx, id: s
   return withTx(db as DB, async (tx) => {
     await requireEdit(actor, id, tx);
     const row = await loadRow(tx, id, { forUpdate: true });
-    if (row.active === active) return { version: row.updatedAt.toISOString() };
+    if (row.active === active) return { version: await versionOf(tx, row.id) };
     return { version: await touch(tx, actor, row, { active }) };
   });
 }
@@ -463,7 +500,7 @@ export async function setEventTypeSecret(db: DB | DbOrTx, actor: ActorCtx, id: s
   return withTx(db as DB, async (tx) => {
     await requireEdit(actor, id, tx);
     const row = await loadRow(tx, id, { forUpdate: true });
-    if (row.secret === secret) return { version: row.updatedAt.toISOString() };
+    if (row.secret === secret) return { version: await versionOf(tx, row.id) };
     return { version: await touch(tx, actor, row, { secret }) };
   });
 }
@@ -474,7 +511,7 @@ export async function setInternalNote(db: DB | DbOrTx, actor: ActorCtx, id: stri
     await requireEdit(actor, id, tx);
     const row = await loadRow(tx, id, { forUpdate: true });
     const value = note.trim() || null;
-    if ((row.internalNote ?? null) === value) return { version: row.updatedAt.toISOString(), note: value };
+    if ((row.internalNote ?? null) === value) return { version: await versionOf(tx, row.id), note: value };
     return { version: await touch(tx, actor, row, { internalNote: value }), note: value };
   });
 }
@@ -485,7 +522,7 @@ export async function setEventTypeLocale(db: DB | DbOrTx, actor: ActorCtx, id: s
   return withTx(db as DB, async (tx) => {
     await requireEdit(actor, id, tx);
     const row = await loadRow(tx, id, { forUpdate: true });
-    if (row.locale === locale) return { version: row.updatedAt.toISOString() };
+    if (row.locale === locale) return { version: await versionOf(tx, row.id) };
     return { version: await touch(tx, actor, row, { locale }) };
   });
 }
@@ -508,6 +545,9 @@ export async function reorderEventTypes(db: DB | DbOrTx, actor: ActorCtx, ids: s
     if (!sameSection) throw new AppError("validation", "Event types can only be reordered within their section.");
     for (const id of unique) await requireEdit(actor, id, tx);
     const scope = slugScope(first) ?? and(eq(eventTypes.ownerUserId, first.ownerUserId!), eq(eventTypes.scope, first.scope), isNull(eventTypes.deletedAt));
+    // Same lock order as save and duplicate (schedule lock, rows, slug lock): those hold a row lock while waiting for
+    // the slug lock, so taking the slug lock first and then updating their rows here could deadlock.
+    if (first.ownerUserId && !first.teamId) await lockUserSchedules(tx, first.ownerUserId);
     await advisoryXactLock(tx, slugLockKey(first));
     const others = await tx
       .select({ id: eventTypes.id })
@@ -560,7 +600,7 @@ export async function deleteEventType(db: DB | DbOrTx, actor: ActorCtx, id: stri
 export async function duplicateEventType(db: DB | DbOrTx, actor: ActorCtx, id: string): Promise<{ id: string; slug: string }> {
   return withTx(db as DB, async (tx) => {
     await requireEdit(actor, id, tx);
-    const src = await loadRow(tx, id, { forUpdate: true });
+    const src = await lockForWrite(tx, id);
     await advisoryXactLock(tx, slugLockKey(src));
     const taken = await takenSlugs(tx, src);
     const slug = copySlugCandidates(src.slug).find((s) => !taken.has(s)) ?? dedupeSlug(`${src.slug.slice(0, 90)}-copy`, taken);

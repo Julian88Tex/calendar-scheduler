@@ -4,7 +4,7 @@
 // notifications", then the reminder rows of the workflows module (EventTypeWorkflowsSection). Client component.
 "use client";
 
-import { CalendarCheck, Mail, MoreHorizontal, Pencil } from "lucide-react";
+import { CalendarCheck, Mail, MoreVertical, Pencil } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type * as React from "react";
 import { Banner } from "@/components/ui/banner";
@@ -328,23 +328,26 @@ export function NotificationsSection({
   const notificationError = errorOf(errors, "notificationTemplates", true) ?? errorOf(errors, "cancellationPolicy");
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-3 rounded-[var(--radius-card)] border border-line bg-white p-3">
-        <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-text">
-          {mode === "calendar_invitation" ? <CalendarCheck aria-hidden="true" className="size-4" /> : <Mail aria-hidden="true" className="size-4" />}
+      <div className="flex min-w-0 items-start gap-3 rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3.5">
+        <span className="mt-0.5 inline-flex shrink-0 text-primary-text [&_svg]:size-5">
+          {mode === "calendar_invitation" ? <CalendarCheck aria-hidden="true" /> : <Mail aria-hidden="true" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-body-md font-semibold text-ink">{title}</p>
-          <p className="text-body-sm text-ink-2">{description}</p>
-          {draft.cancellationPolicy && <p className="mt-1 text-body-sm text-ink-2">Cancellation policy added</p>}
-          {!draft.includeCancelRescheduleLinks && <p className="mt-1 text-body-sm text-warning-text">Cancel and reschedule links are not included.</p>}
+          <button type="button" disabled={disabled} onClick={() => setOpen(true)} className="text-left text-title-sm text-ink hover:text-primary-text hover:underline disabled:pointer-events-none">
+            {title}
+          </button>
+          <p className="text-body-md text-ink-2">{description}</p>
+          {draft.cancellationPolicy && <p className="mt-0.5 text-body-sm text-ink-2">Cancellation policy added</p>}
+          {!draft.includeCancelRescheduleLinks && <p className="mt-0.5 text-body-sm text-warning-text">Cancel and reschedule links are not included.</p>}
         </div>
+        <span className="mt-0.5 shrink-0 text-body-sm font-semibold text-success-text">On</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <IconButton size="sm" aria-label={`${title} options`} disabled={disabled}>
-              <MoreHorizontal aria-hidden="true" className="size-4" />
+            <IconButton size="sm" aria-label={`${title} options`} disabled={disabled} className="-mt-1">
+              <MoreVertical aria-hidden="true" className="size-4" />
             </IconButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="min-w-48">
             <DropdownMenuItem icon={<Pencil aria-hidden="true" className="size-4" />} onSelect={() => setOpen(true)}>
               Edit
             </DropdownMenuItem>

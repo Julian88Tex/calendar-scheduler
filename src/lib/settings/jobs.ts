@@ -1,8 +1,8 @@
-// OWNER: settings-onboarding. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: settings-onboarding.
 //
-// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). Keys are prefixed with
-// the module domain. Planned types: settings.calendly_import, settings.account_deletion.
-// A job enqueued for a type that has no handler yet is rescheduled one hour later (last_error 'no_handler').
+// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). The settings kept by
+// docs/SCOPE.md (Profile, Branding, My Link, Login and security) all apply synchronously, so the module registers no
+// jobs: the Calendly import and account deletion jobs belong to features docs/SCOPE.md does not build.
 import type { JobHandlers, PeriodicJob } from "@/lib/jobs/types";
 
 export const handlers: JobHandlers = {};

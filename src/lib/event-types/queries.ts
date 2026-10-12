@@ -20,7 +20,7 @@ import { isoDateInZone } from "@/lib/time/format";
 import { now } from "@/lib/time/now";
 import { zoneOrUtc } from "@/lib/time/zones";
 import { GOOGLE_MEET_REQUIREMENT, KIND_LABELS, uiKindOf } from "./constants";
-import { draftOfRow, durationsOf, locationSummary, sortedLocations } from "./draft";
+import { draftOfRow, draftVersion, durationsOf, locationSummary, sortedLocations } from "./draft";
 import { newEventTypeDefaults } from "./service";
 import type { EditorCalendarOption, EditorConferencingOption, EditorScheduleOption, EventTypeEditorData, EventTypeListItem, ScheduleChoiceDraft } from "./types";
 
@@ -167,16 +167,17 @@ export async function getEventTypeEditorData(actor: ActorCtx, eventTypeId: strin
   const parts = await sharedEditorParts(ownerId, row.id, d);
   const kind = uiKindOf(row);
   const path = owner.handle && !row.teamId ? `/${owner.handle}/${row.slug}` : null;
+  const draft = draftOfRow(row, questions, schedule);
   return {
     mode: "edit",
     eventTypeId: row.id,
-    version: row.updatedAt.toISOString(),
+    version: draftVersion(draft),
     kind,
     kindLabel: KIND_LABELS[kind],
     access,
     canDelete: access === "owner" || isOrgAdmin(actor),
     active: row.active,
-    draft: draftOfRow(row, questions, schedule),
+    draft,
     owner,
     linkPrefix: row.teamId ? null : linkPrefix(owner.handle),
     publicUrl: path ? absoluteUrl(path) : null,

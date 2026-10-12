@@ -1,20 +1,9 @@
-// OWNER: settings-onboarding. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: settings-onboarding.
 //
-// /app/admin/branding placeholder (ARCHITECTURE section 3.1, SPEC BR-16). The owner replaces it with the real page.
-import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
+// /app/admin/branding (organization branding, SPEC BR-16) is not built: docs/SCOPE.md skips the admin center and admin
+// branding. The route answers 404 and nothing links to it.
+import { notFound } from "next/navigation";
 
-export const metadata: Metadata = { title: "Branding" };
-
-type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
-
-export default async function BrandingPage({ searchParams }: Props) {
-  await searchParams;
-  return (
-    <>
-      <PageHeader title="Branding" />
-      <EmptyState heading="This page is being built." />
-    </>
-  );
+export default function AdminBrandingPage(): never {
+  notFound();
 }

@@ -226,6 +226,11 @@ const zUrlHttp = z
     }
   }, MESSAGES.url);
 
+/** True for an absolute http(s) URL with a host (redirects and confirmation links, ET-26). */
+export function isHttpUrl(value: string): boolean {
+  return zUrlHttp.safeParse(value).success;
+}
+
 const zConfirmationLink: z.ZodType<ConfirmationLink> = z.object({
   label: z.string().trim().min(1, MESSAGES.linkName).max(LINK_NAME_MAX, MESSAGES.linkName),
   url: zUrlHttp,
@@ -333,11 +338,11 @@ export const zEventTypeDraft: z.ZodType<EventTypeDraft> = z
     if (d.timeZoneDisplay === "locked" && !isValidTimeZone(d.lockedTimeZone)) {
       ctx.addIssue({ code: "custom", path: ["lockedTimeZone"], message: MESSAGES.timeZone });
     }
+    // The redirect URL is only checked while "Redirect to an external site" is chosen: with the confirmation page the
+    // field is hidden, and the service drops a leftover invalid value instead of failing on a field nobody sees.
     if (d.afterBooking === "redirect") {
       if (!d.redirectUrl) ctx.addIssue({ code: "custom", path: ["redirectUrl"], message: MESSAGES.redirectRequired });
       else if (!zUrlHttp.safeParse(d.redirectUrl).success) ctx.addIssue({ code: "custom", path: ["redirectUrl"], message: MESSAGES.url });
-    } else if (d.redirectUrl && !zUrlHttp.safeParse(d.redirectUrl).success) {
-      ctx.addIssue({ code: "custom", path: ["redirectUrl"], message: MESSAGES.url });
     }
     if (!d.scheduleAnotherLabel || d.scheduleAnotherLabel.length > LINK_NAME_MAX) {
       ctx.addIssue({ code: "custom", path: ["scheduleAnotherLabel"], message: MESSAGES.linkName });

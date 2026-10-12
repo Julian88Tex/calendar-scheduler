@@ -271,9 +271,13 @@ export async function provisionMeeting(db: DB, scheduledEventId: string, opts: P
   const attempts = failed ? prevAttempts + 1 : calendar === "synced" ? 0 : prevAttempts;
   const firstFailureAt = failed ? (meta0.provision?.firstFailureAt ?? at.toISOString()) : calendar === "synced" ? null : (meta0.provision?.firstFailureAt ?? null);
   const errorText = failed ? (calendar === "failed" ? "Calendar sync failed" : "Calendar temporarily unavailable") : null;
-  const conference = conferenceStateOf(location);
   const cohostIssue = Object.entries(writes).some(([uid, w]) => uid !== b.meeting.organizerUserId && w.status !== "synced" && w.status !== "skipped_no_calendar");
   const exhausted = failed && (calendar === "failed" || attempts >= MAX_CALENDAR_ATTEMPTS);
+  // The calendar event never got written: a Meet that depends on it will not exist either (VID-12 final failure).
+  if (exhausted && location?.kind && calendarConferenceFor(location.kind) && isConferencePending(location)) {
+    location = { ...location, status: "failed", joinUrl: null, location: null, error: "calendar_write_failed" };
+  }
+  const conference = conferenceStateOf(location);
   const provisionStatus: (typeof scheduledEvents.$inferSelect)["provisionStatus"] =
     exhausted ? "failed" : failed ? "pending" : conference === "failed" || cohostIssue ? "partial" : conference === "pending" ? "pending" : "done";
   const prevLocation = b.meeting.location;

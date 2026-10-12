@@ -79,7 +79,7 @@ export type EditorConferencingOption = { available: boolean; reason?: string; co
 export type EventTypeEditorData = {
   mode: "create" | "edit";
   eventTypeId: string | null;
-  /** updated_at of the loaded row (ISO), sent back on save to detect concurrent edits. */
+  /** draftVersion of the loaded event type, sent back on save to detect concurrent edits of the editor's settings. */
   version: string | null;
   kind: UiKind;
   kindLabel: string;

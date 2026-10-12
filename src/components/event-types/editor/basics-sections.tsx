@@ -3,7 +3,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { DurationSelect } from "@/components/ui/duration-select";
 import { swatchFor } from "@/components/ui/event-colors";
@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { LocationConfig } from "@/db/types";
 import { cn } from "@/lib/cn";
+import { formatDuration } from "@/lib/time/format";
 import { DESCRIPTION_MAX, MAX_DURATIONS, MESSAGES, NAME_MAX } from "@/lib/event-types/constants";
 import type { EditorConferencingOption } from "@/lib/event-types/types";
 import { LocationEditor } from "../location-editor";
@@ -76,12 +77,31 @@ export function nextDurationOption(durations: readonly number[]): number {
   return Math.min(720, top + 15);
 }
 
+let rowKeySeq = 0;
+const nextRowKey = () => `d${++rowKeySeq}`;
+
 export function DurationSection({ draft, update, errors, disabled, kind }: SectionProps & { kind: "solo" | "group" }) {
   const durations = draft.durations;
   const multiple = durations.length > 1;
+  // Stable row keys that follow "Make default" and removals, so each DurationSelect keeps its own custom/unit state
+  // (index keys would hand a custom row's state to the preset row that moved into its place).
+  const [keys, setKeys] = useState<string[]>(() => durations.map(() => nextRowKey()));
+  // Durations replaced from outside (a save, a reset) with another length: extend or trim the keys during render.
+  if (keys.length !== durations.length) setKeys(durations.map((_, i) => keys[i] ?? nextRowKey()));
   const setAt = (i: number, minutes: number) => update({ durations: durations.map((d, j) => (j === i ? minutes : d)) });
-  const remove = (i: number) => update({ durations: durations.filter((_, j) => j !== i) });
-  const makeDefault = (i: number) => update({ durations: [durations[i]!, ...durations.filter((_, j) => j !== i)] });
+  // ET-16: removing the default makes the next option the default (it moves to the front).
+  const remove = (i: number) => {
+    setKeys(keys.filter((_, j) => j !== i));
+    update({ durations: durations.filter((_, j) => j !== i) });
+  };
+  const makeDefault = (i: number) => {
+    setKeys([keys[i]!, ...keys.filter((_, j) => j !== i)]);
+    update({ durations: [durations[i]!, ...durations.filter((_, j) => j !== i)] });
+  };
+  const add = () => {
+    setKeys([...keys, nextRowKey()]);
+    update({ durations: [...durations, nextDurationOption(durations)] });
+  };
   const duplicates = durations.map((d, i) => durations.indexOf(d) !== i);
   const listError = errorOf(errors, "durations");
   return (
@@ -90,7 +110,7 @@ export function DurationSection({ draft, update, errors, disabled, kind }: Secti
         {durations.map((d, i) => {
           const rowError = duplicates[i] ? MESSAGES.durationDuplicate : errorOf(errors, `durations.${i}`);
           return (
-            <li key={i} className="group flex flex-col gap-1">
+            <li key={keys[i] ?? `row-${i}`} className="group flex flex-col gap-1">
               <div className="flex items-start gap-2">
                 <DurationSelect
                   value={d}
@@ -105,20 +125,26 @@ export function DurationSection({ draft, update, errors, disabled, kind }: Secti
                   </Badge>
                 )}
                 {i > 0 && (
-                  <>
-                    <Button
-                      variant="tertiary"
-                      size="sm"
-                      disabled={disabled}
-                      onClick={() => makeDefault(i)}
-                      className="mt-1 shrink-0 opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
-                    >
-                      Make default
-                    </Button>
-                    <IconButton size="sm" aria-label={`Remove ${d} minute option`} disabled={disabled} onClick={() => remove(i)} className="mt-1">
-                      <X aria-hidden="true" className="size-4" />
-                    </IconButton>
-                  </>
+                  <Button
+                    variant="tertiary"
+                    size="sm"
+                    disabled={disabled}
+                    onClick={() => makeDefault(i)}
+                    className="mt-1 shrink-0 opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+                  >
+                    Make default
+                  </Button>
+                )}
+                {multiple && (
+                  <IconButton
+                    size="sm"
+                    aria-label={i === 0 ? `Remove the default ${formatDuration(d)} option` : `Remove the ${formatDuration(d)} option`}
+                    disabled={disabled}
+                    onClick={() => remove(i)}
+                    className="mt-1"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </IconButton>
                 )}
               </div>
               {rowError && <FieldError error={rowError} />}
@@ -133,7 +159,7 @@ export function DurationSection({ draft, update, errors, disabled, kind }: Secti
           disabled={disabled}
           leftIcon={<Plus aria-hidden="true" />}
           className="self-start"
-          onClick={() => update({ durations: [...durations, nextDurationOption(durations)] })}
+          onClick={add}
         >
           Add duration option
         </Button>

@@ -36,6 +36,7 @@ import {
   inviteeFormSummary,
   limitsSummary,
   locationSummary,
+  notificationsSummary,
   previewDraftOf,
   scheduleContentOf,
 } from "@/lib/event-types/draft";
@@ -303,9 +304,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
       onOpenChange={(v) => toggle(id, v)}
       badge={
         sectionErrors.has(id) ? (
-          <span className="text-body-sm font-semibold text-danger-text" role="img" aria-label="Has errors">
-            Fix errors
-          </span>
+          <span className="text-body-sm font-semibold text-danger-text">Fix errors</span>
         ) : undefined
       }
       className={cn("scroll-mt-2 rounded-none border-x-0 border-t-0", sectionErrors.has(id) && "bg-danger-soft/30")}
@@ -397,7 +396,11 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
                 {sectionCard(
                   "bookingPage",
                   <Link2 aria-hidden="true" />,
-                  data.linkPrefix ? `${data.linkPrefix}${draft.slug || (isNew ? "..." : "")}` : `${draft.slotIncrementMinutes} min increments`,
+                  data.linkPrefix
+                    ? `${data.linkPrefix}${draft.slug || (isNew ? "..." : "")}`
+                    : Number.isInteger(draft.slotIncrementMinutes)
+                      ? `${draft.slotIncrementMinutes} min increments`
+                      : "Start time increments",
                   <BookingPageSection
                     {...common}
                     linkPrefix={data.linkPrefix}
@@ -414,7 +417,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
                 {sectionCard(
                   "notifications",
                   <Bell aria-hidden="true" />,
-                  mode === "calendar_invitation" ? "Calendar invitation, email reminders" : "Email confirmation, email reminders",
+                  notificationsSummary(mode, remindersInitial),
                   <NotificationsSection
                     {...common}
                     eventTypeId={eventTypeId}
@@ -433,7 +436,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
             )}
           </div>
           {!showMore && (
-            <div className="px-4 py-5 sm:px-6">
+            <div className="px-4 py-5 sm:hidden">
               <Button variant="tertiary" onClick={() => setShowMore(true)}>
                 More options
               </Button>
@@ -477,7 +480,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
         draft={previewDraft}
         availabilityDirty={availabilityDirty}
         reloadKey={reloadKey}
-        className={cn("h-full flex-1", mobilePreview ? "flex" : "hidden lg:flex")}
+        className={cn("h-full flex-1", mobilePreview ? "flex pt-14 lg:pt-0" : "hidden lg:flex")}
         scaled={!mobilePreview}
       />
       {mobilePreview && (

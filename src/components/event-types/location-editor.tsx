@@ -272,6 +272,7 @@ export function LocationEditor({
 }
 
 function LocationDialog({ state, onCancel, onSave }: { state: NonNullable<DialogState>; onCancel: () => void; onSave: (l: LocationConfig) => void }) {
+  const formId = `location-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [draft, setDraft] = useState<LocationConfig>(state.draft);
   const [error, setError] = useState<{ location?: string; additionalInfo?: string }>({});
   const isPhysical = draft.kind === "physical";
@@ -307,13 +308,13 @@ function LocationDialog({ state, onCancel, onSave }: { state: NonNullable<Dialog
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" form="location-dialog-form">
+          <Button type="submit" form={formId}>
             {state.mode === "add" ? "Add location" : "Save"}
           </Button>
         </>
       }
     >
-      <form id="location-dialog-form" onSubmit={submit} className="flex flex-col gap-5" noValidate>
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-5" noValidate>
         {isPhysical ? (
           <>
             <FormField label="Location" required hint="Venue name or address. Add notes such as a dress code on a new line." error={error.location}>

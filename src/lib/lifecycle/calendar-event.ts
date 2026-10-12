@@ -61,13 +61,14 @@ function locationLines(b: MeetingBundle, t: ReturnType<typeof getT>): string[] {
   const out: string[] = [];
   if (loc?.kind && isConferenceKind(loc.kind)) {
     const provider = conferenceProviderName(loc.kind) ?? "web";
-    if (loc.joinUrl) {
+    if (calendarConferenceFor(loc.kind) && loc.status !== "failed") {
+      // Meet comes with the event itself (Google adds the join button and link): the text never depends on the link,
+      // so the event is not rewritten (and invitees not notified again) once Google has created it.
+      out.push(t("calendar.webConference", { provider }));
+    } else if (loc.joinUrl) {
       out.push(t("calendar.webConference", { provider }));
       out.push(t("calendar.joinFrom"));
       out.push(loc.joinUrl);
-    } else if (calendarConferenceFor(loc.kind) && loc.status !== "failed") {
-      // Meet comes with the event itself (the conference button); the link is filled in by the provider.
-      out.push(t("calendar.webConference", { provider }));
     } else {
       out.push(t("calendar.toFollow"));
     }

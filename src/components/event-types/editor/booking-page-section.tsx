@@ -22,6 +22,7 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
 /** "30 min: 9:00, 9:30, 10:00" (ET-23 example under the increments select). */
 export function incrementExample(minutes: number, hour12 = true): string {
+  if (!Number.isInteger(minutes) || minutes <= 0) return "";
   const starts = [0, 1, 2].map((k) => 9 * 60 + k * minutes).filter((m) => m < 1440);
   const fmt = (m: number) => formatMinutes(m, hour12).replace(/(am|pm)$/i, "");
   return `${minutesLabel(minutes)}: ${starts.map(fmt).join(", ")}`;
@@ -138,7 +139,7 @@ export function BookingPageSection({
           invalid={Boolean(incrementError)}
           aria-label="Start time increments"
         />
-        <p className="text-body-sm text-ink-2">{incrementExample(draft.slotIncrementMinutes, hour12)}</p>
+        {incrementExample(draft.slotIncrementMinutes, hour12) && <p className="text-body-sm text-ink-2">{incrementExample(draft.slotIncrementMinutes, hour12)}</p>}
         {incrementError && <FieldError error={incrementError} />}
       </FieldGroup>
 

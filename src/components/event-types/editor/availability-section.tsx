@@ -23,7 +23,7 @@ import { DATE_RANGE_DAYS_MAX, DATE_RANGE_DAYS_MIN, NOTICE_MAX_MINUTES } from "@/
 import { noticeText, noticeUnitOf, rollingRangeText, scheduleContentOf } from "@/lib/event-types/draft";
 import type { DateRangeDraft, EditorScheduleOption, ScheduleChoiceDraft } from "@/lib/event-types/types";
 import { formatZoneLabel } from "@/lib/time/format";
-import { errorOf, InlineDropdownButton, type SectionProps } from "./fields";
+import { errorOf, InlineDropdownButton, wholeNumberIn, type SectionProps } from "./fields";
 
 type Props = SectionProps & {
   schedules: EditorScheduleOption[];
@@ -48,15 +48,17 @@ function longDate(date: string | null): string {
 
 function RangePopover({ value, onChange, disabled, today, error, weekStart }: { value: DateRangeDraft; onChange: (v: DateRangeDraft) => void; disabled: boolean; today: string; error: string | null; weekStart: 0 | 1 }) {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const [daysText, setDaysText] = useState<string | null>(null);
+  const days = daysText ?? (Number.isFinite(value.days) ? String(value.days) : "");
+  const daysBad = daysText !== null && wholeNumberIn(daysText, DATE_RANGE_DAYS_MIN, DATE_RANGE_DAYS_MAX) === null;
+  // While the typed number is invalid the sentence shows what was typed (the draft holds NaN until it is fixed).
+  const shownDays = Number.isFinite(value.days) ? value.days : Number(daysText) || 0;
   const label =
     value.type === "rolling"
-      ? rollingRangeText(value.days, value.mode)
+      ? rollingRangeText(shownDays, value.mode)
       : value.type === "fixed"
         ? `between ${longDate(value.start)} and ${longDate(value.end)}`
         : "indefinitely";
-  const [daysText, setDaysText] = useState<string | null>(null);
-  const days = daysText ?? String(value.days);
-  const daysBad = daysText !== null && !(Number.isInteger(Number(daysText)) && Number(daysText) >= DATE_RANGE_DAYS_MIN && Number(daysText) <= DATE_RANGE_DAYS_MAX);
   const modes = [
     { value: "calendar_days", label: "calendar days" },
     { value: "weekdays", label: "week days" },
@@ -68,7 +70,7 @@ function RangePopover({ value, onChange, disabled, today, error, weekStart }: { 
       aria-label="Date range"
       className="w-[340px] p-4"
       trigger={
-        <InlineDropdownButton disabled={disabled} aria-label={`Date range: ${label}`} className={cn(error && "text-danger-text")}>
+        <InlineDropdownButton disabled={disabled} aria-label={`Date range: ${label}`} className={cn((error || daysBad) && "text-danger-text")}>
           {label}
         </InlineDropdownButton>
       }
@@ -104,8 +106,7 @@ function RangePopover({ value, onChange, disabled, today, error, weekStart }: { 
                 aria-invalid={daysBad ? true : undefined}
                 onChange={(e) => {
                   setDaysText(e.target.value);
-                  const n = Number(e.target.value);
-                  if (Number.isInteger(n) && n >= DATE_RANGE_DAYS_MIN && n <= DATE_RANGE_DAYS_MAX) onChange({ ...value, days: n });
+                  onChange({ ...value, days: wholeNumberIn(e.target.value, DATE_RANGE_DAYS_MIN, DATE_RANGE_DAYS_MAX) ?? Number.NaN });
                 }}
                 onBlur={() => !daysBad && setDaysText(null)}
                 className={cn(FIELD_BASE, "h-10 w-24 px-3 text-[14px]", daysBad && "border-danger")}
@@ -143,21 +144,31 @@ function RangePopover({ value, onChange, disabled, today, error, weekStart }: { 
   );
 }
 
+/** Minutes of a typed notice amount in a unit of `factor` minutes, or null when invalid (SCH-06: 0 to 365 days). */
+export function noticeMinutesOf(text: string, factor: number): number | null {
+  if (!text.trim()) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const minutes = Math.round(n * factor * 1e6) / 1e6;
+  return Number.isInteger(minutes) && minutes <= NOTICE_MAX_MINUTES ? minutes : null;
+}
+
 function NoticePopover({ minutes, onChange, disabled, error }: { minutes: number; onChange: (m: number) => void; disabled: boolean; error: string | null }) {
   const [unit, setUnit] = useState(() => noticeUnitOf(minutes));
   const factor = unit === "days" ? 1440 : unit === "hours" ? 60 : 1;
   const [text, setText] = useState<string | null>(null);
-  const amount = text ?? String(Math.round((minutes / factor) * 100) / 100);
-  const n = Number(amount);
-  const bad = text !== null && !(amount.trim() !== "" && Number.isFinite(n) && n >= 0 && Number.isInteger(n * factor) && n * factor <= NOTICE_MAX_MINUTES);
+  const amount = text ?? (Number.isFinite(minutes) ? String(Math.round((minutes / factor) * 100) / 100) : "");
+  const bad = text !== null && noticeMinutesOf(text, factor) === null;
+  // While the typed amount is invalid the sentence shows what was typed (the draft holds NaN until it is fixed).
+  const label = Number.isFinite(minutes) ? noticeText(minutes) : `${text?.trim() || "0"} ${unit}`;
   return (
     <Popover
       align="start"
       aria-label="Minimum notice"
       className="w-[300px] p-4"
       trigger={
-        <InlineDropdownButton disabled={disabled} aria-label={`Minimum notice: ${noticeText(minutes)}`} className={cn(error && "text-danger-text")}>
-          {noticeText(minutes)}
+        <InlineDropdownButton disabled={disabled} aria-label={`Minimum notice: ${label}`} className={cn((error || bad) && "text-danger-text")}>
+          {label}
         </InlineDropdownButton>
       }
     >
@@ -174,8 +185,7 @@ function NoticePopover({ minutes, onChange, disabled, error }: { minutes: number
             aria-invalid={bad ? true : undefined}
             onChange={(e) => {
               setText(e.target.value);
-              const v = Number(e.target.value);
-              if (e.target.value.trim() !== "" && Number.isFinite(v) && v >= 0 && Number.isInteger(v * factor) && v * factor <= NOTICE_MAX_MINUTES) onChange(v * factor);
+              onChange(noticeMinutesOf(e.target.value, factor) ?? Number.NaN);
             }}
             onBlur={() => !bad && setText(null)}
             className={cn(FIELD_BASE, "h-10 w-24 px-3 text-[14px]", bad && "border-danger")}
@@ -193,9 +203,11 @@ function NoticePopover({ minutes, onChange, disabled, error }: { minutes: number
               const next = e.target.value as typeof unit;
               const nextFactor = next === "days" ? 1440 : next === "hours" ? 60 : 1;
               setUnit(next);
-              setText(null);
-              const current = Number(amount);
-              if (Number.isFinite(current) && current >= 0) onChange(Math.min(NOTICE_MAX_MINUTES, Math.round(current * nextFactor)));
+              // The number stays and the unit changes ("4 hours" becomes "4 days"); an amount that is not valid in the
+              // new unit stays visible with its error instead of being rounded or capped silently.
+              const m = noticeMinutesOf(amount, nextFactor);
+              setText(m === null ? amount : null);
+              onChange(m ?? Number.NaN);
             }}
             className="flex-1"
           />
@@ -292,9 +304,15 @@ export function AvailabilitySection({ draft, update, errors, disabled, schedules
             <div className="flex flex-col gap-3">
               <WeeklyReadOnly content={content} hour12={hour12} weekStart={weekStart} today={today} />
               {selectedNamed && (
-                <Link href={scheduleHref(selectedNamed.id) as Route} className="inline-flex items-center gap-1 self-start text-body-md font-semibold text-primary-text hover:underline">
+                <Link
+                  href={scheduleHref(selectedNamed.id) as Route}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex items-center gap-1 self-start text-body-md font-semibold text-primary-text hover:underline"
+                >
                   Edit {selectedNamed.name}
                   <ExternalLink aria-hidden="true" className="size-3.5" />
+                  <span className="sr-only">(opens in a new tab)</span>
                 </Link>
               )}
               <p className="text-body-sm text-ink-2">Changes to a schedule apply to every event type that uses it.</p>

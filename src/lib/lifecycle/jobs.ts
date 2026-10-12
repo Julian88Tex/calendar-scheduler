@@ -1,9 +1,11 @@
-// OWNER: lifecycle-core. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: lifecycle-core.
 //
-// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). Keys are prefixed with
-// the module domain. Planned types: lifecycle.provision_retry, lifecycle.request_reschedule_reminder, lifecycle.cancel_user_meetings (payload { userId, scope: "sole_host" | "all_hosted", reason }, AU-15, TM-04).
-// A job enqueued for a type that has no handler yet is rescheduled one hour later (last_error 'no_handler').
+// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2): lifecycle.provision_retry
+// (calendar write retries with the CAL-12 fallback, pending Meet links), lifecycle.meeting_moved (in-place move side
+// effects, MP-21), lifecycle.request_reschedule_reminder (CR-08) and lifecycle.cancel_user_meetings (payload
+// { userId, scope: "sole_host" | "all_hosted", reason }, AU-15, TM-04). See job-handlers.ts.
 import type { JobHandlers, PeriodicJob } from "@/lib/jobs/types";
+import { lifecycleJobHandlers } from "./job-handlers";
 
-export const handlers: JobHandlers = {};
+export const handlers: JobHandlers = lifecycleJobHandlers;
 export const periodic: PeriodicJob[] = [];

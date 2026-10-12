@@ -67,7 +67,7 @@ test.describe("event type editor", () => {
     await page.getByLabel("Event name").fill("Strategy Session");
     await expect(preview.getByRole("heading", { level: 1, name: "Strategy Session" })).toBeVisible({ timeout: 5_000 });
 
-    // Duration: 45 min default plus a 30 min option.
+    // Duration: 45 min default plus a 15 min option (the first common duration not offered yet).
     await section(page, "Duration");
     await chooseOption(page, "Duration", "45 min");
     await page.getByRole("button", { name: "Add duration option" }).click();
@@ -77,8 +77,8 @@ test.describe("event type editor", () => {
     await section(page, "Location");
     await page.getByRole("group", { name: "Location types" }).getByRole("button", { name: "In-person" }).click();
     const dialog = page.getByRole("dialog", { name: "In-person meeting" });
-    await dialog.getByLabel("Location", { exact: true }).fill("Harbor Bistro - Waterfront\n[Business Casual Dress Code]");
-    await dialog.getByLabel("Additional information").fill("250 Embarcadero, San Francisco, CA 94111");
+    await dialog.getByRole("textbox", { name: "Location", exact: true }).fill("Harbor Bistro - Waterfront\n[Business Casual Dress Code]");
+    await dialog.getByRole("textbox", { name: "Additional information" }).fill("250 Embarcadero, San Francisco, CA 94111");
     await dialog.getByRole("button", { name: "Add location" }).click();
     await expect(page.getByRole("list", { name: "Locations" }).getByText("Harbor Bistro - Waterfront")).toBeVisible();
     await page.getByRole("button", { name: "Add a location" }).click();
@@ -91,12 +91,12 @@ test.describe("event type editor", () => {
     await section(page, "Invitee form");
     await page.getByRole("button", { name: "Add new question" }).click();
     const q = page.getByRole("dialog", { name: "Add new question" });
-    await q.getByLabel("Question").fill("Which topic?");
-    await q.getByLabel("Required").check();
+    await q.getByRole("textbox", { name: "Question", exact: true }).fill("Which topic?");
+    await q.getByRole("checkbox", { name: "Required" }).check();
     await chooseOption(page, "Answer type", "Radio buttons");
-    await q.getByLabel("Answer choice 1").fill("Pricing");
+    await q.getByRole("textbox", { name: "Answer choice 1" }).fill("Pricing");
     await q.getByRole("button", { name: "Add another" }).click();
-    await q.getByLabel("Answer choice 2").fill("Roadmap");
+    await q.getByRole("textbox", { name: "Answer choice 2" }).fill("Roadmap");
     await q.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("list", { name: "Questions" }).getByText("Which topic?")).toBeVisible();
 
@@ -108,11 +108,11 @@ test.describe("event type editor", () => {
     await page.reload();
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("heading", { level: 1, name: "Strategy Session" })).toBeVisible(SLOW);
-    await expect(page.getByRole("button", { name: /^Duration/ })).toContainText("45 min, 30 min");
+    await expect(page.getByRole("button", { name: /^Duration/ })).toContainText("45 min, 15 min");
     await expect(page.getByRole("button", { name: /^Location/ })).toContainText("In-person meeting, Google Meet");
     await moreOptions(page);
     await section(page, "Booking page options");
-    await expect(page.getByLabel("Event link")).toHaveValue("strategy-session");
+    await expect(page.getByRole("textbox", { name: "Event link" })).toHaveValue("strategy-session");
     await section(page, "Invitee form");
     await expect(page.getByRole("list", { name: "Questions" }).getByRole("listitem")).toHaveCount(2);
     expect(errors).toEqual([]);

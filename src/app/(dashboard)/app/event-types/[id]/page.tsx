@@ -6,6 +6,7 @@
 // view's "Adjust limits under Limits and buffers".
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { EventTypeEditor } from "@/components/event-types/editor/event-type-editor";
 import { getActorCtx } from "@/lib/authz";
 import { getEventTypeEditorData } from "@/lib/event-types";
@@ -19,11 +20,13 @@ type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+/** One load per request for generateMetadata and the page (schedules, calendars and conferencing are not cheap). */
+const loadEditorData = cache(async (id: string) => getEventTypeEditorData(await getActorCtx(), id));
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   if (!isUuid(id)) return { title: "Edit event type" };
-  const actor = await getActorCtx();
-  const data = await getEventTypeEditorData(actor, id).catch(() => null);
+  const data = await loadEditorData(id).catch(() => null);
   return { title: data ? `${data.draft.name} - Edit event type` : "Edit event type" };
 }
 
@@ -31,7 +34,7 @@ export default async function EditEventTypePage({ params, searchParams }: Props)
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   if (!isUuid(id)) notFound();
   const actor = await getActorCtx();
-  const data = await getEventTypeEditorData(actor, id);
+  const data = await loadEditorData(id);
   if (!data) notFound();
   const reminders = await getEventTypeReminders(actor, id).catch((e: unknown) => {
     log.warn("event_types.reminders_preload_failed", { error: e });

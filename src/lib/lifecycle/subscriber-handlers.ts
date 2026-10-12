@@ -15,7 +15,7 @@ import { calendarLinkedEvents, invitees, scheduledEventHosts, scheduledEvents, u
 import { deleteLinkedEvent, repointLinkedEvents } from "@/lib/calendars";
 import { syncBufferEvents } from "@/lib/calendars/linked-events";
 import { conferenceMode, deleteConference, updateConference } from "@/lib/conferencing";
-import type { DomainEvent } from "@/lib/events";
+import type { DomainEvent, SubscriberMap } from "@/lib/events";
 import type { JobContext } from "@/lib/jobs";
 import { log } from "@/lib/logger";
 import { notifyCanceled, notifyMeeting, sendConferenceFailure, sendFallbackNotice } from "./notify";
@@ -68,7 +68,8 @@ async function removeProviderSide(db: DB, scheduledEventId: string, opts: { noti
 }
 
 export async function onBookingCreated(event: DomainEvent<"booking.created">, ctx: JobContext): Promise<void> {
-  await provisionAndNotify(ctx.db, event.payload.scheduledEventId);
+  // Notifications for this invitee (the others of a group slot or poll were sent by their own events).
+  await provisionAndNotify(ctx.db, event.payload.scheduledEventId, {}, { inviteeIds: [event.payload.inviteeId] });
 }
 
 export async function onBookingCanceled(event: DomainEvent<"booking.canceled">, ctx: JobContext): Promise<void> {
@@ -94,7 +95,6 @@ export async function onBookingRescheduled(event: DomainEvent<"booking.reschedul
   const [newM] = await db.select().from(scheduledEvents).where(eq(scheduledEvents.id, newScheduledEventId)).limit(1);
   if (!newM) return;
   const group = Boolean(oldM?.isGroup || newM.isGroup);
-  let existingLinkedEventId: string | null = null;
   if (oldM && oldM.id !== newM.id) {
     if (!group && oldM.status === "canceled") {
       // CR-04: the provider event moves with the meeting (repointed, then updated below), never recreated.
@@ -105,8 +105,13 @@ export async function onBookingRescheduled(event: DomainEvent<"booking.reschedul
       else await removeProviderSide(db, oldM.id, { notifyAttendees: false });
     }
   }
+  if (newM.status !== "active") {
+    // Canceled again before this job ran: the provider event that just moved over goes with it.
+    await removeProviderSide(db, newM.id, { notifyAttendees: true });
+    return;
+  }
   const rows = await meetingLinkedRows(db, newM.id);
-  existingLinkedEventId = rows.find((r) => r.userId === newM.organizerUserId)?.id ?? null;
+  const existingLinkedEventId = rows.find((r) => r.userId === newM.organizerUserId)?.id ?? null;
   // Hosts that no longer host the meeting (round robin reassignment through the reschedule) lose their copy.
   const hostRows = await db.select({ userId: scheduledEventHosts.userId }).from(scheduledEventHosts).where(eq(scheduledEventHosts.scheduledEventId, newM.id));
   const hostIds = new Set(hostRows.map((h) => h.userId));
@@ -114,7 +119,7 @@ export async function onBookingRescheduled(event: DomainEvent<"booking.reschedul
     if (!hostIds.has(r.userId)) await deleteLinkedEvent({ linkedEventId: r.id, notifyAttendees: newM.settingsSnapshot?.notificationMode === "calendar_invitation" });
   }
   const fromCalendar = meetingMetaOf(newM.metadata).origin === "calendar_sync";
-  if (!fromCalendar && newM.status === "active" && oldM && oldM.organizerUserId === newM.organizerUserId) {
+  if (!fromCalendar && oldM && oldM.organizerUserId === newM.organizerUserId) {
     const loc = newM.location;
     // VID-14: a standalone conference of the same host is updated (Meet moves with its calendar event).
     if (loc?.kind && conferenceMode(loc.kind) === "standalone" && loc.status === "pushed") {
@@ -151,3 +156,11 @@ export async function onMeetingUpdated(event: DomainEvent<"meeting.updated">, ct
     });
   }
 }
+
+/** The subscriber map re-exported by the contract file subscribers.ts. */
+export const lifecycleSubscribers: SubscriberMap = {
+  "booking.created": (event, ctx) => onBookingCreated(event, ctx),
+  "booking.canceled": (event, ctx) => onBookingCanceled(event, ctx),
+  "booking.rescheduled": (event, ctx) => onBookingRescheduled(event, ctx),
+  "meeting.updated": (event, ctx) => onMeetingUpdated(event, ctx),
+};

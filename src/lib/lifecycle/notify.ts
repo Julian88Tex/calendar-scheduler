@@ -32,7 +32,6 @@ import {
   meetingSender,
   sendEmail,
   type EmailBrand,
-  type MeetingEmailKind,
   type MeetingIcs,
   type MeetingSender,
   type RenderedEmail,
@@ -40,6 +39,7 @@ import {
 import { sanitizeRichText } from "@/lib/html";
 import { getT, intlLocale, resolveLocale } from "@/lib/i18n";
 import { log } from "@/lib/logger";
+import { now } from "@/lib/time/now";
 import type { TemplateContext } from "@/lib/template";
 import { buildMeetingTemplateContext } from "@/lib/template-context";
 import { formatDateLong, formatTime, hour12For } from "@/lib/time/format";
@@ -97,8 +97,6 @@ async function deliver(db: DB, b: MeetingBundle, out: Outgoing): Promise<void> {
     },
   ]);
 }
-
-const localeOf = (b: MeetingBundle, inv?: InviteeRow | null) => resolveLocale(inv?.locale ?? b.meeting.locale ?? b.meeting.settingsSnapshot?.locale);
 
 /** The invitee-facing ICS of a meeting for one invitee (NT-06, MP-19, MP-20). */
 async function inviteeIcs(db: DB, b: MeetingBundle, inv: InviteeRow, method: "REQUEST" | "CANCEL", sequence?: number): Promise<MeetingIcs | null> {
@@ -598,7 +596,8 @@ export async function sendRequestRescheduleReminder(db: DB, inviteeId: string, d
   if (!inv) return "skipped";
   const request = inviteeMetaOf(inv.metadata).requestReschedule;
   if (!request || request.rebookedInviteeId || inv.newInviteeId || inv.status !== "canceled") return "skipped";
-  // Booked again on their own (the public page) since the request: no reminder (CR-08 acceptance).
+  // Booked again on their own (the public page): an upcoming meeting of this event type for the same email means no
+  // reminder (CR-08 acceptance).
   const again = await db
     .select({ id: invitees.id })
     .from(invitees)
@@ -608,7 +607,8 @@ export async function sendRequestRescheduleReminder(db: DB, inviteeId: string, d
         eq(invitees.emailNormalized, inv.emailNormalized),
         eq(invitees.eventTypeId, inv.eventTypeId),
         eq(invitees.status, "active"),
-        gt(invitees.createdAt, new Date(request.requestedAt)),
+        eq(scheduledEvents.status, "active"),
+        gt(scheduledEvents.startAt, now()),
       ),
     )
     .limit(1);

@@ -88,6 +88,22 @@ export function PreviewPane({ previewPath, draft, availabilityDirty, reloadKey, 
     return () => clearTimeout(id);
   }, [draft, post]);
 
+  // The frame may finish loading before this component hydrates (its load event and first ready message are then
+  // missed): pick up an already loaded document. A later ready message posts the draft again.
+  useEffect(() => {
+    const doc = (() => {
+      try {
+        return frame.current?.contentDocument ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    if (doc && doc.readyState === "complete" && doc.URL !== "about:blank") {
+      setLoaded();
+      post();
+    }
+  }, [frameKey, post, setLoaded]);
+
   return (
     <div className={cn("relative flex min-h-0 min-w-0 flex-col bg-canvas", className)}>
       {availabilityDirty && (

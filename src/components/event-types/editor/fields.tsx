@@ -37,6 +37,13 @@ export type SectionProps = {
   disabled: boolean;
 };
 
+/** The whole number typed in `text` when it lies in [min, max], else null. */
+export function wholeNumberIn(text: string, min: number, max: number): number | null {
+  if (!text.trim()) return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+
 /** "0 min", "15 min", "1 hr", "1.5 hrs", "2 hrs" (Calendly's buffer and increment labels). */
 export function minutesLabel(m: number): string {
   if (m < 60) return `${m} min`;
@@ -61,16 +68,18 @@ export type MinutesSelectProps = {
   className?: string;
 };
 
-/** A preset dropdown with "Custom" revealing a minutes input (range checked on blur). */
+/**
+ * A preset dropdown with "Custom" revealing a minutes input. Out of range custom input shows the error and emits NaN, so
+ * the draft fails validation on "Save changes" instead of silently keeping the last valid value.
+ */
 export function MinutesSelect({ value, onChange, presets, min, max, disabled, id, invalid, className, ...aria }: MinutesSelectProps) {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const isPreset = presets.includes(value);
   const [custom, setCustom] = useState(!isPreset);
   const [text, setText] = useState<string | null>(null);
   const showCustom = custom || !isPreset;
-  const shown = text ?? String(value);
-  const parsed = Number(shown);
-  const bad = text !== null && (!Number.isInteger(parsed) || parsed < min || parsed > max);
+  const shown = text ?? (Number.isFinite(value) ? String(value) : "");
+  const bad = text !== null && wholeNumberIn(text, min, max) === null;
   return (
     <div className={cn("flex min-w-0 flex-wrap items-center gap-2", className)}>
       <Select
@@ -108,8 +117,7 @@ export function MinutesSelect({ value, onChange, presets, min, max, disabled, id
             aria-invalid={bad || invalid ? true : undefined}
             onChange={(e) => {
               setText(e.target.value);
-              const n = Number(e.target.value);
-              if (e.target.value.trim() && Number.isInteger(n) && n >= min && n <= max) onChange(n);
+              onChange(wholeNumberIn(e.target.value, min, max) ?? Number.NaN);
             }}
             onBlur={() => {
               if (!bad) setText(null);

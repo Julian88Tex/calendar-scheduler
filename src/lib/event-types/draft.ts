@@ -178,6 +178,44 @@ export function draftsEqual(a: EventTypeDraft, b: EventTypeDraft): boolean {
   return canonicalJson(a) === canonicalJson(b);
 }
 
+/** cyrb53: a fast, well distributed 53-bit string hash (not cryptographic; collisions only cause a missed conflict). */
+function hash53(text: string, seed = 0): number {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/**
+ * The editor's optimistic concurrency token (ET-14): a hash of the saved draft, so only changes to what the editor
+ * shows and saves make a stale save fail. Toggling On/Off, reordering the list or other row updates that bump
+ * updated_at no longer reject the owner's unsaved edits as "changed in another window". Custom schedule content is
+ * normalized (overrides by date, intervals by start) so equal content always hashes the same.
+ */
+export function draftVersion(draft: EventTypeDraft): string {
+  const schedule =
+    draft.schedule.kind === "custom"
+      ? {
+          kind: "custom",
+          content: {
+            timezone: draft.schedule.content.timezone,
+            weeklyHours: draft.schedule.content.weeklyHours.map((d) => [...d].sort((a, b) => a.start - b.start || a.end - b.end)),
+            overrides: [...draft.schedule.content.overrides]
+              .map((o) => ({ date: o.date, intervals: [...o.intervals].sort((a, b) => a.start - b.start || a.end - b.end) }))
+              .sort((a, b) => a.date.localeCompare(b.date)),
+          },
+        }
+      : draft.schedule;
+  const text = canonicalJson({ ...draft, schedule });
+  return `d1-${hash53(text).toString(36)}-${hash53(text, 7).toString(36)}`;
+}
+
 /** True when settings that drive the preview's real availability changed (ET-29 "Save to update availability"). */
 export function availabilityChanged(a: EventTypeDraft, b: EventTypeDraft): boolean {
   const pick = (d: EventTypeDraft) => ({
@@ -284,6 +322,17 @@ export function limitsSummary(d: Pick<EventTypeDraft, "bufferBeforeMinutes" | "b
   if (d.limitPerMonth) limits.push(`${d.limitPerMonth} per month`);
   if (limits.length) parts.push(`max ${limits.join(", ")}`);
   return parts.length ? parts.join(", ") : "No buffers or limits";
+}
+
+/** ET-25 summary: the confirmation kind plus the reminders that are on ("Email confirmation, email reminders"). */
+export function notificationsSummary(
+  mode: "calendar_invitation" | "email_confirmation",
+  reminders: { invitee: { enabled: boolean }; host: { enabled: boolean } } | null | undefined,
+): string {
+  const parts = [mode === "calendar_invitation" ? "Calendar invitation" : "Email confirmation"];
+  if (reminders?.invitee.enabled) parts.push("email reminders");
+  if (reminders?.host.enabled) parts.push("host reminders");
+  return parts.join(", ");
 }
 
 /** ET-24 summary: "Name, Email, Guests, 1 question". */
