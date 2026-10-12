@@ -78,7 +78,7 @@ export async function deliverWithResend(msg: OutgoingEmail, apiKey: string): Pro
         ...(attachments.length ? { attachments } : {}),
         ...(msg.tags.length ? { tags: msg.tags } : {}),
       },
-      { idempotencyKey: msg.idempotencyKey, signal: AbortSignal.timeout(RESEND_TIMEOUT_MS) } as never,
+      { idempotencyKey: msg.idempotencyKey, signal: AbortSignal.timeout(RESEND_TIMEOUT_MS) },
     );
     if (res.error) {
       const status = res.error.statusCode ?? 0;
