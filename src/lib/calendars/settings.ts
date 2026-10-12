@@ -8,7 +8,7 @@ import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { calendarConnections, calendars, users } from "@/db/schema";
 import { getFeatures, isE2eMode } from "@/lib/env";
-import { enqueueJob, runJobsAfterResponse } from "@/lib/jobs";
+import { enqueueJob, runJobsNowInBackground } from "@/lib/jobs";
 import { nowMs } from "@/lib/time/now";
 import { CALENDAR_ACCOUNT_MAX, CALENDAR_ACCOUNT_SOFT_LIMIT, CALENDAR_LIST_JOB } from "./connections";
 import type { CalendarProviderId } from "./providers/types";
@@ -106,8 +106,16 @@ export async function getCalendarSettingsView(userId: string): Promise<CalendarS
   };
 }
 
-/** Refreshes the user's Google calendar lists in the background (throttled per connection). */
+/** Refreshes the user's Google calendar lists (throttled per connection); call it inside after(). Never throws. */
 export async function refreshCalendarListsSoon(userId: string): Promise<void> {
+  try {
+    await refreshLists(userId);
+  } catch {
+    // best effort: the periodic job refreshes every 6 hours
+  }
+}
+
+async function refreshLists(userId: string): Promise<void> {
   if (isE2eMode()) return; // E2E runs jobs explicitly (/api/test/run-jobs)
   const db = await getDb();
   const rows = await db
@@ -121,5 +129,5 @@ export async function refreshCalendarListsSoon(userId: string): Promise<void> {
     const id = await enqueueJob(db, { type: CALENDAR_LIST_JOB, payload: { connectionId: r.id }, idempotencyKey: `callist:${r.id}:v${bucket}` });
     if (id) ids.push(id);
   }
-  if (ids.length) runJobsAfterResponse({ ids, thenAnyDue: false });
+  if (ids.length) await runJobsNowInBackground({ ids, thenAnyDue: false, budgetMs: 6_000 });
 }

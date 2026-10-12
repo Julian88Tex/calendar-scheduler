@@ -87,14 +87,33 @@ function coreOf(b: TroubleshootBlocker): { start: number; end: number } {
   return b.core ?? { start: b.start, end: b.end };
 }
 
+/** "Ana Lima", "Ana Lima and Ben Ito", "Ana Lima and 2 others". */
+function namesLabel(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names[0]} and ${names.length - 1} others`;
+}
+
+function inviteesOf(b: TroubleshootBlocker): string[] {
+  return Array.isArray(b.inviteeNames) ? b.inviteeNames.filter((n) => typeof n === "string" && n.trim()) : [];
+}
+
 function blockerName(b: TroubleshootBlocker): string {
-  if (b.title) return `"${b.title}"`;
+  const names = b.source === "meeting" ? inviteesOf(b) : [];
+  if (b.title) return names.length ? `"${b.title}" with ${namesLabel(names)}` : `"${b.title}"`;
   if (b.source === "calendar") return "a busy event on your calendar";
   if (b.source === "reserved") return "a held time";
-  return "another meeting";
+  return names.length ? `a meeting with ${namesLabel(names)}` : "another meeting";
 }
 
 const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end;
+
+/** A busy interval's display title: the event title (meetings: with their invitees), else "Busy", "Held time" or "Meeting". */
+export function blockerTitle(b: TroubleshootBlocker): string {
+  const names = b.source === "meeting" ? inviteesOf(b) : [];
+  const base = b.title ?? (b.source === "calendar" ? "Busy" : b.source === "reserved" ? "Held time" : "Meeting");
+  return names.length ? `${base} with ${namesLabel(names)}` : base;
+}
 
 /** The sentence for one blocker of a candidate (CALENDAR, EVENT, OVERLAP, RESERVED or BUFFER). */
 export function blockerSentence(c: Pick<TroubleshootCandidate, "start" | "end">, b: TroubleshootBlocker, ctx: DescribeContext): string {
@@ -103,12 +122,14 @@ export function blockerSentence(c: Pick<TroubleshootCandidate, "start" | "end">,
   switch (b.code) {
     case "CALENDAR":
       return b.title ? `Conflicts with "${b.title}" on your calendar (${range}).` : `Conflicts with a busy event on your calendar (${range}).`;
-    case "EVENT":
-      return b.title
-        ? `Another ${ctx.eventTypeName} meeting is booked: "${b.title}" (${range}).`
+    case "EVENT": {
+      const names = inviteesOf(b);
+      return names.length
+        ? `Another ${ctx.eventTypeName} meeting is booked with ${namesLabel(names)} (${range}).`
         : `Another ${ctx.eventTypeName} meeting is booked (${range}).`;
+    }
     case "OVERLAP":
-      return b.title ? `Overlaps another meeting: "${b.title}" (${range}).` : `Overlaps another meeting (${range}).`;
+      return b.title || inviteesOf(b).length ? `Overlaps another meeting: ${blockerName(b)} (${range}).` : `Overlaps another meeting (${range}).`;
     case "RESERVED":
       return b.title ? `Held for "${b.title}" (${range}).` : `Held by a pending booking, meeting poll or one-off meeting (${range}).`;
     case "BUFFER": {
@@ -192,7 +213,9 @@ export function reasonSentences(c: TroubleshootCandidate, ctx: DescribeContext):
         out.push(rangeSentence(ctx));
         break;
       case "DURATION":
-        out.push(`Not enough time: the available hours here are shorter than ${formatDuration(ctx.durationMinutes)}.`);
+        out.push(
+          `Not enough time: a ${formatDuration(ctx.durationMinutes)} meeting at ${formatTime(c.start, ctx.zone, "en", ctx.hour12)} would run past the end of your available hours.`,
+        );
         break;
       case "HOLIDAY":
         out.push("This date is marked as a holiday.");

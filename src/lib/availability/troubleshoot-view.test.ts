@@ -65,6 +65,7 @@ function blocker(code: ReasonCode, start: number, end: number, patch: Partial<Tr
     meetingId: null,
     eventTypeId: null,
     bufferSide: null,
+    inviteeNames: [],
     ...patch,
   };
 }
@@ -98,11 +99,13 @@ describe("reason sentences", () => {
     expect(blockerSentence(cand(la(9, 45)), b, noBuffers)).toBe('The 30 min buffer after "Coffee with Maya" (9:00am - 9:30am) overlaps this time.');
   });
 
-  it("names existing bookings of this event type and other meetings", () => {
-    const ev = blocker("EVENT", la(13), la(13, 30), { title: "30 Minute Virtual with Maya", core: { start: la(13), end: la(13, 30) } });
-    const ov = blocker("OVERLAP", la(14), la(15), { title: "In-Person Meal or Coffee" });
-    expect(blockerSentence(cand(la(13)), ev, ctx)).toBe('Another 30 Minute Virtual meeting is booked: "30 Minute Virtual with Maya" (1:00pm - 1:30pm).');
-    expect(blockerSentence(cand(la(14)), ov, ctx)).toBe('Overlaps another meeting: "In-Person Meal or Coffee" (2:00pm - 3:00pm).');
+  it("names existing bookings of this event type and other meetings with their invitees", () => {
+    const ev = blocker("EVENT", la(13), la(13, 30), { title: "30 Minute Virtual", core: { start: la(13), end: la(13, 30) }, inviteeNames: ["Maya Patel"] });
+    const ov = blocker("OVERLAP", la(14), la(15), { title: "In-Person Meal or Coffee", inviteeNames: ["Ana Lima", "Ben Ito"] });
+    const anon = blocker("EVENT", la(16), la(16, 30));
+    expect(blockerSentence(cand(la(13)), ev, ctx)).toBe("Another 30 Minute Virtual meeting is booked with Maya Patel (1:00pm - 1:30pm).");
+    expect(blockerSentence(cand(la(14)), ov, ctx)).toBe('Overlaps another meeting: "In-Person Meal or Coffee" with Ana Lima and Ben Ito (2:00pm - 3:00pm).');
+    expect(blockerSentence(cand(la(16)), anon, ctx)).toBe("Another 30 Minute Virtual meeting is booked (4:00pm - 4:30pm).");
   });
 
   it("explains notice, date range and limits with the configured values", () => {

@@ -144,9 +144,35 @@ async function redirectFor(
   });
 }
 
-async function findByClientRequestId(db: DbOrTx, clientRequestId: string): Promise<Success | null> {
-  const [row] = await db.select({ id: invitees.id }).from(invitees).where(eq(invitees.clientRequestId, clientRequestId)).limit(1);
-  return row ? resultForInvitee(db, row.id) : null;
+/** What a repeated client request id must match to replay the first result (BK-19). */
+type ReplayKey = { eventTypeId: string; start: Date; emailNormalized: string | null };
+
+const replayKeyOf = (p: { target: BookingTarget; v: ValidatedBooking; input: CreateBookingInput }): ReplayKey => ({
+  eventTypeId: p.target.eventType.id,
+  start: p.v.start,
+  // Poll bookings store the first participant as the main invitee, not the booker.
+  emailNormalized: p.input.pollContext ? null : p.v.emailNormalized,
+});
+
+/**
+ * The first result of a repeated client request id (a double click, BK-19). A client request id only replays the same
+ * booking (event type, start and email): a stale id reused for another time or person never answers with someone
+ * else's booking, it fails instead so the page can be refreshed.
+ */
+async function findByClientRequestId(db: DbOrTx, clientRequestId: string, key: ReplayKey): Promise<CreateBookingResult | null> {
+  const [row] = await db
+    .select({ id: invitees.id, eventTypeId: invitees.eventTypeId, email: invitees.emailNormalized, startAt: scheduledEvents.startAt })
+    .from(invitees)
+    .innerJoin(scheduledEvents, eq(scheduledEvents.id, invitees.scheduledEventId))
+    .where(eq(invitees.clientRequestId, clientRequestId))
+    .limit(1);
+  if (!row) return null;
+  const same =
+    row.eventTypeId === key.eventTypeId &&
+    row.startAt.getTime() === key.start.getTime() &&
+    (key.emailNormalized === null || row.email === key.emailNormalized);
+  if (!same) return fail("validation", MESSAGES.staleForm);
+  return resultForInvitee(db, row.id);
 }
 
 /** BK-28: true when any of the hosts blocked this email or its domain. */
@@ -223,6 +249,11 @@ function sourceOf(input: CreateBookingInput, target: BookingTarget, actor: Actor
   return "booking_page";
 }
 
+/** Meetings that a reschedule (a new booking replacing the old one) may move (CR-03; not one-off OO-09, not poll MP-21). */
+export function isReschedulableSource(source: (typeof scheduledEvents.$inferSelect)["source"]): boolean {
+  return source !== "one_off" && source !== "poll";
+}
+
 function domainActor(actor: Actor, inviteeName: string, pollUserId?: string): DomainActor {
   if (pollUserId) return { type: "user", userId: pollUserId };
   if (actor.type === "host") return { type: "user", userId: actor.userId };
@@ -245,6 +276,8 @@ type Plan = {
   hostIds: string[];
   /** Completing a reservation. */
   reservation?: { id: string; assignment: (typeof bookingReservations.$inferSelect)["assignment"]; verifiedEmail: boolean };
+  /** BK-17: the email was proven by a remembered device ("Remember this device"). */
+  emailVerified?: boolean;
 };
 
 type Recheck = { slot: Slot; prepared: PreparedAvailability; hostIds: string[]; organizerId: string; byPool: Record<string, { userId: string; reason: string }> };
@@ -470,7 +503,7 @@ async function insertBookingInTx(tx: DbOrTx, plan: Plan, check: Recheck, old: In
       pollParticipantId: p.participantId && isUuid(p.participantId) ? p.participantId : null,
       schedulingMethod,
       scheduledByUserId: scheduledBy,
-      emailVerifiedAt: main && plan.reservation?.verifiedEmail ? at : null,
+      emailVerifiedAt: main && (plan.reservation?.verifiedEmail || plan.emailVerified) ? at : null,
       clientRequestId: main ? (input.clientRequestId ?? null) : null,
       reservationId: main ? (plan.reservation?.id ?? null) : null,
     });
@@ -601,7 +634,7 @@ async function runBookingTransaction(plan: Plan, preferHostIds?: string[]): Prom
           await lockHostsInTx(tx, plan.hostIds);
           // Idempotency inside the lock (BK-19): a double click whose first request is still in flight waits here.
           if (input.clientRequestId) {
-            const existing = await findByClientRequestId(tx, input.clientRequestId);
+            const existing = await findByClientRequestId(tx, input.clientRequestId, replayKeyOf(plan));
             if (existing) return { existing };
           }
           let old: InviteeRow | null = null;
@@ -615,6 +648,16 @@ async function runBookingTransaction(plan: Plan, preferHostIds?: string[]): Prom
               throw e;
             }
             if (old.eventTypeId !== plan.target.eventType.id) throw new BookingAbort(fail("validation", MESSAGES.notReschedulable));
+            // CR-03: one-off and poll meetings are never rescheduled through a new booking (OO-09, MP-21), and an
+            // invitee cannot move a meeting whose start has passed.
+            const [moved] = await tx
+              .select({ startAt: scheduledEvents.startAt, source: scheduledEvents.source })
+              .from(scheduledEvents)
+              .where(eq(scheduledEvents.id, old.scheduledEventId))
+              .limit(1);
+            if (!moved || !isReschedulableSource(moved.source) || (plan.actor.type === "invitee" && moved.startAt.getTime() <= plan.at.getTime())) {
+              throw new BookingAbort(fail("slot_unavailable", MESSAGES.notReschedulable));
+            }
           }
           let prefer = preferHostIds;
           if (old && plan.target.eventType.reschedulePreference === "same_hosts" && plan.target.eventType.poolingType) {
@@ -639,7 +682,7 @@ async function runBookingTransaction(plan: Plan, preferHostIds?: string[]): Prom
       const mapped = mapTxError(e);
       if (mapped) return mapped;
       if (input.clientRequestId && isUniqueViolation(e, "invitees_client_request_uq")) {
-        const existing = await findByClientRequestId(db, input.clientRequestId);
+        const existing = await findByClientRequestId(db, input.clientRequestId, replayKeyOf(plan));
         if (existing) return existing;
       }
       if (isUniqueViolation(e, "sched_group_slot_uq") && attempt === 0) continue; // retry once as a join
@@ -660,12 +703,13 @@ async function prepare(input: CreateBookingInput, ctx: BookingContext): Promise<
   const target = await resolveRequestTarget(input.target);
   if (!target) return fail("not_found", MESSAGES.notFound);
   const et = target.eventType;
-  if (et.deletedAt) return fail("not_found", MESSAGES.notFound);
+  // CR-03: an event type that is now off or deleted can no longer be rescheduled into.
+  if (et.deletedAt) return fail("not_found", input.reschedule ? MESSAGES.notReschedulable : MESSAGES.notFound);
   if (target.linkStatus && target.linkStatus !== "active") return fail("link_used", target.linkStatus === "used" ? MESSAGES.linkUsed : "This link has expired.");
   if (!input.pollContext) {
     // Adhoc types (one-off meetings, polls) are only bookable through their own flow.
     if (et.type === "adhoc" && target.kind !== "one_off") return fail("not_found", MESSAGES.notFound);
-    if (!et.active && actor.type === "invitee") return fail("not_found", MESSAGES.notAvailable);
+    if (!et.active && actor.type === "invitee") return fail("not_found", input.reschedule ? MESSAGES.notReschedulable : MESSAGES.notAvailable);
   }
   const v = validateBookingInput(input, target, { hostActor: actor.type !== "invitee" || Boolean(input.pollContext) });
   if (!v.ok) return fail("validation", "Check the highlighted fields and try again.", { fieldErrors: v.fieldErrors });
@@ -723,7 +767,7 @@ export async function createBooking(input: CreateBookingInput, ctx: BookingConte
 
   // Fast path of the idempotency check (repeated inside the locked transaction).
   if (input.clientRequestId) {
-    const existing = await findByClientRequestId(db, input.clientRequestId);
+    const existing = await findByClientRequestId(db, input.clientRequestId, replayKeyOf({ ...p, input }));
     if (existing) return existing;
   }
 
@@ -734,6 +778,7 @@ export async function createBooking(input: CreateBookingInput, ctx: BookingConte
     return slotTaken();
   }
 
+  let trusted = false;
   if (needsVerification(input, p.target, p.actor)) {
     if (input.verification) {
       const r = await verifyReservationCode(input.verification.reservationId, input.verification.code, { now: p.at });
@@ -743,7 +788,7 @@ export async function createBooking(input: CreateBookingInput, ctx: BookingConte
       }
       return fail(r.code === "not_found" ? "not_found" : r.code, r.message);
     }
-    const trusted = await isTrustedDevice(db, ctx.trustedDeviceTokens, p.v.email, p.at);
+    trusted = await isTrustedDevice(db, ctx.trustedDeviceTokens, p.v.email, p.at);
     if (!trusted) {
       const r = await reserve(input, p, "email_verification");
       if (!r.ok) return r;
@@ -761,7 +806,37 @@ export async function createBooking(input: CreateBookingInput, ctx: BookingConte
   }
 
   const plan = await makePlan(input, p);
+  if (trusted) plan.emailVerified = true;
   return runBookingTransaction(plan);
+}
+
+/** JSON with sorted object keys and without undefined values (jsonb does not keep key order). */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((v) => canonicalJson(v === undefined ? null : v)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+/**
+ * What makes two submissions the same booking request: everything the invitee entered for the slot (not the click's
+ * client request id, the verification or the actor). A double click keeps one hold; a corrected resubmission (new
+ * name, answers, guests or duration) replaces the hold so the booking never uses stale details.
+ */
+export function holdFingerprint(input: Partial<CreateBookingInput>): string {
+  return canonicalJson({
+    target: input.target ?? null,
+    start: typeof input.start === "string" ? new Date(input.start).getTime() : null,
+    durationMinutes: input.durationMinutes ?? null,
+    invitee: input.invitee ?? null,
+    guests: input.guests ?? [],
+    locationAnswer: input.locationAnswer ?? null,
+    answers: input.answers ?? [],
+    tracking: input.tracking ?? {},
+    routingFormSubmissionId: input.routingFormSubmissionId ?? null,
+  });
 }
 
 /** Inserts a hold under the booking locks (SCH-19): exactly the meeting's hosts, or one seat of a group slot. */
@@ -777,9 +852,15 @@ async function reserve(
     return await db.transaction(
       async (tx) => {
         await lockHostsInTx(tx, plan.hostIds);
-        // The same email retrying the same slot (double click, payment retry) keeps its live hold (SCH-19).
-        const [live] = await tx
-          .select({ id: bookingReservations.id, expiresAt: bookingReservations.expiresAt })
+        // The same submission again (double click, payment retry) keeps its live hold (SCH-19); an edited one falls
+        // through and replaces it below.
+        const live = await tx
+          .select({
+            id: bookingReservations.id,
+            expiresAt: bookingReservations.expiresAt,
+            endAt: bookingReservations.endAt,
+            payload: bookingReservations.payload,
+          })
           .from(bookingReservations)
           .where(
             and(
@@ -790,9 +871,13 @@ async function reserve(
               eq(bookingReservations.status, "pending"),
               gt(bookingReservations.expiresAt, new Date(plan.at.getTime() + MIN)),
             ),
-          )
-          .limit(1);
-        if (live) return { ok: true as const, reservationId: live.id, expiresAt: live.expiresAt, reused: true };
+          );
+        const wantedEnd = plan.v.start.getTime() + plan.v.durationMinutes * MIN;
+        const fingerprint = holdFingerprint(input);
+        const same = live.find(
+          (r) => r.endAt.getTime() === wantedEnd && holdFingerprint(r.payload as Partial<CreateBookingInput>) === fingerprint,
+        );
+        if (same) return { ok: true as const, reservationId: same.id, expiresAt: same.expiresAt, reused: true };
         const check = await recheckInTx(tx, plan, {});
         if ("ok" in check) throw new BookingAbort(check);
         if (et.kind === "group" && check.slot.existingMeetingId) {
@@ -900,13 +985,12 @@ export async function completeReservation(
   }
   // An email verification hold completes only once the code was checked (verifyReservationCode).
   if (res.kind === "email_verification" && extra.verifiedEmail !== true) {
-    return fail("verification_required", verificationPrompt(res.inviteeEmailNormalized), { reservationId });
+    const typed = (res.payload as Partial<CreateBookingInput>)?.invitee?.email;
+    return fail("verification_required", verificationPrompt(typeof typed === "string" && typed.trim() ? typed.trim() : res.inviteeEmailNormalized), { reservationId });
   }
   const at = extra.now ?? clockNow();
   const input = res.payload as unknown as CreateBookingInput;
-  const p = await prepare({ ...input, actor: { type: "invitee" } }, { now: at });
-  if ("ok" in p) {
-    // The event type changed since the hold (deleted, turned off, new required question): cancel it, refund payments.
+  const cancelHold = async (reason: string) => {
     await db.transaction(async (tx) => {
       const canceled = await tx
         .update(bookingReservations)
@@ -916,12 +1000,24 @@ export async function completeReservation(
       if (canceled.length > 0 && res.kind === "payment") {
         await enqueueJob(tx, {
           type: "payments.refund",
-          payload: { reservationId, paymentId: extra.paymentId ?? null, reason: "event_type_changed" },
+          payload: { reservationId, paymentId: extra.paymentId ?? null, reason },
           idempotencyKey: `refund:${reservationId}`,
         });
       }
     });
+    if (res.kind === "payment") runJobsAfterResponse({ types: ["payments.refund"] });
+  };
+  const p = await prepare({ ...input, actor: { type: "invitee" } }, { now: at });
+  if ("ok" in p) {
+    // The event type changed since the hold (deleted, turned off, new required question): cancel it, refund payments.
+    await cancelHold("event_type_changed");
     return p.code === "validation" ? slotTaken() : p;
+  }
+  // BK-28: a host who blocked this email while the hold was pending still never gets the booking (generic answer).
+  if (await isBlockedInvitee(db, [...new Set([...candidateHostIds(p.target.eventType), ...res.hostUserIds])], p.v.email)) {
+    await cancelHold("blocked");
+    await blockedDelay();
+    return slotTaken();
   }
   const plan = await makePlan(input, p, { id: res.id, assignment: res.assignment, verifiedEmail: extra.verifiedEmail === true });
   plan.hostIds = [...new Set([...plan.hostIds, ...res.hostUserIds])].sort();
@@ -1070,7 +1166,7 @@ export async function resendReservationCode(reservationId: string, opts: { now?:
 }
 
 /** Reservation state for the embed payment polling endpoint (BK-31); null for unknown ids. */
-export async function getReservationStatus(reservationId: string): Promise<ReservationStatus | null> {
+export async function getReservationStatus(reservationId: string, opts: { now?: Date } = {}): Promise<ReservationStatus | null> {
   if (!isUuid(reservationId)) return null;
   const db = await getDb();
   const [res] = await db
@@ -1089,6 +1185,9 @@ export async function getReservationStatus(reservationId: string): Promise<Reser
     const [inv] = await db.select({ id: invitees.id }).from(invitees).where(eq(invitees.reservationId, reservationId)).limit(1);
     inviteeId = inv?.id ?? null;
   }
-  return { status: res.status, kind: res.kind, inviteeId: inviteeId ?? null, expiresAt: res.expiresAt.toISOString() };
+  // An email verification hold past its time no longer holds the slot even before the expiry job marks it (a paid
+  // hold stays pending: the payment may still complete while the slot is free).
+  const status = res.status === "pending" && res.kind === "email_verification" && res.expiresAt.getTime() <= (opts.now ?? clockNow()).getTime() ? "expired" : res.status;
+  return { status, kind: res.kind, inviteeId: inviteeId ?? null, expiresAt: res.expiresAt.toISOString() };
 }
 

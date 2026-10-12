@@ -44,7 +44,8 @@ export function MeetingLimitsCard({ limits, counts }: MeetingLimitsCardProps) {
   const [rows, setRows] = useState<Row[]>(() => toRows(limits));
   const saved = useRef<MeetingLimits>(limits);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { state, run } = useSaveQueue();
+  const { state, run, markDirty } = useSaveQueue();
+  const pending = useRef<Row[] | null>(null);
 
   const valid = (list: Row[]) => list.every((r) => parseLimit(r.text) !== null);
   const limitsOf = (list: Row[]) => rowsToLimits(list.map((r) => ({ period: r.period, count: parseLimit(r.text) })));
@@ -71,16 +72,30 @@ export function MeetingLimitsCard({ limits, counts }: MeetingLimitsCardProps) {
 
   const change = (list: Row[], immediate = false) => {
     setRows(list);
+    markDirty();
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
+    pending.current = null;
     if (!valid(list)) return;
     if (immediate) save(list);
-    else timer.current = setTimeout(() => save(list), 600);
+    else {
+      pending.current = list;
+      timer.current = setTimeout(() => {
+        pending.current = null;
+        save(list);
+      }, 600);
+    }
   };
 
+  // Save a pending edit when leaving the page (in-app navigation unmounts the card).
+  const saveRef = useRef(save);
+  useEffect(() => {
+    saveRef.current = save;
+  });
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      if (pending.current) saveRef.current(pending.current);
     },
     [],
   );

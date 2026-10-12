@@ -81,7 +81,7 @@ const messageOf = (res: AnyResult, field?: string) =>
 
 export function SchedulesView({ schedules, schedule, eventTypes, today: serverToday, hour12, weekStart, view: initialView }: SchedulesViewProps) {
   const router = useRouter();
-  const { state: saveState, run, idle } = useSaveQueue();
+  const { state: saveState, run, idle, markDirty } = useSaveQueue();
   const [, startTransition] = useTransition();
   const scheduleId = schedule.id;
   const timeFormat = hour12 ? "12h" : "24h";
@@ -127,6 +127,7 @@ export function SchedulesView({ schedules, schedule, eventTypes, today: serverTo
 
   const onWeeklyChange = (next: WeeklyHours) => {
     setWeekly(next);
+    markDirty();
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     if (!weeklyIsValid(next)) {

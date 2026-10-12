@@ -3,14 +3,14 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { invitees } from "@/db/schema";
+import { invitees, scheduledEvents } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { isUuid } from "@/lib/ids";
 import { isValidTimeZone } from "@/lib/slots";
 import { dayFromIso, isoFromDay, zoneClock } from "@/lib/slots/zone";
 import { now as clockNow } from "@/lib/time/now";
 import { computeAvailability, hostSpecsOf, MAX_RANGE_DAYS } from "./availability";
-import { createBooking } from "./create";
+import { createBooking, isReschedulableSource } from "./create";
 import { firstAvailableDate, groupSlotsByLocalDate, localDateRange, localDateSpan, type SlotDays } from "./format";
 import { checkBookingBot } from "./protect";
 import type { BookingRequest, SlotsQuery } from "./schemas";
@@ -49,8 +49,9 @@ function isHostOf(target: BookingTarget, userId: string | null): boolean {
 
 /**
  * GET /api/public/slots (BK-31): slots of [start, end] (local dates in `tz`, at most 62 days) grouped by the zone's
- * local dates (SCH-22). With first=1 and no slots, looks ahead (up to a year, within the booking window) for the first
- * date with availability. troubleshoot=1 is for hosts of the event type only.
+ * local dates (SCH-22; a locked time zone event uses its locked zone instead). With first=1 and no slots, looks ahead
+ * (up to a year, within the booking window) for the first date with availability. troubleshoot=1 is for hosts of the
+ * event type only.
  */
 export async function publicSlots(q: SlotsQuery, viewer: { userId: string } | null): Promise<SlotsResponse> {
   if (!isValidTimeZone(q.tz)) throw new AppError("validation", "Choose a valid time zone.", { fieldErrors: { tz: ["Choose a valid time zone."] } });
@@ -64,20 +65,28 @@ export async function publicSlots(q: SlotsQuery, viewer: { userId: string } | nu
   if (troubleshoot && !viewerIsHost) throw new AppError("forbidden", "Only the host can troubleshoot this page.");
   if (!target.eventType.active && !viewerIsHost) throw new AppError("not_found", MESSAGES.notAvailable);
 
+  const now = clockNow();
   let ignoreInviteeId: string | undefined;
   if (q.reschedule) {
+    // CR-03: only an active invitee of this event type whose meeting is still ahead, and never a one-off or poll
+    // meeting, can be rescheduled.
     const db = await getDb();
     const [inv] = await db
-      .select({ id: invitees.id })
+      .select({ id: invitees.id, startAt: scheduledEvents.startAt, source: scheduledEvents.source })
       .from(invitees)
+      .innerJoin(scheduledEvents, eq(scheduledEvents.id, invitees.scheduledEventId))
       .where(and(eq(invitees.id, q.reschedule), eq(invitees.eventTypeId, target.eventType.id), eq(invitees.status, "active")))
       .limit(1);
-    if (!inv) throw new AppError("not_found", MESSAGES.notReschedulable);
+    if (!inv || !isReschedulableSource(inv.source) || (!viewerIsHost && inv.startAt.getTime() <= now.getTime())) {
+      throw new AppError("not_found", MESSAGES.notReschedulable);
+    }
     ignoreInviteeId = inv.id;
   }
 
-  const now = clockNow();
-  const range = localDateRange(q.start, q.end, q.tz);
+  // SCH-22: a locked time zone event always shows (and groups) its slots in the locked zone.
+  const et = target.eventType;
+  const zone = et.timeZoneDisplay === "locked" && isValidTimeZone(et.lockedTimeZone) ? et.lockedTimeZone : q.tz;
+  const range = localDateRange(q.start, q.end, zone);
   const run = (start: Date, end: Date, withDiagnostics: boolean) =>
     computeAvailability({
       target,
@@ -92,9 +101,9 @@ export async function publicSlots(q: SlotsQuery, viewer: { userId: string } | nu
     });
   const result = await run(range.start, range.end, troubleshoot);
   const durationMinutes = result.prepared?.durationMinutes ?? (q.duration ?? target.eventType.durationMinutes);
-  const days = groupSlotsByLocalDate(result.slots, q.tz);
+  const days = groupSlotsByLocalDate(result.slots, zone);
   const out: SlotsResponse = {
-    timeZone: q.tz,
+    timeZone: zone,
     durationMinutes,
     days,
     windowEnd: result.windowEnd === null ? null : new Date(result.windowEnd).toISOString(),
@@ -102,12 +111,12 @@ export async function publicSlots(q: SlotsQuery, viewer: { userId: string } | nu
   const first = firstAvailableDate(days);
   if (first) out.firstAvailableDate = first;
   else if (q.first === "1" || q.first === "true") {
-    const found = await lookAhead(q, result.windowEnd, (s, e) => run(s, e, false));
+    const found = await lookAhead({ ...q, tz: zone }, result.windowEnd, (s, e) => run(s, e, false));
     if (found) out.firstAvailableDate = found;
   }
   if (troubleshoot) {
     const byDay: Record<string, TroubleshootCandidate[]> = {};
-    const clock = zoneClock(q.tz);
+    const clock = zoneClock(zone);
     for (const d of result.diagnostics ?? []) {
       const day = isoFromDay(clock.localDay(d.start));
       (byDay[day] ??= []).push(candidateOut(d, viewer!.userId, true));

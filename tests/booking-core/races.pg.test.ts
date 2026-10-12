@@ -3,7 +3,8 @@
 // same invitee; two concurrent reschedules of one invitee produce one new invitee; a cancel racing a reschedule
 // serializes; 10 concurrent reservations for one slot create one; completeReservation called concurrently creates one
 // invitee; two concurrent round robin bookings at one time go to different hosts; concurrent first bookings of a
-// group slot share one scheduled event.
+// group slot share one scheduled event; a host-level daily limit admits one of several concurrent bookings across
+// event types; a double click in the email verification flow keeps one hold and one code.
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,7 +22,7 @@ vi.mock("@/lib/polls", () => ({ getPollReservedIntervals: async () => ({}), mark
 vi.mock("@/lib/payments", () => ({ isPaymentsConfigured: () => true }));
 vi.mock("@/lib/events/registry", () => ({ subscriberKeysFor: () => [], SUBSCRIBER_KEYS: [] }));
 
-const { bookingReservations, invitees, scheduledEventHosts, scheduledEvents } = await import("@/db/schema");
+const { bookingReservations, invitees, scheduledEventHosts, scheduledEvents, verificationCodes } = await import("@/db/schema");
 const { completeReservation, createBooking, createReservation } = await import("@/lib/booking/create");
 const { lockHostsInTx, lockInviteeForChangeInTx } = await import("@/lib/booking/locks");
 const { loadEventType } = await import("@/lib/booking/target");
@@ -170,6 +171,47 @@ describe.runIf(process.env.TEST_DATABASE_URL)("booking races on real Postgres", 
       expect(x.ok && y.ok).toBe(true);
       const hosts = await t.db.select().from(scheduledEventHosts).where(eq(scheduledEventHosts.eventTypeId, eventType.id));
       expect(new Set(hosts.map((r) => r.userId)).size).toBe(2);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("a host daily meeting limit of 1 across event types admits exactly one of several concurrent bookings (SCH-09)", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 24 });
+    try {
+      const fx = await setupSolo(t.db, { user: { meetingLimitDay: 1 } });
+      const { eventType: sixty } = await f.createEventType(t.db, {
+        owner: fx.owner,
+        durationMinutes: 60,
+        overrides: { slotIncrementMinutes: 30, minimumNoticeMinutes: 0, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 },
+      });
+      const other = { kind: "event_type" as const, eventType: (await loadEventType(sixty.id, t.db))! };
+      const results = await Promise.all([
+        createBooking(bookingInput(fx.target, la("2030-10-08 09:00")), ctx),
+        createBooking(bookingInput(fx.target, la("2030-10-08 11:00")), ctx),
+        createBooking(bookingInput(other, la("2030-10-08 13:00")), ctx),
+        createBooking(bookingInput(other, la("2030-10-08 15:00")), ctx),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.filter((r) => !r.ok && r.code === "slot_unavailable")).toHaveLength(3);
+      const hostRows = await t.db.select().from(scheduledEventHosts).where(eq(scheduledEventHosts.userId, fx.owner.id));
+      expect(hostRows).toHaveLength(1);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("a double click in the email verification flow keeps one hold and one code", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 12 });
+    try {
+      const fx = await setupSolo(t.db, { eventType: { requireEmailVerification: true } });
+      const input = bookingInput(fx.target, la("2030-10-08 16:00"), { invitee: { name: "Ana", email: "ana@example.com", timezone: "UTC" } });
+      const [a, b] = await Promise.all([createBooking(input, ctx), createBooking(input, ctx)]);
+      expect(a).toMatchObject({ ok: false, code: "verification_required" });
+      expect(!a.ok && !b.ok && a.reservationId === b.reservationId).toBe(true);
+      const holds = await t.db.select().from(bookingReservations).where(eq(bookingReservations.eventTypeId, fx.target.eventType.id));
+      expect(holds).toHaveLength(1);
+      expect(await t.db.select().from(verificationCodes).where(eq(verificationCodes.contextId, holds[0]!.id))).toHaveLength(1);
     } finally {
       await t.close();
     }

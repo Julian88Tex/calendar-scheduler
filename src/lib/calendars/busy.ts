@@ -227,7 +227,7 @@ export async function replaceWindowEvents(
     const isOwn = await ownMatcher(tx, p.userId, p.events);
     await tx
       .delete(externalEvents)
-      .where(and(eq(externalEvents.calendarId, p.calendarId), lt(externalEvents.startAt, we), sql`${externalEvents.endAt} > ${ws}`));
+      .where(and(eq(externalEvents.calendarId, p.calendarId), lt(externalEvents.startAt, we), gt(externalEvents.endAt, ws)));
     const unique = new Map<string, RemoteEvent>();
     for (const e of p.events) unique.set(`${e.externalId}|${e.start.getTime()}`, e);
     const rows = [...unique.values()].map((e) => ({
@@ -633,6 +633,6 @@ export async function invalidateCalendarCache(calendarIds: string[], dbOrTx?: Db
   const staleAt = new Date(nowMs() - 60 * 60 * 1000);
   await db
     .update(calendarSyncWindows)
-    .set({ fetchedAt: sql`least(${calendarSyncWindows.fetchedAt}, ${staleAt})` })
+    .set({ fetchedAt: sql`least(${calendarSyncWindows.fetchedAt}, ${staleAt.toISOString()}::timestamptz)` })
     .where(inArray(calendarSyncWindows.calendarId, ids));
 }

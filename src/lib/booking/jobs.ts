@@ -12,7 +12,8 @@ import { decryptOrNull } from "@/lib/crypto";
 import { emailBrandForUser, sendEmail } from "@/lib/email";
 import type { JobHandlers, PeriodicJob } from "@/lib/jobs/types";
 import { PermanentJobError } from "@/lib/jobs/types";
-import { formatMeetingWhen, hour12For } from "@/lib/time/format";
+import { isValidTimeZone } from "@/lib/slots";
+import { formatMeetingWhen, formatZoneLabel, hour12For } from "@/lib/time/format";
 import { renderVerificationCodeEmail } from "./emails";
 import { loadEventType } from "./target";
 import type { CreateBookingInput } from "./types";
@@ -53,10 +54,13 @@ export const handlers: JobHandlers = {
     const brand = await emailBrandForUser(hostId, ctx.db);
     const hostRow = hostId ? await ctx.db.query.users.findFirst({ where: (u, { eq: e }) => e(u.id, hostId), columns: { name: true } }) : null;
     const input = res.payload as unknown as Partial<CreateBookingInput>;
-    const zone = typeof input?.invitee?.timezone === "string" ? input.invitee.timezone : "UTC";
+    // Locked time zone events show their locked zone (GEN-06), else the invitee's.
+    const locked = et.timeZoneDisplay === "locked" && isValidTimeZone(et.lockedTimeZone) ? et.lockedTimeZone : null;
+    const zone = locked ?? (typeof input?.invitee?.timezone === "string" && isValidTimeZone(input.invitee.timezone) ? input.invitee.timezone : "UTC");
     let when: string | null = null;
     try {
-      when = formatMeetingWhen(res.startAt, res.endAt, zone, "en", hour12For(input?.invitee?.timeFormat ?? null));
+      // "10:00am - 10:30am, Tuesday, October 8, 2030 (Central European Time)"
+      when = `${formatMeetingWhen(res.startAt, res.endAt, zone, "en", hour12For(input?.invitee?.timeFormat ?? null))} (${formatZoneLabel(zone)})`;
     } catch {
       when = null;
     }

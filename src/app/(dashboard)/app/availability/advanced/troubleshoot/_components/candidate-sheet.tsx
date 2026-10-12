@@ -12,7 +12,7 @@ import { formatDateLong, formatTimeRange } from "@/lib/time/format";
 import { reasonLabel } from "@/lib/slots/reasons";
 import { ADVANCED_SETTINGS_PATH, scheduleHref } from "@/lib/availability/links";
 import type { TroubleshootDay } from "@/lib/availability/types";
-import { fixTarget, statusHint, type CandidateView } from "@/lib/availability/troubleshoot-view";
+import { blockerTitle, fixTarget, statusHint, type CandidateView } from "@/lib/availability/troubleshoot-view";
 
 export type CandidateSheetProps = {
   view: CandidateView;
@@ -111,9 +111,7 @@ export function CandidateSheet({ view, entry, day, onOpenChange }: CandidateShee
                 const core = b.core ?? { start: b.start, end: b.end };
                 return (
                   <li key={`${b.start}-${i}`} className="flex flex-col gap-0.5 px-4 py-3">
-                    <span className="text-body-md font-semibold break-words text-ink">
-                      {b.title ?? (b.source === "calendar" ? "Busy" : b.source === "reserved" ? "Held time" : "Meeting")}
-                    </span>
+                    <span className="text-body-md font-semibold break-words text-ink">{blockerTitle(b)}</span>
                     <span className="text-body-sm text-ink-2">
                       {formatTimeRange(core.start, core.end, day.zone, "en", day.hour12)} ·{" "}
                       {b.source === "calendar" ? "Calendar event" : b.source === "reserved" ? "Held" : "Meeting"}

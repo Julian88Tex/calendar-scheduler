@@ -1,10 +1,10 @@
 // GET /api/public/slots?target={eventTypeId|link code}&start=YYYY-MM-DD&end=YYYY-MM-DD&tz=Area/City&duration=30
 // (SPEC BK-31, booking-core). Answers { timeZone, durationMinutes, days: { "YYYY-MM-DD": [{ start, remaining }] },
-// firstAvailableDate?, windowEnd } grouped by the requested zone's local dates; at most 62 days; Cache-Control
-// no-store. Optional: troubleshoot=1 (hosts only: reason codes per candidate), reschedule={inviteeId} (SCH-24),
-// first=1 (look ahead for the first available date when the range has none). 60 requests per IP per minute and 600
-// per hour (429 beyond), checked before anything else; a range outside the booking window answers without loading
-// busy times or calling calendar providers.
+// firstAvailableDate?, windowEnd } grouped by the requested zone's local dates (a locked time zone event: its locked
+// zone, returned as timeZone); at most 62 days; Cache-Control no-store. Optional: troubleshoot=1 (hosts only: reason
+// codes per candidate), reschedule={inviteeId} (SCH-24), first=1 (look ahead for the first available date when the
+// range has none). 60 requests per IP per minute and 600 per hour (429 beyond), checked before anything else; a range
+// outside the booking window answers without loading busy times or calling calendar providers.
 import { getCurrentUser } from "@/lib/auth/session";
 import { assertSlotsRateLimit, publicSlots, slotsQuerySchema } from "@/lib/booking";
 import { AppError } from "@/lib/errors";

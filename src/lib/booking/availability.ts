@@ -166,13 +166,16 @@ async function loadHostContexts(
   const userById = new Map(userRows.map((u) => [u.id, u]));
 
   // Personal schedules of every host (default first, else the oldest) and every explicitly referenced schedule.
+  const scheduleColumns = {
+    id: availabilitySchedules.id,
+    userId: availabilitySchedules.userId,
+    name: availabilitySchedules.name,
+    timezone: availabilitySchedules.timezone,
+    eventTypeId: availabilitySchedules.eventTypeId,
+    singleUseLinkId: availabilitySchedules.singleUseLinkId,
+  };
   const personal = await db
-    .select({
-      id: availabilitySchedules.id,
-      userId: availabilitySchedules.userId,
-      name: availabilitySchedules.name,
-      timezone: availabilitySchedules.timezone,
-    })
+    .select(scheduleColumns)
     .from(availabilitySchedules)
     .where(
       and(
@@ -193,32 +196,40 @@ async function loadHostContexts(
   ].filter((id): id is string => typeof id === "string");
   const explicitRows = explicitIds.length
     ? await db
-        .select({
-          id: availabilitySchedules.id,
-          userId: availabilitySchedules.userId,
-          name: availabilitySchedules.name,
-          timezone: availabilitySchedules.timezone,
-        })
+        .select(scheduleColumns)
         .from(availabilitySchedules)
         .where(and(inArray(availabilitySchedules.id, [...new Set(explicitIds)]), isNull(availabilitySchedules.deletedAt)))
     : [];
   const scheduleById = new Map([...personal, ...explicitRows].map((s) => [s.id, s]));
 
+  // A referenced schedule counts only when it belongs to the expected person (GEN-08: a foreign key never proves
+  // ownership) and, like the availability pages show it (AV-09, AV-11), is a named schedule or this event type's own
+  // custom hours; single-use link schedules only apply through the link's override. Anything else falls back to the
+  // host's default schedule, so the booking page and the Troubleshoot view agree with the Availability page.
+  const hostIds = new Set([...ids, ...(et.ownerUserId ? [et.ownerUserId] : [])]);
+  const usable = (id: string | null | undefined, ownedBy: (userId: string) => boolean) => {
+    const row = id ? scheduleById.get(id) : undefined;
+    if (!row || !ownedBy(row.userId) || row.singleUseLinkId) return null;
+    if (row.eventTypeId && row.eventTypeId !== et.id) return null;
+    return row;
+  };
+  const overrideRow = (() => {
+    const row = target.overrides?.scheduleId ? scheduleById.get(target.overrides.scheduleId) : undefined;
+    return row && hostIds.has(row.userId) ? row : null;
+  })();
+
   const pick = (spec: HostSpec) => {
     // Single-use override schedule replaces all (OO-02); a shared schedule applies to every host; then the host's own
     // custom hours; then the event type's schedule when it belongs to this host (solo "Block Off Work"); then the
     // host's default schedule.
-    const candidates = [
-      target.overrides?.scheduleId ?? null,
-      et.availabilitySetting === "shared" ? et.scheduleId : null,
-      spec.scheduleId,
-      et.scheduleId && scheduleById.get(et.scheduleId)?.userId === spec.userId ? et.scheduleId : null,
-    ];
-    for (const id of candidates) {
-      const row = id ? scheduleById.get(id) : undefined;
-      if (row) return row;
-    }
-    return defaultByUser.get(spec.userId) ?? null;
+    return (
+      overrideRow ??
+      (et.availabilitySetting === "shared" ? usable(et.scheduleId, (u) => hostIds.has(u)) : null) ??
+      usable(spec.scheduleId, (u) => u === spec.userId) ??
+      usable(et.scheduleId, (u) => u === spec.userId) ??
+      defaultByUser.get(spec.userId) ??
+      null
+    );
   };
 
   const loaded = new Map<string, Promise<ScheduleInput | null>>();
@@ -645,9 +656,14 @@ export async function prepareAvailability(
 
   const ignoreReservationKeys: string[] = [];
   if (params.ignoreReservationId) ignoreReservationKeys.push(params.ignoreReservationId);
+  // SCH-19: a hold of the same invitee email for the same slot (a start in the evaluated range of this event type) is
+  // the invitee's own (retrying payment, replacing an edited submission); holds of other slots still block.
   const ownEmail = params.reservationEmail?.trim().toLowerCase() ?? null;
   for (const r of reservationRows) {
-    if (ownEmail && r.inviteeEmailNormalized === ownEmail && r.eventTypeId === et.id) ignoreReservationKeys.push(r.id);
+    const s = r.startAt.getTime();
+    if (ownEmail && r.inviteeEmailNormalized === ownEmail && r.eventTypeId === et.id && s >= rangeStart && s < rangeEnd) {
+      ignoreReservationKeys.push(r.id);
+    }
   }
   const ignoredReservations = new Set(ignoreReservationKeys);
 

@@ -30,7 +30,7 @@ import { friendlyZoneName } from "@/lib/time/zones";
 import { formatInterval, formatLongDate } from "@/lib/availability/intervals";
 import { ADVANCED_SETTINGS_PATH, scheduleHref, troubleshootHref } from "@/lib/availability/links";
 import type { TroubleshootDay } from "@/lib/availability/types";
-import { countViews, describeCandidate, groupRows, settingsSummary, type CandidateView, type DescribeContext, type ViewRow } from "@/lib/availability/troubleshoot-view";
+import { blockerTitle, countViews, describeCandidate, groupRows, settingsSummary, type CandidateView, type DescribeContext, type ViewRow } from "@/lib/availability/troubleshoot-view";
 import { CandidateSheet } from "./candidate-sheet";
 
 type Filter = "all" | "available" | "unavailable";
@@ -111,7 +111,7 @@ export function TroubleshootView({ day }: { day: TroubleshootDay }) {
             <span className="text-label text-ink" id="ts-date">
               Date
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex min-w-0 items-center gap-1">
               <IconButton aria-label="Previous day" variant="secondary" size="md" onClick={() => navigate({ date: addDays(day.date, -1) })}>
                 <ChevronLeft aria-hidden="true" />
               </IconButton>
@@ -120,7 +120,7 @@ export function TroubleshootView({ day }: { day: TroubleshootDay }) {
                 value={day.date}
                 onChange={(d) => d && navigate({ date: d })}
                 weekStart={day.weekStart}
-                className="sm:w-48"
+                className="min-w-0 flex-1 sm:w-48 sm:flex-none"
               />
               <IconButton aria-label="Next day" variant="secondary" size="md" onClick={() => navigate({ date: addDays(day.date, 1) })}>
                 <ChevronRight aria-hidden="true" />
@@ -266,7 +266,7 @@ function DaySummary({ day }: { day: TroubleshootDay }) {
               const core = b.core ?? { start: b.start, end: b.end };
               return (
                 <li key={`${b.start}-${b.end}-${i}`} className="flex flex-col gap-0.5">
-                  <span className="text-body-md font-semibold break-words text-ink">{b.title ?? (b.source === "calendar" ? "Busy" : b.source === "reserved" ? "Held time" : "Meeting")}</span>
+                  <span className="text-body-md font-semibold break-words text-ink">{blockerTitle(b)}</span>
                   <span className="text-body-sm text-ink-2">
                     {formatTimeRange(core.start, core.end, day.zone, "en", day.hour12)}
                     {" · "}
@@ -436,7 +436,7 @@ function CandidateRow({ view, onOpen }: { view: CandidateView; onOpen: (v: Candi
       <button
         type="button"
         onClick={() => onOpen(view)}
-        aria-label={`${view.timeLabel}, ${view.status === "available" ? "available" : `unavailable: ${view.reasons.join(" ")}`}. Show details`}
+        aria-label={`${view.timeLabel}, ${view.status === "available" ? "available." : `unavailable: ${view.reasons.join(" ")}`} Show details`}
         className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] px-2 py-2 text-left hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
       >
         <TimePill view={view} />

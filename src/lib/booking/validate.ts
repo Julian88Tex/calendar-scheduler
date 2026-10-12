@@ -29,6 +29,7 @@ export const MESSAGES = {
   linkUsed: "Someone has already used this link to book a meeting.",
   notFound: "This page isn't available.",
   botBlocked: "We couldn't schedule this event. Please refresh the page and try again.",
+  staleForm: "This form was already used to schedule an event. Please refresh the page and try again.",
 } as const;
 
 /** Countries where text reminders are not offered (BK-13): Russia, Singapore, Iran. */
@@ -57,6 +58,14 @@ export type ValidatedBooking = {
 export type ValidationOutcome = { ok: true; value: ValidatedBooking } | { ok: false; fieldErrors: Record<string, string[]> };
 
 const clean = (s: unknown, max = 255): string => (typeof s === "string" ? s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim().slice(0, max) : "");
+/**
+ * Single-line fields (names, the invitee-provided location, one-line answers, the locale): line breaks and tabs become
+ * one space, so a name can never smuggle a line into an email header, a calendar invite or a subject line.
+ */
+const cleanLine = (s: unknown, max = 255): string =>
+  typeof s === "string" ? clean(s.replace(/[\t\r\n\u2028\u2029]+/g, " ").replace(/ {2,}/g, " "), max) : "";
+/** BCP 47 style locale tags we accept ("en", "pt-BR", "zh-Hant"); anything else falls back to the event type's. */
+const LOCALE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
 
 /** Normalizes a phone number to E.164 ("+1 (415) 555-0123" -> "+14155550123"), or null when it is not valid. */
 export function normalizePhone(value: string): string | null {
@@ -125,9 +134,9 @@ export function validateBookingInput(
   };
 
   // Name: "Name *" or "First Name *" and "Last Name *" (ET name format).
-  const firstName = clean(input.invitee.firstName) || null;
-  const lastName = clean(input.invitee.lastName) || null;
-  let name = clean(input.invitee.name);
+  const firstName = cleanLine(input.invitee.firstName) || null;
+  const lastName = cleanLine(input.invitee.lastName) || null;
+  let name = cleanLine(input.invitee.name);
   if (et.nameFormat === "first_last" && opts.requireNames !== false) {
     if (!firstName) add("firstName", MESSAGES.blank);
     if (!lastName) add("lastName", MESSAGES.blank);
@@ -150,7 +159,8 @@ export function validateBookingInput(
   const detected = clean(input.invitee.detectedTimezone, 64);
   const detectedTimezone = isValidTimeZone(detected) ? detected : null;
   const timeFormat = input.invitee.timeFormat === "24h" || input.invitee.timeFormat === "12h" ? input.invitee.timeFormat : null;
-  const locale = clean(input.invitee.locale, 16) || et.locale || "en";
+  const requestedLocale = cleanLine(input.invitee.locale, 16);
+  const locale = LOCALE.test(requestedLocale) ? requestedLocale : et.locale || "en";
 
   // Guests (BK-10): hidden when the event disallows guests and for group events.
   const guests: ValidatedBooking["guests"] = [];
@@ -188,7 +198,7 @@ export function validateBookingInput(
     else if (!phone) add("location.value", MESSAGES.phone);
     locationValue = phone;
   } else if (config?.kind === "ask_invitee") {
-    const text = clean(answer?.value, 1000);
+    const text = cleanLine(answer?.value, 1000);
     if (!text) add("location.value", MESSAGES.blank);
     locationValue = text || null;
   }
@@ -231,7 +241,8 @@ export function validateBookingInput(
         continue;
       }
     }
-    let stored = value;
+    // "One Line" answers stay on one line; "Multiple Lines" keep their line breaks.
+    let stored = q.type === "string" ? cleanLine(value, MAX_PREFILL_TEXT) : value;
     if (q.type === "phone_number") {
       const phone = normalizePhone(value);
       if (!phone) {

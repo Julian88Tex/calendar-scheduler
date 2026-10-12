@@ -61,8 +61,9 @@ function read(source: PrefillSource, key: string): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
+/** A single-line value (names, email, location, tracking): line breaks and tabs become one space. */
 function short(source: PrefillSource, key: string): string | undefined {
-  const v = read(source, key);
+  const v = read(source, key)?.replace(/[\t\r\n\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim();
   return v && v.length <= MAX_SHORT ? v : undefined;
 }
 
