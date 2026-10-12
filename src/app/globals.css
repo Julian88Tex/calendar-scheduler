@@ -1,9 +1,13 @@
-/* OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures. */
-/* Design tokens verbatim from ARCHITECTURE 20.1 (Classic theme), plus the typography utilities of 20.1. Dark tokens
-   (GEN-22) and the rest of the polish belong to foundation-ui. */
+/* OWNER: foundation-ui.
+   Design tokens (ARCHITECTURE 20.1, SPEC GEN-03): the Calendly classic theme verbatim on :root, exposed to Tailwind
+   with @theme inline so runtime overrides (branding --primary-color, embed params, dark mode) apply everywhere.
+   Dark tokens (GEN-22) live under :root[data-theme="dark"] and, for "system", under the prefers-color-scheme media
+   query; they apply to the dashboard only (public pages wrap their content in [data-force-light]). */
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
-:root {
+
+:root,
+[data-force-light] {
   --ink: #0a2540; --ink-2: #476788; --ink-3: #a6bbd1; --navy: #0b3558;
   --line: #d4e0ed; --line-medium: #a6bbd1; --canvas: #fafafa; --cloud: #f8f9fb; --pebble: #f0f3f8; --mist: #e7edf6; --white: #ffffff;
   --primary: #006bff; --primary-hover: #004eba; --primary-active: #004796; --primary-text: #004eba;
@@ -18,7 +22,48 @@
   --shadow-embed: 0 16px 48px 0 rgb(25 72 112 / 6%), 0 0 24px 0 rgb(25 72 112 / 6%);
   --primary-color: var(--primary);                   /* public pages: overridden by branding / embed params */
   --public-bg: var(--white); --public-text: var(--ink);
+  /* Additions (foundation-ui): focus ring, selected-time chip, text on filled controls, hover row fill. */
+  --focus: #006bff;
+  --slot-selected: rgba(10, 37, 64, 0.5);
+  --on-primary: #ffffff;
+  --row-hover: #f0f3f8;
+  color-scheme: light;
 }
+
+/* GEN-22 dark tokens: same names, dashboard only. Contrast checked against --white (surface) and --canvas. */
+:root[data-theme="dark"] {
+  --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+  --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+  --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+  --primary-soft: #102640; --primary-soft-2: #163257;
+  --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+  --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+  --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+  --focus: #7ab4ff;
+  --row-hover: #1b222b;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+    --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+    --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+    --primary-soft: #102640; --primary-soft-2: #163257;
+    --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+    --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+    --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+    --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+    --focus: #7ab4ff;
+    --row-hover: #1b222b;
+    color-scheme: dark;
+  }
+}
+
 @theme inline {
   --font-sans: "Figtree Variable", "Proxima Nova", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --color-ink: var(--ink); --color-ink-2: var(--ink-2); --color-ink-3: var(--ink-3); --color-navy: var(--navy);
@@ -29,17 +74,142 @@
   --color-danger: var(--danger); --color-danger-text: var(--danger-text); --color-success: var(--success); --color-warning: var(--warning);
   --radius-card: var(--radius-card); --radius-input: var(--radius-input);
   --shadow-card: var(--shadow-card); --shadow-pop: var(--shadow-pop);
+  /* Additions (foundation-ui). */
+  --color-line-medium: var(--line-medium); --color-cloud: var(--cloud); --color-surface: var(--white);
+  --color-danger-soft: var(--danger-soft); --color-success-text: var(--success-text); --color-success-soft: var(--success-soft);
+  --color-warning-text: var(--warning-text); --color-warning-soft: var(--warning-soft); --color-info-soft: var(--info-soft);
+  --color-overlay: var(--overlay); --color-ribbon: var(--ribbon); --color-ribbon-hover: var(--ribbon-hover);
+  --color-focus: var(--focus); --color-on-primary: var(--on-primary); --color-row-hover: var(--row-hover);
+  --color-public-bg: var(--public-bg); --color-public-text: var(--public-text);
+  --radius-slot: var(--radius-slot);
+  --shadow-next: var(--shadow-next); --shadow-embed: var(--shadow-embed);
+  --animate-slide-in-x: kairos-slide-in-x 220ms ease-out;
+  --animate-fade-in: kairos-fade-in 150ms ease-out;
+  --animate-pop-in: kairos-pop-in 150ms ease-out;
+  --animate-toast-in: kairos-toast-in 200ms ease-out;
+  --animate-sheet-in-right: kairos-sheet-in-right 220ms ease-out;
+  --animate-sheet-in-left: kairos-sheet-in-left 220ms ease-out;
+  --animate-sheet-in-bottom: kairos-sheet-in-bottom 220ms ease-out;
 }
 
-html {
-  -webkit-text-size-adjust: 100%;
+@keyframes kairos-slide-in-x {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
-body {
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: var(--font-sans);
+@keyframes kairos-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes kairos-pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes kairos-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes kairos-sheet-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes kairos-sheet-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes kairos-sheet-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* GEN-05: visible 2px focus ring, offset 2px, on every interactive element reached by keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+  button,
+  [role="button"],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  ::placeholder {
+    color: var(--ink-2);
+    opacity: 1;
+  }
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* GEN-04: inputs at least 16px on phones (no iOS zoom on focus). */
+  @media (max-width: 599px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea,
+    [contenteditable="true"] {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Dark mode: Tailwind's literal white utilities become the surface token so cards and panels follow the theme
+   (text-white stays white for text on filled controls). Unlayered, so these win over the utilities layer. */
+:root[data-theme="dark"] .bg-white {
+  background-color: var(--white);
+}
+:root[data-theme="dark"] .ring-white {
+  --tw-ring-color: var(--white);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .bg-white {
+    background-color: var(--white);
+  }
+  :root[data-theme="system"] .ring-white {
+    --tw-ring-color: var(--white);
+  }
+}
+
+/* GEN-05: respect prefers-reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Typography scale (ARCHITECTURE 20.1, walkthrough 1.3). */
+@utility text-headline-1 {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+}
 @utility text-headline-2 {
   font-size: 28px;
   line-height: 36px;
@@ -82,9 +252,26 @@ body {
   line-height: 20px;
   font-weight: 600;
 }
+@utility text-label-sm {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
 @utility text-eyebrow {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.72px;
+}
+
+/* Thin, quiet scrollbars for scroll containers (ScrollArea, slot lists, menus). */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-medium) transparent;
+}
+
+/* Shared focus ring for composite widgets that draw it on an inner element. */
+@utility focus-ring {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
