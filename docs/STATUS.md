@@ -15,7 +15,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 1: book a meeting on your public page
 | Module | What it gives you | Status |
 |---|---|---|
-| foundation-ui | Calendly look and feel: app shell, sidebar, buttons, calendar grid, time slots, time zone picker | building |
+| foundation-ui | Calendly look and feel: app shell, sidebar, buttons, calendar grid, time slots, time zone picker | done |
 | foundation-auth | Sign up, log in, password reset, 2FA, Sign in with Google (also connects the calendar) | done |
 | foundation-platform | Email sending with Calendly-style layout and calendar invites, background jobs, cron | done |
 | slot-engine | The scheduling brain: hours, buffers, minimum notice, increments, limits, DST, why-blocked diagnostics | done |
@@ -51,7 +51,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |
 |---|---|---|
-| workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | queued |
+| workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | building |
 | settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | queued |
 | golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
 

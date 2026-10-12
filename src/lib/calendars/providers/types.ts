@@ -1,8 +1,13 @@
-// OWNER: calendar-integrations. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: calendar-integrations.
 //
 // Calendar provider interface, verbatim from ARCHITECTURE section 10.1 (the error classes use plain fields because the
-// project enables erasableSyntaxOnly). Implementations live next to this file (google.ts, microsoft.ts, caldav.ts,
-// ics.ts, calendly-import.ts), written by calendar-integrations.
+// project enables erasableSyntaxOnly). docs/SCOPE.md keeps Google Calendar only: google.ts implements it; the
+// calendly_import provider is cache only (its rows are written by an importer and never refetched, section 10.1), so
+// the busy cache serves it without a provider object.
+//
+// Additive to section 10.1: ProviderAuthError and ProviderRequestError carry an optional machine reason and HTTP
+// status, and ProviderRequestError marks permanent per request failures (404, 409, 400, a calendar that is no longer
+// writable) that must neither mark the connection broken nor be retried.
 export type CalendarProviderId = "google" | "microsoft" | "caldav" | "ics" | "calendly_import";
 export interface ConnectionContext {           // decrypted, refreshed credentials for one connection
   connectionId: string; userId: string; provider: CalendarProviderId;
@@ -42,17 +47,53 @@ export interface CalendarProvider {
   updateEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string, input: WriteEventInput, etag?: string | null): Promise<WriteEventResult>;
   deleteEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string, opts: { notifyAttendees: boolean; comment?: string }): Promise<void>;
 }
+
+/** Why a provider refused the credentials. */
+export type ProviderAuthReason = "unauthorized" | "invalid_grant" | "insufficient_scope" | "api_disabled" | "no_credentials" | "unsupported";
+
 /** -> connection needs_reauth */
 export class ProviderAuthError extends Error {
-  constructor(message?: string) {
+  reason?: ProviderAuthReason;
+  constructor(message?: string, reason?: ProviderAuthReason) {
     super(message);
     this.name = "ProviderAuthError";
+    this.reason = reason;
   }
 }
 /** -> retry with backoff */
 export class ProviderTransientError extends Error {
-  constructor(message?: string) {
+  /** HTTP status when the provider answered (429, 5xx), else undefined (network, timeout). */
+  status?: number;
+  constructor(message?: string, status?: number) {
     super(message);
     this.name = "ProviderTransientError";
+    this.status = status;
   }
+}
+/** A permanent failure of one request (not found, conflict, bad request, calendar not writable): no retry, no reauth. */
+export class ProviderRequestError extends Error {
+  status: number;
+  /** Provider reason ("notFound", "duplicate", "forbidden", "requiredAccessLevel", ...). */
+  reason: string | null;
+  constructor(status: number, message?: string, reason?: string | null) {
+    super(message ?? `Provider request failed with ${status}`);
+    this.name = "ProviderRequestError";
+    this.status = status;
+    this.reason = reason ?? null;
+  }
+}
+
+/** Error kinds by name too, so fakes (tests/helpers/fake-providers.ts sets err.name) map like the real classes. */
+export function isProviderAuthError(e: unknown): e is ProviderAuthError {
+  return e instanceof ProviderAuthError || (e as { name?: unknown } | null)?.name === "ProviderAuthError";
+}
+export function isProviderTransientError(e: unknown): e is ProviderTransientError {
+  return e instanceof ProviderTransientError || (e as { name?: unknown } | null)?.name === "ProviderTransientError";
+}
+export function isProviderRequestError(e: unknown): e is ProviderRequestError {
+  return e instanceof ProviderRequestError || (e as { name?: unknown } | null)?.name === "ProviderRequestError";
+}
+/** 404 or 410 from the provider (the event or calendar is gone). */
+export function isProviderGone(e: unknown): boolean {
+  return isProviderRequestError(e) && (e.status === 404 || e.status === 410);
 }

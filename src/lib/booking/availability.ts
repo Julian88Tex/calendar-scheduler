@@ -78,6 +78,8 @@ export type AvailabilityInternals = {
   externalBusy?: ExternalBusyByUser;
   /** Shared cache across several event types (troubleshoot: one provider fetch per host). */
   externalBusyCache?: Map<string, Promise<ExternalBusyByUser>>;
+  /** Any duration from 1 to 720 minutes (host "Customize this meeting" bookings, OO-13). */
+  allowAnyDuration?: boolean;
 };
 
 export type HostContext = {
@@ -509,7 +511,11 @@ export async function prepareAvailability(
   const rangeEnd = params.end.getTime();
   if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) throw new AppError("validation", "Invalid range.");
 
-  const durationMinutes = resolveDuration(target, params.durationMinutes ?? null);
+  const requested = params.durationMinutes ?? null;
+  const durationMinutes =
+    internals.allowAnyDuration && requested !== null && Number.isInteger(requested) && requested >= 1 && requested <= 720
+      ? requested
+      : resolveDuration(target, requested);
   if (durationMinutes === null) throw new AppError("validation", "This duration isn't available.", { fieldErrors: { duration: ["This duration isn't available."] } });
   const durationMs = durationMinutes * MIN;
 
@@ -599,10 +605,11 @@ export async function prepareAvailability(
   if (mode.type !== "poll") {
     if (internals.externalBusy) external = internals.externalBusy;
     else if (internals.externalBusyCache) {
-      const key = `${userIds.join(",")}|${busyFrom.getTime()}|${busyTo.getTime()}|${freshness}`;
+      // One wide fetch per host set and range, shared by every event type (buffers and durations are at most 12 hours).
+      const key = `${userIds.join(",")}|${rangeStart}|${rangeEnd}|${freshness}`;
       let p = internals.externalBusyCache.get(key);
       if (!p) {
-        p = fetchExternal(userIds, busyFrom, busyTo, freshness);
+        p = fetchExternal(userIds, new Date(rangeStart - 3 * DAY), new Date(rangeEnd + 3 * DAY), freshness);
         internals.externalBusyCache.set(key, p);
       }
       external = await p;

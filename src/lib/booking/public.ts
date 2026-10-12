@@ -36,7 +36,8 @@ const MAX_LOOKAHEAD_DAYS = 366;
 export async function slotsTarget(param: string): Promise<BookingTarget | null> {
   if (isUuid(param)) {
     const eventType = await loadEventType(param);
-    return eventType ? { kind: "event_type", eventType } : null;
+    // Adhoc types (one-off meetings, polls) are only reachable through their own codes and flows.
+    return eventType && eventType.type === "standard" ? { kind: "event_type", eventType } : null;
   }
   return resolveTargetByCode(param);
 }

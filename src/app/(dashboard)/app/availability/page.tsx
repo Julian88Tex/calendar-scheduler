@@ -1,18 +1,33 @@
-// OWNER: availability. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: availability.
 //
-// /app/availability placeholder (ARCHITECTURE section 3.1, SPEC AV-01..AV-12). The owner replaces it with the real page.
+// /app/availability, the Schedules tab (SPEC AV-01 to AV-10, AV-15; walkthrough 9.2). Server Component: loads the
+// user's schedules (repairing a missing default), the selected schedule (?schedule={id}, else the default) with every
+// date-specific override, the "Active on" event types and the display settings, then renders the auto-saving editor.
+// ?view=calendar opens the Calendar view.
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
+import { getActorCtx } from "@/lib/authz";
+import { loadSchedulesPage } from "@/lib/availability/page-data";
+import { SchedulesView } from "./_components/schedules-view";
 
 export const metadata: Metadata = { title: "Availability" };
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
 export default async function SchedulesPage({ searchParams }: Props) {
-  await searchParams;
+  const [actor, sp] = await Promise.all([getActorCtx(), searchParams]);
+  const data = await loadSchedulesPage(actor.user, { scheduleId: first(sp.schedule) ?? null });
   return (
-    <>
-      <EmptyState heading="This page is being built." />
-    </>
+    <SchedulesView
+      key={data.selected.id}
+      schedules={data.schedules}
+      schedule={data.selected}
+      eventTypes={data.eventTypes}
+      today={data.today}
+      hour12={data.hour12}
+      weekStart={data.weekStart}
+      view={first(sp.view) === "calendar" ? "calendar" : "list"}
+    />
   );
 }

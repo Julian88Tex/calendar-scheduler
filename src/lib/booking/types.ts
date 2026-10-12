@@ -191,6 +191,8 @@ export type TroubleshootBlocker = {
   meetingId: string | null;
   eventTypeId: string | null;
   bufferSide: "before" | "after" | null;
+  /** Meetings: the active invitees' names ("30 Minute Virtual with Ana Lima"); empty for other people's meetings. */
+  inviteeNames: string[];
 };
 
 export type TroubleshootCandidate = {

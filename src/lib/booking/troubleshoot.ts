@@ -9,7 +9,7 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { eventTypeHosts, eventTypes, organizationMemberships, users } from "@/db/schema";
+import { eventTypeHosts, eventTypes, invitees, organizationMemberships, users } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { isUuid } from "@/lib/ids";
 import type { Blocker, BusyInterval, CandidateDiagnostic, ReasonCode } from "@/lib/slots/types";
@@ -48,7 +48,27 @@ function blockerOut(b: Blocker, showTitles: boolean): TroubleshootBlocker {
     meetingId: b.meetingId ?? null,
     eventTypeId: b.eventTypeId ?? null,
     bufferSide: b.bufferSide ?? null,
+    inviteeNames: [],
   };
+}
+
+/** Adds the invitee names of the host's own meetings to their blockers (owner only, GEN-08). */
+async function attachInviteeNames(lists: TroubleshootBlocker[][]): Promise<void> {
+  const ids = [...new Set(lists.flat().map((b) => b.meetingId).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const rows = await db
+    .select({ meetingId: invitees.scheduledEventId, name: invitees.name })
+    .from(invitees)
+    .where(and(inArray(invitees.scheduledEventId, ids), eq(invitees.status, "active")))
+    .orderBy(asc(invitees.createdAt));
+  const byMeeting = new Map<string, string[]>();
+  for (const r of rows) {
+    const names = byMeeting.get(r.meetingId) ?? [];
+    names.push(r.name);
+    byMeeting.set(r.meetingId, names);
+  }
+  for (const list of lists) for (const b of list) if (b.meetingId) b.inviteeNames = byMeeting.get(b.meetingId) ?? [];
 }
 
 /** One engine diagnostic as the Troubleshoot view row of a host. */
@@ -230,6 +250,8 @@ export async function troubleshootAvailability(actor: TroubleshootActor, params:
       ),
     );
   }
+
+  if (showTitles) await attachInviteeNames([busy, ...entries.flatMap((e) => e.candidates.map((c) => c.blockers))]);
 
   const ctx = first?.prepared?.hostContexts.find((h) => h.userId === hostUserId);
   return {

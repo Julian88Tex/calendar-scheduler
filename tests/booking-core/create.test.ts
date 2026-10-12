@@ -272,6 +272,34 @@ describe("createBooking: group, round robin and collective (generic engine paths
     expect(rows.every((x) => x.role === "assigned" && x.poolId)).toBe(true);
   });
 
+  it("multi-pool events need every required host and one host per pool (SCH-17)", async () => {
+    const a = await f.createUser(t.db, { timezone: h.LA });
+    const b = await f.createUser(t.db, { timezone: h.LA, organizationId: a.organizationId });
+    const c = await f.createUser(t.db, { timezone: h.LA, organizationId: a.organizationId });
+    for (const u of [a, b, c]) await f.createSchedule(t.db, { userId: u.id, timezone: h.LA, weeklyHours: everyDay("09:00", "17:00") });
+    const { eventType } = await f.createEventType(t.db, {
+      owner: a,
+      poolingType: "multi_pool",
+      pools: [{ name: "Engineers" }],
+      hosts: [{ userId: a.id, poolIndex: null }, { userId: b.id, poolIndex: 0 }, { userId: c.id, poolIndex: 0 }],
+      overrides: { minimumNoticeMinutes: 0, slotIncrementMinutes: 60 },
+    });
+    cal.busy[b.id] = [ext(la("2030-10-08 10:00"), la("2030-10-08 11:00"), "B busy")];
+    cal.busy[c.id] = [ext(la("2030-10-08 10:00"), la("2030-10-08 11:00"), "C busy")];
+    const target = { kind: "event_type" as const, eventType: (await loadEventType(eventType.id))! };
+    const r = await getAvailability({ target, start: la("2030-10-08 00:00"), end: la("2030-10-09 00:00"), now: NOW });
+    const starts = startsOn(r.slots, "2030-10-08");
+    expect(starts).not.toContain("10:00");
+    expect(starts).toContain("11:00");
+    const booked = await createBooking(bookingInput(target, la("2030-10-08 11:00")), ctx);
+    expect(booked.ok).toBe(true);
+    if (!booked.ok) return;
+    const rows = await t.db.select().from(scheduledEventHosts).where(eq(scheduledEventHosts.scheduledEventId, booked.scheduledEventId));
+    expect(rows.find((x) => x.userId === a.id)?.role).toBe("organizer");
+    expect(rows.filter((x) => x.role === "assigned")).toHaveLength(1);
+    expect([b.id, c.id]).toContain(rows.find((x) => x.role === "assigned")!.userId);
+  });
+
   it("collective events need every host and book them all", async () => {
     const a = await f.createUser(t.db, { timezone: h.LA });
     const b = await f.createUser(t.db, { timezone: h.LA, organizationId: a.organizationId });
@@ -298,12 +326,13 @@ describe("createBooking: group, round robin and collective (generic engine paths
 describe("createBooking: links, one-off and polls", () => {
   it("consumes a single-use link atomically and answers link_used afterwards (OO-04)", async () => {
     const fx = await setupSolo(t.db);
-    links.resolved = { kind: "single_use", code: "abc123", eventTypeId: fx.target.eventType.id, linkId: "00000000-0000-4000-8000-00000000c0de", status: "active", currentSlug: "30min" };
+    const link = await f.createSingleUseLink(t.db, { eventType: fx.target.eventType });
+    links.resolved = { kind: "single_use", code: "abc123", eventTypeId: fx.target.eventType.id, linkId: link.id, status: "active", currentSlug: "30min" };
     const input = (s: string) => ({ ...bookingInput(fx.target, la(s)), target: { kind: "single_use" as const, code: "abc123" } });
     const r = await createBooking(input("2030-10-08 10:00"), ctx);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(links.consumed).toEqual([{ kind: "single_use", id: "00000000-0000-4000-8000-00000000c0de", scheduledEventId: r.scheduledEventId }]);
+    expect(links.consumed).toEqual([{ kind: "single_use", id: link.id, scheduledEventId: r.scheduledEventId }]);
     const [ev] = await t.db.select().from(scheduledEvents).where(eq(scheduledEvents.id, r.scheduledEventId));
     expect(ev!.source).toBe("single_use_link");
     const second = await createBooking(input("2030-10-08 11:00"), ctx);
@@ -316,11 +345,15 @@ describe("createBooking: links, one-off and polls", () => {
     const fx = await setupSolo(t.db, { eventType: { type: "adhoc", limitPerDay: 1, bufferBeforeMinutes: 30, bufferAfterMinutes: 30 } });
     await f.createBooking(t.db, { eventType: fx.target.eventType, start: la("2030-10-08 09:00") });
     const spotStart = la("2030-10-08 18:00"); // outside working hours
+    const [oneOff] = await t.db
+      .insert(schema.oneOffMeetings)
+      .values({ code: "oneoff1", eventTypeId: fx.target.eventType.id, ownerUserId: fx.owner.id, timezone: h.LA })
+      .returning();
     links.resolved = {
       kind: "one_off",
       code: "oneoff1",
       eventTypeId: fx.target.eventType.id,
-      linkId: "00000000-0000-4000-8000-0000000000f1",
+      linkId: oneOff!.id,
       status: "active",
       currentSlug: "x",
       spots: [{ start: spotStart, end: new Date(spotStart.getTime() + 30 * 60_000), overlappedExternalIds: ["ext-ok"] }],
@@ -330,7 +363,7 @@ describe("createBooking: links, one-off and polls", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const [ev] = await t.db.select().from(scheduledEvents).where(eq(scheduledEvents.id, r.scheduledEventId));
-    expect(ev).toMatchObject({ source: "one_off", bufferBeforeMinutes: 0, bufferAfterMinutes: 0, oneOffMeetingId: "00000000-0000-4000-8000-0000000000f1" });
+    expect(ev).toMatchObject({ source: "one_off", bufferBeforeMinutes: 0, bufferAfterMinutes: 0, oneOffMeetingId: oneOff!.id });
   });
 
   it("poll bookings create one invitee per participant, ignore limits, external busy and buffers, but not app meetings (MP-18)", async () => {
@@ -338,12 +371,27 @@ describe("createBooking: links, one-off and polls", () => {
     const other = (await f.createEventType(t.db, { owner: fx.owner, overrides: { bufferBeforeMinutes: 30, bufferAfterMinutes: 30 } })).eventType;
     await f.createBooking(t.db, { eventType: other, start: la("2030-10-08 09:00") }); // 08:30 to 10:00 with buffers
     cal.busy[fx.owner.id] = [ext(la("2030-10-08 19:00"), la("2030-10-08 21:00"), "Dinner")];
-    const poll = (start: string, durationMinutes = 60) => ({
-      ...bookingInput(fx.target, la(start), { invitee: { name: "Host", email: "host@example.com", timezone: h.LA } }),
+    const newPoll = async (eventTypeId = fx.target.eventType.id) =>
+      (
+        await t.db
+          .insert(schema.meetingPolls)
+          .values({
+            eventTypeId,
+            organizationId: fx.owner.organizationId,
+            ownerUserId: fx.owner.id,
+            slug: `p${Math.random().toString(36).slice(2, 12)}`,
+            title: "Team sync",
+            defaultDurationMinutes: 60,
+            timezone: h.LA,
+          })
+          .returning()
+      )[0]!.id;
+    const poll = (start: string, pollId: string, target = fx.target, durationMinutes = 60) => ({
+      ...bookingInput(target, la(start), { invitee: { name: "Host", email: "host@example.com", timezone: h.LA } }),
       durationMinutes,
       actor: { type: "host" as const, userId: fx.owner.id },
       pollContext: {
-        pollId: "00000000-0000-4000-8000-0000000000a1",
+        pollId,
         optionId: "00000000-0000-4000-8000-0000000000a2",
         bookedByUserId: fx.owner.id,
         participants: [
@@ -353,8 +401,9 @@ describe("createBooking: links, one-off and polls", () => {
       },
     });
     // Over the other meeting itself: blocked. Over its buffer only (09:30 + 30 buffer): allowed.
-    expect((await createBooking(poll("2030-10-08 08:30"), ctx)).ok).toBe(false);
-    const r = await createBooking(poll("2030-10-08 19:30"), ctx); // evening, outside hours, over an external event
+    const pollId = await newPoll();
+    expect((await createBooking(poll("2030-10-08 08:30", pollId), ctx)).ok).toBe(false);
+    const r = await createBooking(poll("2030-10-08 19:30", pollId), ctx); // evening, outside hours, over an external event
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const rows = await t.db.select().from(invitees).where(eq(invitees.scheduledEventId, r.scheduledEventId));
@@ -366,12 +415,30 @@ describe("createBooking: links, one-off and polls", () => {
     expect(polls.booked).toHaveLength(1);
     expect(polls.booked[0]).toMatchObject({ scheduledEventId: r.scheduledEventId, bookedByUserId: fx.owner.id });
     expect([...(polls.booked[0]!.inviteeIds as string[])].sort()).toEqual(rows.map((x) => x.id).sort());
-    const over = await createBooking(poll("2030-10-08 09:30"), ctx); // overlaps the other meeting's after buffer only
+    const second = (await f.createEventType(t.db, { owner: fx.owner, type: "adhoc", overrides: { bookingMethod: "poll" } })).eventType;
+    const secondTarget = { kind: "event_type" as const, eventType: (await loadEventType(second.id))! };
+    const over = await createBooking(poll("2030-10-08 09:30", await newPoll(second.id), secondTarget), ctx); // overlaps the other meeting's after buffer only
     expect(over.ok).toBe(true);
   });
 });
 
 describe("host bookings with Override available times (OO-14)", () => {
+  it("lets a host customize the meeting name and duration for this booking only (OO-13)", async () => {
+    const fx = await setupSolo(t.db);
+    const r = await createBooking(
+      bookingInput(fx.target, la("2030-10-08 10:00"), {
+        answers: [],
+        actor: { type: "host", userId: fx.owner.id, customize: { name: "Strategy chat", durationMinutes: 45 } },
+      }),
+      ctx,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const [ev] = await t.db.select().from(scheduledEvents).where(eq(scheduledEvents.id, r.scheduledEventId));
+    expect(ev).toMatchObject({ name: "Strategy chat", durationMinutes: 45, source: "host" });
+    expect(ev!.endAt.getTime() - ev!.startAt.getTime()).toBe(45 * 60_000);
+  });
+
   it("books outside working hours and over the host's own events, still counting toward limits", async () => {
     const fx = await setupSolo(t.db, { eventType: { limitPerDay: 1 } });
     cal.busy[fx.owner.id] = [ext(la("2030-10-08 22:00"), la("2030-10-08 23:00"), "Late call")];

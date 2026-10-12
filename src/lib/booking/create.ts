@@ -277,7 +277,12 @@ async function recheckInTx(
       ignoreLimits: plan.mode.type !== "standard",
       freshness: "submit",
     },
-    { db: tx, mode: plan.mode, externalBusy: plan.external },
+    {
+      db: tx,
+      mode: plan.mode,
+      externalBusy: plan.external,
+      allowAnyDuration: Boolean(plan.input.pollContext) || (plan.actor.type === "host" && Boolean(plan.actor.customize?.durationMinutes)),
+    },
   );
   const end = start.getTime() + duration * MIN;
   const slot = avail.slots.find((s) => s.start === start.getTime() && s.end === end);
@@ -345,7 +350,8 @@ async function insertBookingInTx(tx: DbOrTx, plan: Plan, check: Recheck, old: In
   const config: LocationConfig | null = customize?.location ?? v.location.config;
   let location: ResolvedLocation = resolveLocation(config, v.location.value);
   const sameOrganizer = Boolean(oldEvent && oldEvent.organizerUserId === check.organizerId && !oldEvent.isGroup && !isGroup);
-  if (oldEvent && sameOrganizer && oldEvent.location.configId && oldEvent.location.configId === location.configId) {
+  const conferencing = location.status === "processing";
+  if (oldEvent && sameOrganizer && conferencing && oldEvent.location.kind === location.kind && oldEvent.location.configId === location.configId) {
     location = oldEvent.location;
   }
 
@@ -892,11 +898,29 @@ export async function completeReservation(
   if (res.status === "completed" || res.status === "canceled") {
     return (await done()) ?? (res.status === "canceled" ? slotTaken() : fail("not_found", "This booking could not be found."));
   }
+  // An email verification hold completes only once the code was checked (verifyReservationCode).
+  if (res.kind === "email_verification" && extra.verifiedEmail !== true) {
+    return fail("verification_required", verificationPrompt(res.inviteeEmailNormalized), { reservationId });
+  }
   const at = extra.now ?? clockNow();
   const input = res.payload as unknown as CreateBookingInput;
   const p = await prepare({ ...input, actor: { type: "invitee" } }, { now: at });
   if ("ok" in p) {
-    await db.update(bookingReservations).set({ status: "canceled", updatedAt: at }).where(and(eq(bookingReservations.id, reservationId), eq(bookingReservations.status, "pending")));
+    // The event type changed since the hold (deleted, turned off, new required question): cancel it, refund payments.
+    await db.transaction(async (tx) => {
+      const canceled = await tx
+        .update(bookingReservations)
+        .set({ status: "canceled", updatedAt: at })
+        .where(and(eq(bookingReservations.id, reservationId), or(eq(bookingReservations.status, "pending"), eq(bookingReservations.status, "expired"))))
+        .returning({ id: bookingReservations.id });
+      if (canceled.length > 0 && res.kind === "payment") {
+        await enqueueJob(tx, {
+          type: "payments.refund",
+          payload: { reservationId, paymentId: extra.paymentId ?? null, reason: "event_type_changed" },
+          idempotencyKey: `refund:${reservationId}`,
+        });
+      }
+    });
     return p.code === "validation" ? slotTaken() : p;
   }
   const plan = await makePlan(input, p, { id: res.id, assignment: res.assignment, verifiedEmail: extra.verifiedEmail === true });
@@ -975,9 +999,6 @@ export function verificationPrompt(email: string): string {
   return `To complete your booking, enter the 6-digit code sent to ${email}`;
 }
 
-/** Longest a verification hold can be stretched by resends (our choice: 30 minutes from creation). */
-const MAX_VERIFICATION_HOLD_MS = 30 * MIN;
-
 /**
  * Checks the 6-digit code of an email verification reservation and completes the booking (BK-17). With
  * rememberDevice, the result carries the new "Remember this device" cookie value (365 days for that email).
@@ -1034,8 +1055,8 @@ export async function resendReservationCode(reservationId: string, opts: { now?:
   const input = res.payload as unknown as CreateBookingInput;
   const email = typeof input?.invitee?.email === "string" ? input.invitee.email.trim() : res.inviteeEmailNormalized;
   await db.transaction(async (tx) => {
-    const cap = res.createdAt.getTime() + MAX_VERIFICATION_HOLD_MS;
-    const extended = Math.min(cap, Math.max(res.expiresAt.getTime(), at.getTime() + RESERVATION_HOLD_MS));
+    // The new code gets a full 10 minutes; at most 5 resends per hour bound the hold.
+    const extended = Math.max(res.expiresAt.getTime(), at.getTime() + RESERVATION_HOLD_MS);
     if (extended > res.expiresAt.getTime()) {
       await tx
         .update(bookingReservations)
