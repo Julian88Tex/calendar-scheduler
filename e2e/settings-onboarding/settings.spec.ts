@@ -1,9 +1,10 @@
 // Account settings (SPEC BR-01 to BR-06, BR-08, BR-10, BR-14, AU-05, AU-10; docs/SCOPE.md item 14) on the seeded owner:
-// Profile edits (name, welcome message, formats, zone) show on the landing page; the picture is cropped, uploaded and
-// removed; a 6 MB upload is refused; the logo shows on the landing and booking pages and the branding switch hides the
-// Powered by ribbon; My Link checks availability live and the old URL is 404 after the change; Login and security
-// changes the password (the new one logs in) and logs out another session; skipped settings pages are 404 and
-// /onboarding goes to Scheduling; the phone layout has no horizontal scroll.
+// Profile edits (name, welcome message, formats, zone) show on the landing page and leaving unsaved edits through an
+// app link asks first; the picture is cropped, uploaded and removed; a 6 MB upload is refused; the logo shows on the
+// landing and booking pages and the branding switch hides the Powered by ribbon; My Link checks availability live and
+// the old URL is 404 after the change; Login and security changes the password (the new one logs in) and logs out
+// another session; skipped settings pages are 404 and /onboarding goes to Scheduling; the phone layout has no
+// horizontal scroll.
 import { deflateSync } from "node:zlib";
 import type { Browser, Page } from "@playwright/test";
 import { E2E_SECRET_HEADER, e2eSecret, expect, test } from "../fixtures";
