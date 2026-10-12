@@ -364,8 +364,9 @@ describe("createBooking: links, one-off and polls", () => {
     expect(ev).toMatchObject({ source: "poll", bufferBeforeMinutes: 0, bufferAfterMinutes: 0, durationMinutes: 60, inviteesLimit: 2 });
     expect(ev!.settingsSnapshot.notificationMode).toBe("email_confirmation");
     expect(polls.booked).toHaveLength(1);
-    expect(polls.booked[0]).toMatchObject({ scheduledEventId: r.scheduledEventId, inviteeIds: rows.map((x) => x.id).sort().length ? expect.any(Array) : [] });
-    const over = await createBooking(poll("2030-10-08 10:00"), ctx); // touches the other meeting's after buffer only
+    expect(polls.booked[0]).toMatchObject({ scheduledEventId: r.scheduledEventId, bookedByUserId: fx.owner.id });
+    expect([...(polls.booked[0]!.inviteeIds as string[])].sort()).toEqual(rows.map((x) => x.id).sort());
+    const over = await createBooking(poll("2030-10-08 09:30"), ctx); // overlaps the other meeting's after buffer only
     expect(over.ok).toBe(true);
   });
 });
