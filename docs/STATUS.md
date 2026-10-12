@@ -68,7 +68,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | done |
-| settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | building |
+| settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | done |
 | golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
 
 ### Skipped (owner decision, see docs/SCOPE.md)
