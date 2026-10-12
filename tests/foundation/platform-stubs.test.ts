@@ -276,10 +276,10 @@ describe("module contract minimal behaviors", () => {
     ).toBe("r");
   });
 
-  it("holidays stub returns no holidays for the 10 supported countries", () => {
+  it("holidays: real data for the 10 supported countries", () => {
     expect(SUPPORTED_COUNTRIES).toHaveLength(10);
-    expect(getHolidays("US", 2026)).toEqual([]);
-    expect(blockedDatesFor("US", {}, "2026-01-01", "2026-12-31", "UTC")).toEqual([]);
+    expect(getHolidays("US", 2026).some((h) => h.key === "US:4th_thursday_in_november" && h.date === "2026-11-26")).toBe(true);
+    expect(blockedDatesFor("US", {}, "2026-01-01", "2026-12-31", "UTC")).toContain("2026-11-26");
   });
 
   it("booking lock helpers lock hosts and refuse to change a canceled or rescheduled invitee", async () => {

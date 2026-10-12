@@ -73,12 +73,11 @@ export function startOfWeekDay(day: DayNumber, weekStart: 0 | 1): DayNumber {
   return day - ((weekdayOfDay(day) - weekStart + 7) % 7);
 }
 
-type DayOffsets =
-  | { kind: "constant"; offset: number }
-  | { kind: "transition"; at: Millis; before: number; after: number }
-  | { kind: "complex" };
+/** Offsets of one UTC calendar year: the offset at the year start and every transition inside the year. */
+type YearTable = { start: Millis; end: Millis; base: number; at: number[]; offsets: number[] };
 
-const MAX_CACHED_DAYS = 20_000;
+const WEEK_MS = 7 * DAY_MS;
+const MAX_CACHED_YEARS = 400;
 
 /**
  * Offsets and wall-clock conversion for one IANA zone. Obtain instances with `zoneClock(zone)` (memoized). Offsets are
@@ -87,7 +86,8 @@ const MAX_CACHED_DAYS = 20_000;
 export class ZoneClock {
   readonly zone: string;
   private readonly dtf: Intl.DateTimeFormat;
-  private readonly days = new Map<number, DayOffsets>();
+  private readonly years = new Map<number, YearTable>();
+  private last: YearTable | null = null;
 
   constructor(zone: string) {
     this.zone = zone;
@@ -151,45 +151,73 @@ export class ZoneClock {
     return (d.getTime() - whole) / MINUTE_MS;
   }
 
-  private dayOffsets(utcDay: number): DayOffsets {
-    const cached = this.days.get(utcDay);
-    if (cached) return cached;
-    const start = utcDay * DAY_MS;
-    const end = start + DAY_MS - 1;
-    const a = this.rawOffset(start);
-    const b = this.rawOffset(end);
-    const mid = this.rawOffset(start + DAY_MS / 2);
-    let entry: DayOffsets;
-    if (a === b && a === mid) {
-      entry = { kind: "constant", offset: a };
-    } else if (mid !== a && mid !== b) {
-      entry = { kind: "complex" };
-    } else {
-      // Binary search the first minute with the new offset (transitions happen on whole minutes).
-      let lo = 0; // minute index known to have offset a
-      let hi = 1439; // minute index known to have offset b (end of day)
-      if (this.rawOffset(start + hi * MINUTE_MS) !== b) {
-        entry = { kind: "complex" };
-      } else {
-        while (hi - lo > 1) {
-          const m = (lo + hi) >> 1;
-          if (this.rawOffset(start + m * MINUTE_MS) === a) lo = m;
-          else hi = m;
-        }
-        entry = { kind: "transition", at: start + hi * MINUTE_MS, before: a, after: b };
-      }
+  /** First whole minute in (lo, hi] whose offset differs from `from` (the caller knows hi differs). */
+  private findChange(lo: Millis, hi: Millis, from: number): Millis {
+    let a = Math.floor(lo / MINUTE_MS); // minute index known to have offset `from`
+    let b = Math.ceil(hi / MINUTE_MS); // minute index known to differ
+    while (b - a > 1) {
+      const m = Math.floor((a + b) / 2);
+      if (this.rawOffset(m * MINUTE_MS) === from) a = m;
+      else b = m;
     }
-    if (this.days.size >= MAX_CACHED_DAYS) this.days.clear();
-    this.days.set(utcDay, entry);
-    return entry;
+    return b * MINUTE_MS;
+  }
+
+  /**
+   * The offset table of a UTC year: offsets are sampled weekly and every change is located to the minute (transitions
+   * happen on whole minutes, months apart). Several changes inside one week are all found as long as the offset at the
+   * end of the week differs from the start or from an intermediate change.
+   */
+  private yearTable(year: number): YearTable {
+    const cached = this.years.get(year);
+    if (cached) return cached;
+    const start = Date.UTC(year, 0, 1);
+    const end = Date.UTC(year + 1, 0, 1);
+    const base = this.rawOffset(start);
+    const at: number[] = [];
+    const offsets: number[] = [];
+    let prevT = start;
+    let prevO = base;
+    while (prevT < end) {
+      const t = Math.min(prevT + WEEK_MS, end);
+      const sample = t === end ? end - 1000 : t;
+      const o = this.rawOffset(sample);
+      let lo = prevT;
+      let cur = prevO;
+      while (o !== cur) {
+        const change = this.findChange(lo, sample, cur);
+        if (change > sample) break;
+        cur = this.rawOffset(change);
+        at.push(change);
+        offsets.push(cur);
+        lo = change;
+      }
+      prevT = t;
+      prevO = o;
+    }
+    const table: YearTable = { start, end, base, at, offsets };
+    if (this.years.size >= MAX_CACHED_YEARS) this.years.clear();
+    this.years.set(year, table);
+    return table;
   }
 
   /** Offset of the zone at an instant, in minutes. */
   offset(ms: Millis): number {
-    const entry = this.dayOffsets(Math.floor(ms / DAY_MS));
-    if (entry.kind === "constant") return entry.offset;
-    if (entry.kind === "transition") return ms < entry.at ? entry.before : entry.after;
-    return this.rawOffset(ms);
+    let t = this.last;
+    if (!t || ms < t.start || ms >= t.end) {
+      t = this.yearTable(new Date(ms).getUTCFullYear());
+      this.last = t;
+    }
+    const at = t.at;
+    if (at.length === 0 || ms < at[0]!) return t.base;
+    let lo = 0;
+    let hi = at.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (at[mid]! <= ms) lo = mid;
+      else hi = mid - 1;
+    }
+    return t.offsets[lo]!;
   }
 
   /** The local wall-clock time of an instant as "naive" milliseconds (the local time read as if it were UTC). */
@@ -244,6 +272,28 @@ export class ZoneClock {
   /** The instant of `minutes` after local midnight of `day` (1440 = next local midnight). */
   wallToUtc(day: DayNumber, minutes: number): Millis {
     return this.fromNaive(day * DAY_MS + minutes * MINUTE_MS);
+  }
+
+  /**
+   * Every instant whose local wall-clock time is `minutes` after local midnight of `day`, sorted: none inside a
+   * spring-forward gap, two inside a fall-back overlap (01:30 EDT and 01:30 EST), otherwise one. Grids that step in
+   * wall-clock minutes use it so the repeated hour of a fall-back day keeps its starts.
+   */
+  wallToUtcAll(day: DayNumber, minutes: number): Millis[] {
+    const naive = day * DAY_MS + minutes * MINUTE_MS;
+    const before = this.offset(naive - DAY_MS);
+    const after = this.offset(naive + DAY_MS);
+    const out: Millis[] = [];
+    for (const o of before === after ? [before] : [before, after]) {
+      const u = naive - o * MINUTE_MS;
+      if (this.offset(u) === o && !out.includes(u)) out.push(u);
+    }
+    if (out.length === 0 && before === after) {
+      // Two transitions within two days (practically never): exact search, kept only when the wall time exists.
+      const u = this.fromNaiveSlow(naive);
+      if (this.toNaive(u) === naive) out.push(u);
+    }
+    return out.sort((a, b) => a - b);
   }
 
   /** True when the wall-clock time exists on that day (not inside a spring-forward gap). */

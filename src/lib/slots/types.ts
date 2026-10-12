@@ -92,6 +92,9 @@ export interface SlotQuery {
                                                                // other invitees): the caller adds 1 to that slot's remaining instead
   ignoreReservationKeys?: string[];                            // own reservation (retrying payment, completing a hold)
   ignoreLimits?: boolean;                                      // one-off spots and poll bookings (SCH-09 enforcement by source)
+  diagnoseOutsideHours?: boolean;                              // additive, troubleshoot only: also list the day's starts outside
+                                                               // the (combined) working hours on a grid from local midnight of
+                                                               // rules.rangeZone, flagged outsideHours (the Troubleshoot view)
 }
 
 export interface Slot {
@@ -107,10 +110,24 @@ export type ReasonCode =
   | "CALENDAR" | "NOCAL" | "DAILY_MAX" | "WEEKLY_MAX" | "MONTHLY_MAX" | "DURATION" | "RANGE" | "TOOSOON" | "EVENT"
   | "GROUP" | "OVERLAP" | "HOLIDAY" | "MEETING_LIMIT" | "HOST" | "ROUNDROBIN" | "UNFAIR" | "BUFFER" | "PAST" | "RESERVED";
 
-export interface Blocker { source: BusySource; start: Millis; end: Millis; title?: string | null; meetingId?: string; calendarId?: string }
+export interface Blocker { source: BusySource; start: Millis; end: Millis; title?: string | null; meetingId?: string; calendarId?: string;
+  code?: ReasonCode;                                           // additive: the code this blocker produced (CALENDAR, EVENT, OVERLAP,
+                                                               // RESERVED or BUFFER)
+  core?: Interval;                                             // additive: meetings: the meeting without its buffers (display)
+  bufferSide?: "before" | "after";                             // additive: BUFFER only: the blocker lies before or after the candidate
+  eventTypeId?: string;                                        // additive: source = meeting
+}
 export interface CandidateDiagnostic {
   start: Millis; end: Millis; available: boolean; reasons: ReasonCode[];
-  hosts: Record<string, { available: boolean; reasons: ReasonCode[]; blockers: Blocker[] }>;
+  hosts: Record<string, { available: boolean; reasons: ReasonCode[]; blockers: Blocker[];
+    limitPeriods?: ("day" | "week" | "month")[];              // additive: MEETING_LIMIT: the host limit periods that are full
+    outsideHours?: boolean;                                    // additive: the start is outside this host's own working hours
+                                                               // (no code exists for it; a round robin union grid or an existing
+                                                               // group slot can offer such a start)
+  }>;
+  limitPeriods?: ("day" | "week" | "month")[];                // additive: event type limit periods that are full (DAILY_MAX ...)
+  outsideHours?: boolean;                                      // additive: query.diagnoseOutsideHours entries outside working hours,
+                                                               // and a single host's existing group slot outside its hours
 }
 
 export interface SlotEngineInput { rules: EventTypeRules; hosts: HostInput[]; query: SlotQuery }

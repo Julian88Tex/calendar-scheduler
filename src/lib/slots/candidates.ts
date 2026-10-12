@@ -12,7 +12,7 @@ import { fitsInside } from "./blocks";
 import type { Interval, Millis } from "./types";
 import { MINUTE_MS, zoneClock } from "./zone";
 
-export type CandidateOrigin = "grid" | "group" | "spot" | "holiday" | "duration";
+export type CandidateOrigin = "grid" | "group" | "spot" | "holiday" | "duration" | "outside";
 export type Candidate = { start: Millis; end: Millis; origin: CandidateOrigin };
 
 export type GridOptions = {
@@ -44,17 +44,22 @@ export function gridStarts(anchors: readonly Interval[], containment: readonly I
       const midnight = clock.startOfDay(day);
       const transition = clock.hasTransition(day);
       let local = Math.ceil(clock.localMinutes(b.start) / inc) * inc;
-      for (; local < 1440; local += inc) {
-        let s: Millis;
-        if (!transition) {
-          s = midnight + local * MINUTE_MS;
-        } else {
-          if (!clock.wallTimeExists(day, local)) continue;
-          s = clock.wallToUtc(day, local);
+      if (!transition) {
+        for (; local < 1440; local += inc) {
+          const s = midnight + local * MINUTE_MS;
+          if (s >= b.end || s >= opts.to) break;
+          keep(s);
         }
-        if (s >= b.end || s >= opts.to) break;
-        if (s < b.start) continue;
-        keep(s);
+      } else {
+        // DST day: nonexistent wall times are skipped; a repeated wall time (fall back) is offered at both of its
+        // instants, like the interval_start grid, so the repeated hour keeps its starts. The second occurrence of an
+        // earlier wall time can lie after the block start, so the walk starts at midnight.
+        for (local = 0; local < 1440; local += inc) {
+          const all = clock.wallToUtcAll(day, local);
+          if (all.length === 0) continue;
+          if (all[0]! >= b.end || all[0]! >= opts.to) break;
+          for (const s of all) if (s >= b.start && s < b.end && s < opts.to) keep(s);
+        }
       }
     }
   } else {
@@ -86,9 +91,34 @@ export function shortBlockStarts(containment: readonly Interval[], durationMs: n
   return out;
 }
 
+/**
+ * Troubleshoot "outside working hours" grid: every wall-clock multiple of the increment from local midnight of each
+ * date of `zone` within [from, to), skipping nonexistent times (a repeated fall back wall time appears at both of its
+ * instants, like the hour-aligned grid).
+ */
+export function dayGridStarts(zone: string, incrementMinutes: number, from: Millis, to: Millis): Millis[] {
+  const clock = zoneClock(zone);
+  const inc = Math.max(1, incrementMinutes);
+  const out: Millis[] = [];
+  for (let day = clock.localDay(from); clock.startOfDay(day) < to; day++) {
+    const transition = clock.hasTransition(day);
+    const midnight = clock.startOfDay(day);
+    for (let local = 0; local < 1440; local += inc) {
+      if (!transition) {
+        const s = midnight + local * MINUTE_MS;
+        if (s >= from && s < to) out.push(s);
+        continue;
+      }
+      for (const s of clock.wallToUtcAll(day, local)) if (s >= from && s < to) out.push(s);
+    }
+  }
+  out.sort((a, b) => a - b);
+  return dedupeSorted(out);
+}
+
 /** Sorted, unique candidates; for equal start and end, real origins win over diagnostic-only ones. */
 export function mergeCandidates(lists: readonly Candidate[][]): Candidate[] {
-  const rank: Record<CandidateOrigin, number> = { grid: 0, group: 1, spot: 2, holiday: 3, duration: 4 };
+  const rank: Record<CandidateOrigin, number> = { grid: 0, group: 1, spot: 2, holiday: 3, duration: 4, outside: 5 };
   const all: Candidate[] = [];
   for (const l of lists) for (const c of l) all.push(c);
   all.sort((a, b) => a.start - b.start || a.end - b.end || rank[a.origin] - rank[b.origin]);

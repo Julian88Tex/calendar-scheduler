@@ -5,10 +5,11 @@
 //   selectHosts({ rules, hosts, slot })     host assignment at booking time (also reservation provisional hosts)
 //   reasonLabel / reasonHint               troubleshoot chips and fix hints (SPEC Appendix B)
 //   bookingWindow                           the window alone (booking-core short circuit, BK-31 step 0)
+//   MAX_QUERY_DAYS                          one call evaluates at most this many days of starts (callers ask for <= 62)
 //   busy helpers                            interval math for the availability service (section 7.4)
 export type * from "./types";
 
-export { computeSlots } from "./engine";
+export { computeSlots, MAX_QUERY_DAYS } from "./engine";
 export { selectHosts, choosePoolHost, type AssignmentReason, type PoolAssignment, type SelectHostsInput } from "./assign";
 export { REASON_CODES, REASON_PRIORITY, isReasonCode, reasonHint, reasonLabel, sortReasons } from "./reasons";
 export { bookingWindow, inWindow, windowReasons, MAX_WINDOW_DAYS, type BookingWindow } from "./window";
@@ -17,6 +18,7 @@ export {
   expandAllDay,
   intersectAll,
   intersectIntervals,
+  isIgnoredByFreeBusyRules,
   isNonEmptyInterval,
   matchesFreeBusyException,
   mergeIntervals,

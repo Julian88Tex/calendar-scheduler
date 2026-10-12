@@ -96,7 +96,7 @@ export function dateIntervals(schedule: ScheduleInput, date: string): Interval[]
 export function localDaysCovering(zone: string, from: Millis, to: Millis, marginDays: number): DayNumber[] {
   const clock = zoneClock(zone);
   const first = clock.localDay(from) - marginDays;
-  const last = clock.localDay(Math.max(from, to)) + marginDays;
+  const last = clock.localDay(Math.max(from, to - 1)) + marginDays;
   const out: DayNumber[] = [];
   for (let d = first; d <= last; d++) out.push(d);
   return out;

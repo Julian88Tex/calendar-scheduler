@@ -16,9 +16,9 @@
 import { combineBlocks } from "./blocks";
 import { mergeIntervals } from "./busy";
 import { groupHosts } from "./pooling";
-import { buildHostBlocks, type HostBlocks } from "./schedule";
+import { buildHostBlocks, sanitizeRanges, type HostBlocks } from "./schedule";
 import type { EventTypeRules, HostInput, Interval, Millis, ReasonCode } from "./types";
-import { DAY_MS, MINUTE_MS, dayFromIso, isIsoDate, weekdayOfDay, zoneClock, type ZoneClock } from "./zone";
+import { DAY_MS, MINUTE_MS, dayFromIso, isIsoDate, isoFromDay, weekdayOfDay, zoneClock, type ZoneClock } from "./zone";
 
 export const MAX_WINDOW_DAYS = 3650;
 const AVAILABLE_DAYS_CHUNK = 42;
@@ -72,6 +72,26 @@ function combinedContainment(rules: EventTypeRules, hosts: readonly HostInput[],
   return combineBlocks(groups, (id) => blocks.get(id), rules.rangeZone).containment;
 }
 
+/**
+ * False when no future date can ever count (a required host or a whole pool has no weekly hours and no future
+ * date-specific hours), so the walk can stop at once instead of scanning 3,650 empty dates.
+ */
+function canEverBeAvailable(rules: EventTypeRules, hosts: readonly HostInput[], fromDate: string, now: Millis): boolean {
+  if (isSpotsMode(rules)) return (rules.spots ?? []).some((s) => s.end > now && s.end > s.start);
+  const possible = (h: HostInput): boolean => {
+    const s = h.schedule;
+    if (!s) return false;
+    if ((s.weekly ?? []).some((day) => sanitizeRanges(day).length > 0)) return true;
+    for (const [date, ranges] of Object.entries(s.overrides ?? {})) {
+      if (date >= fromDate && sanitizeRanges(ranges).length > 0) return true;
+    }
+    return false;
+  };
+  const groups = groupHosts(rules, hosts);
+  if (groups.required.length + groups.pools.length === 0) return false;
+  return groups.required.every(possible) && groups.pools.every((p) => p.members.some(possible));
+}
+
 function availableDaysEnd(
   rules: EventTypeRules,
   hosts: readonly HostInput[],
@@ -83,6 +103,7 @@ function availableDaysEnd(
   const today = clock.localDay(now);
   const capDay = today + MAX_WINDOW_DAYS;
   if (days <= 0) return clock.startOfDay(today);
+  if (!canEverBeAvailable(rules, hosts, isoFromDay(today - 1), now)) return clock.startOfDay(capDay);
   let counted = 0;
   for (let d0 = today; d0 < capDay; d0 += AVAILABLE_DAYS_CHUNK) {
     const d1 = Math.min(d0 + AVAILABLE_DAYS_CHUNK, capDay);

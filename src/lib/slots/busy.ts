@@ -153,6 +153,18 @@ export function matchesFreeBusyException(
   return false;
 }
 
+/**
+ * SCH-13 for one busy interval: calendar events and app meetings whose title matches an exception are ignored for the
+ * event type being booked, except full group slots; holds (source "reserved") are never exempt.
+ */
+export function isIgnoredByFreeBusyRules(
+  busy: Pick<BusyInterval, "source" | "title" | "isFullGroupSlot">,
+  exceptions: readonly FreeBusyException[] | null | undefined,
+): boolean {
+  if (busy.source === "reserved" || busy.isFullGroupSlot) return false;
+  return matchesFreeBusyException(busy.title, exceptions);
+}
+
 /** Busy intervals sorted by start with empty or invalid entries dropped (input is not mutated). */
 export function normalizeBusy<T extends Interval>(busy: readonly T[]): T[] {
   const out = busy.filter(isNonEmptyInterval);
