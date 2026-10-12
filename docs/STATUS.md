@@ -16,7 +16,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | foundation-ui | Calendly look and feel: app shell, sidebar, buttons, calendar grid, time slots, time zone picker | building |
-| foundation-auth | Sign up, log in, password reset, 2FA, Sign in with Google/Microsoft (also connects the calendar) | building |
+| foundation-auth | Sign up, log in, password reset, 2FA, Sign in with Google (also connects the calendar) | done |
 | foundation-platform | Email sending with Calendly-style layout and calendar invites, background jobs, cron | done |
 | slot-engine | The scheduling brain: hours, buffers, minimum notice, increments, limits, DST, why-blocked diagnostics | done |
 | booking-core | Taking a booking safely (no double booking), daily/weekly and account-wide limits, slot API | building |
@@ -32,7 +32,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 3: real calendars and video links
 | Module | What it gives you | Status |
 |---|---|---|
-| calendar-integrations | Google Calendar: conflict checking, adding events, syncing moves and deletes | queued |
+| calendar-integrations | Google Calendar: conflict checking, adding events, syncing moves and deletes | building |
 | conferencing | Google Meet links on created events, plus the stable join link | queued |
 
 ### Milestone 4: life after booking

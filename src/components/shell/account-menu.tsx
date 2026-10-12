@@ -1,46 +1,39 @@
 // OWNER: foundation-ui.
 //
-// AccountMenu (SPEC BR-15, walkthrough 4.2): the header avatar (32px, initials fallback) with a chevron opening a 280px
-// menu: name and email; "Account settings" (Profile, Branding, My Link, Notifications, Login and security, Cookie
-// settings); "Calendar sync" (Calendar settings); "Share your link" (copies the public URL); "Help"; admins also get
-// "Admin center" and "Invite users"; then "Log out" (POST /api/auth/logout, AU-05). Keyboard navigable, Escape closes.
+// AccountMenu (SPEC BR-15 narrowed by docs/SCOPE.md, walkthrough 4.2): the header avatar (32px, initials fallback) with
+// a chevron opening a 280px menu: name and email; "Account settings" (Profile, Branding, My Link, Login and security:
+// the settings pages docs/SCOPE.md keeps); "Calendar sync" (Calendar settings); "Share your link" (copies the public
+// URL); "Help" (the in-app Help center); then "Log out" (POST /api/auth/logout, AU-05). Notifications, Cookie settings,
+// Admin center and Invite users lead to areas docs/SCOPE.md does not build, so they are not offered. Keyboard
+// navigable, Escape closes.
 "use client";
 
-import {
-  CalendarSync,
-  ChevronDown,
-  Cookie,
-  HelpCircle,
-  Link as LinkIcon,
-  LogOut,
-  Palette,
-  Share2,
-  ShieldCheck,
-  User,
-  UserPlus,
-  Bell,
-  KeyRound,
-} from "lucide-react";
-import { useRef } from "react";
+import { CalendarSync, ChevronDown, HelpCircle, KeyRound, Link as LinkIcon, LogOut, Palette, Share2, User } from "lucide-react";
+import { useRef, useState } from "react";
 import { copyText } from "@/lib/client/use-copy";
 import { Avatar } from "../ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { toast } from "../ui/toast";
+import { HelpCenterDialog } from "./help-center";
 import type { ShellUser } from "./types";
 
 export type AccountMenuProps = {
   user: ShellUser;
+  /** Kept for compatibility: the Admin center is out of scope (docs/SCOPE.md), so the menu has no entry for it. */
   canSeeAdminCenter?: boolean;
-  /** Owners and admins see "Invite users". */
+  /** Kept for compatibility: inviting users is out of scope (docs/SCOPE.md), so the menu has no "Invite users". */
   canInvite?: boolean;
   /** The user's public landing page URL ("Share your link"); hidden while the user has no handle. */
   publicUrl?: string | null;
   /** Hide the name next to the avatar (mobile top bar). */
   compact?: boolean;
+  /** Instance operator email for the Help center's "Report a problem" link (MK-02). */
+  operatorEmail?: string | null;
 };
 
-export function AccountMenu({ user, canSeeAdminCenter, canInvite, publicUrl, compact }: AccountMenuProps) {
+export function AccountMenu({ user, publicUrl, compact, operatorEmail }: AccountMenuProps) {
   const logoutForm = useRef<HTMLFormElement>(null);
+  const [helpCenter, setHelpCenter] = useState(false);
   return (
     <>
       <form ref={logoutForm} action="/api/auth/logout" method="post" hidden />
@@ -72,14 +65,8 @@ export function AccountMenu({ user, canSeeAdminCenter, canInvite, publicUrl, com
             <DropdownMenuItem href="/app/settings/link" icon={<LinkIcon aria-hidden="true" />}>
               My Link
             </DropdownMenuItem>
-            <DropdownMenuItem href="/app/settings/notifications" icon={<Bell aria-hidden="true" />}>
-              Notifications
-            </DropdownMenuItem>
             <DropdownMenuItem href="/app/settings/login" icon={<KeyRound aria-hidden="true" />}>
               Login and security
-            </DropdownMenuItem>
-            <DropdownMenuItem href="/app/settings/cookies" icon={<Cookie aria-hidden="true" />}>
-              Cookie settings
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
@@ -97,26 +84,16 @@ export function AccountMenu({ user, canSeeAdminCenter, canInvite, publicUrl, com
               Share your link
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem href="/help" icon={<HelpCircle aria-hidden="true" />}>
+          <DropdownMenuItem icon={<HelpCircle aria-hidden="true" />} onSelect={() => setHelpCenter(true)}>
             Help
           </DropdownMenuItem>
-          {(canSeeAdminCenter || canInvite) && <DropdownMenuSeparator />}
-          {canSeeAdminCenter && (
-            <DropdownMenuItem href="/app/admin" icon={<ShieldCheck aria-hidden="true" />}>
-              Admin center
-            </DropdownMenuItem>
-          )}
-          {canInvite && (
-            <DropdownMenuItem href="/app/admin/people?invite=1" icon={<UserPlus aria-hidden="true" />}>
-              Invite users
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem icon={<LogOut aria-hidden="true" />} onSelect={() => logoutForm.current?.requestSubmit()}>
             Log out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} />
     </>
   );
 }

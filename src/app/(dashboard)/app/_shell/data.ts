@@ -1,16 +1,13 @@
 // OWNER: foundation-ui.
 //
-// Server-side data for the dashboard shell (SPEC GEN-16, GEN-19, GEN-20, ET-02, BR-15): the cron tick, whether the
-// cron warning applies on this deployment, the Create menu's multi-host data and the user's public link.
+// Server-side data for the dashboard shell (SPEC GEN-16, GEN-20, BR-15): the cron tick, whether the cron warning applies
+// on this deployment, the cron endpoint URL for its setup steps and the user's public link.
 import "server-only";
-import { and, count, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { instanceSettings, organizationMemberships } from "@/db/schema";
-import type { CreateMenuMultiHost } from "@/components/shell/create-menu";
-import { isOrgAdmin, type ActorCtx } from "@/lib/authz";
+import { instanceSettings } from "@/db/schema";
 import { isE2eMode, isVercel } from "@/lib/env";
 import { log } from "@/lib/logger";
-import { listTeamsForUser } from "@/lib/teams";
 import { absoluteUrl } from "@/lib/url";
 
 /** instance_settings.last_cron_at as ISO, or null. */
@@ -37,27 +34,9 @@ export function cronWarningApplies(lastCronAt: string | null): boolean {
   return false;
 }
 
-/** Teams the user can manage and whether the workspace has other members (ET-02 multi-host step). */
-export async function getCreateMenuData(actor: ActorCtx): Promise<CreateMenuMultiHost> {
-  try {
-    const db = await getDb();
-    const [teams, others] = await Promise.all([
-      listTeamsForUser(actor.user.id),
-      db
-        .select({ n: count() })
-        .from(organizationMemberships)
-        .where(and(eq(organizationMemberships.organizationId, actor.orgId), ne(organizationMemberships.userId, actor.user.id))),
-    ]);
-    const admin = isOrgAdmin(actor);
-    return {
-      teams: teams.filter((t) => admin || t.role === "manager").map((t) => ({ id: t.id, name: t.name })),
-      hasOtherMembers: (others[0]?.n ?? 0) > 0,
-      canInvite: admin,
-    };
-  } catch (e) {
-    log.warn("shell.create_menu_failed", { error: e });
-    return { teams: [], hasOtherMembers: true, canInvite: isOrgAdmin(actor) };
-  }
+/** The absolute /api/cron URL for the GEN-16 setup steps. */
+export function cronEndpointUrl(): string {
+  return absoluteUrl("/api/cron");
 }
 
 /** The user's landing page URL (null before onboarding picks a handle). */

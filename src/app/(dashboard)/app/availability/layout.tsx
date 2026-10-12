@@ -9,7 +9,7 @@ import { RouteTabs } from "@/components/ui/route-tabs";
 export default function AvailabilityLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <PageHeader title="Availability" helpHref="/help" helpLabel="Help with availability" />
+      <PageHeader title="Availability" />
       <RouteTabs
         aria-label="Availability"
         className="mb-6"

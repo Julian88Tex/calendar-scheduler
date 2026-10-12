@@ -1,8 +1,9 @@
 // OWNER: foundation-ui.
 //
-// Settings section (SPEC BR-14): the account settings sub-navigation in groups: "Account" (Profile, Branding, My link,
-// Login and security, Notifications, Cookie settings, Privacy, Import from Calendly), "Calendar" (links to the
-// Availability tabs: Calendar settings, Availability, Advanced) and "Integrations" (the hub). Becomes a select on phones.
+// Settings section (SPEC BR-14 narrowed by docs/SCOPE.md): the account settings sub-navigation in groups: "Account"
+// (Profile, Branding, My link, Login and security: the settings pages docs/SCOPE.md keeps; Notifications, Cookie
+// settings, Privacy and Import from Calendly are not built), "Calendar" (links to the Availability tabs: Calendar
+// settings, Availability, Advanced) and "Integrations" (the hub). Becomes a select on phones.
 import type * as React from "react";
 import { RouteTabs } from "@/components/ui/route-tabs";
 
@@ -18,10 +19,6 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           { href: "/app/settings/branding", label: "Branding", group: "Account" },
           { href: "/app/settings/link", label: "My link", group: "Account" },
           { href: "/app/settings/login", label: "Login and security", group: "Account" },
-          { href: "/app/settings/notifications", label: "Notifications", group: "Account" },
-          { href: "/app/settings/cookies", label: "Cookie settings", group: "Account" },
-          { href: "/app/settings/privacy", label: "Privacy", group: "Account" },
-          { href: "/app/settings/import", label: "Import from Calendly", group: "Account" },
           { href: "/app/availability/calendar-settings", label: "Calendar settings", group: "Calendar" },
           { href: "/app/availability", label: "Availability", group: "Calendar", exact: true },
           { href: "/app/availability/advanced", label: "Advanced", group: "Calendar" },

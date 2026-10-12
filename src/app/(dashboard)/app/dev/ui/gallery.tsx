@@ -26,7 +26,7 @@ const SECTIONS = [
 export function DevGallery() {
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <PageHeader title="UI kit" description="Every component of the design system (ARCHITECTURE 20.2) with its states, in the Calendly classic theme." />
+      <PageHeader title="UI kit" description="Every component of the design system (ARCHITECTURE 20.2) with its states, in the classic theme." />
       <nav aria-label="Gallery sections" className="flex flex-wrap gap-2">
         {SECTIONS.map((s) => (
           <a key={s.id} href={`#${s.id}`} className="rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-primary-text hover:bg-primary-soft">

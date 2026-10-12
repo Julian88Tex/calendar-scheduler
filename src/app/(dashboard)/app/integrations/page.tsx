@@ -1,15 +1,17 @@
 // OWNER: foundation-ui.
 //
-// Integrations hub (SPEC CAL-21): "Integrations & apps" with search, category chips and tiles from
-// src/lib/integrations/catalog.ts. Status per tile: "Not configured on this server" when the env vars are missing
-// (beats everything), "Connected" when the user has a live connection (calendars, Zoom, webhooks, API tokens, GA4,
-// Meta Pixel; Meet and Teams follow the Google and Microsoft calendar connections), else no badge.
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+// Integrations hub (SPEC CAL-21 narrowed by docs/SCOPE.md): "Integrations & apps" with search, category chips and tiles
+// from src/lib/integrations/catalog.ts. docs/SCOPE.md keeps Google Calendar (conflicts and the destination calendar)
+// and Google Meet (created through the Google Calendar event), plus the status-only Email delivery tile that tells the
+// owner whether booking and reminder emails leave the server; tiles for skipped integrations are not shown. Status per
+// tile: "Not configured on this server" when the env vars are missing (beats everything), "Connected" when the user
+// has a live Google connection (Meet follows it), else no badge.
+import { and, eq, ne } from "drizzle-orm";
 import type { Metadata } from "next";
 import { IntegrationsHub, type HubTile } from "../_shell/integrations-hub";
 import { PageHeader } from "@/components/ui/page-header";
 import { getDb } from "@/db";
-import { apiTokens, calendarConnections, conferencingConnections, webhookSubscriptions } from "@/db/schema";
+import { calendarConnections } from "@/db/schema";
 import { getActorCtx } from "@/lib/authz";
 import { getFeatures } from "@/lib/env";
 import { emailTransportLabel, INTEGRATION_CATEGORIES, INTEGRATIONS, integrationStatus, type IntegrationCategory } from "@/lib/integrations/catalog";
@@ -19,41 +21,19 @@ export const metadata: Metadata = { title: "Integrations & apps" };
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-async function connectedIntegrationIds(userId: string, user: { ga4MeasurementId: string | null; metaPixelId: string | null }): Promise<Set<string>> {
+/** Catalog tiles docs/SCOPE.md keeps, in hub order. */
+const KEPT_INTEGRATION_IDS: readonly string[] = ["google-calendar", "google-meet", "email"];
+
+async function connectedIntegrationIds(userId: string): Promise<Set<string>> {
   const ids = new Set<string>();
-  if (user.ga4MeasurementId) ids.add("google-analytics");
-  if (user.metaPixelId) ids.add("meta-pixel");
   try {
     const db = await getDb();
-    const [cals, confs, hooks, tokens] = await Promise.all([
-      db
-        .select({ provider: calendarConnections.provider, server: calendarConnections.caldavServerUrl })
-        .from(calendarConnections)
-        .where(and(eq(calendarConnections.userId, userId), ne(calendarConnections.status, "disconnected"))),
-      db
-        .select({ provider: conferencingConnections.provider })
-        .from(conferencingConnections)
-        .where(and(eq(conferencingConnections.userId, userId), ne(conferencingConnections.status, "disconnected"))),
-      db
-        .select({ id: webhookSubscriptions.id })
-        .from(webhookSubscriptions)
-        .where(and(or(eq(webhookSubscriptions.userId, userId), eq(webhookSubscriptions.creatorUserId, userId)), isNull(webhookSubscriptions.disabledAt)))
-        .limit(1),
-      db
-        .select({ id: apiTokens.id })
-        .from(apiTokens)
-        .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)))
-        .limit(1),
-    ]);
-    for (const c of cals) {
-      if (c.provider === "google") ids.add("google-calendar").add("google-meet");
-      else if (c.provider === "microsoft") ids.add("outlook-calendar").add("microsoft-teams");
-      else if (c.provider === "ics") ids.add("ics-feed");
-      else if (c.provider === "caldav") ids.add(c.server && /icloud\.com/i.test(c.server) ? "icloud-calendar" : "caldav");
-    }
-    for (const c of confs) if (c.provider === "zoom") ids.add("zoom");
-    if (hooks.length) ids.add("webhooks");
-    if (tokens.length) ids.add("api");
+    const [google] = await db
+      .select({ id: calendarConnections.id })
+      .from(calendarConnections)
+      .where(and(eq(calendarConnections.userId, userId), eq(calendarConnections.provider, "google"), ne(calendarConnections.status, "disconnected")))
+      .limit(1);
+    if (google) ids.add("google-calendar").add("google-meet");
   } catch (e) {
     log.warn("integrations.status_failed", { error: e });
   }
@@ -64,8 +44,8 @@ export default async function IntegrationsPage({ searchParams }: Props) {
   const [sp, actor] = await Promise.all([searchParams, getActorCtx()]);
   const f = getFeatures();
   const flags = { googleOAuth: f.googleOAuth, microsoftOAuth: f.microsoftOAuth, zoom: f.zoom, stripe: f.stripe, sms: f.sms, email: f.email };
-  const connected = await connectedIntegrationIds(actor.user.id, actor.user);
-  const tiles: HubTile[] = INTEGRATIONS.map((t) => ({
+  const connected = await connectedIntegrationIds(actor.user.id);
+  const tiles: HubTile[] = INTEGRATIONS.filter((t) => KEPT_INTEGRATION_IDS.includes(t.id)).map((t) => ({
     id: t.id,
     name: t.name,
     description: t.description,
@@ -76,16 +56,16 @@ export default async function IntegrationsPage({ searchParams }: Props) {
   }));
   const q = typeof sp.q === "string" ? sp.q.slice(0, 100) : "";
   const rawCategory = typeof sp.category === "string" ? sp.category : "all";
-  const category = (INTEGRATION_CATEGORIES.some((c) => c.id === rawCategory) ? rawCategory : "all") as IntegrationCategory | "all";
+  const keptCategories = new Set(INTEGRATIONS.filter((t) => KEPT_INTEGRATION_IDS.includes(t.id)).map((t) => t.category));
+  const categories = INTEGRATION_CATEGORIES.filter((c) => c.id === "all" || keptCategories.has(c.id));
+  const category = (categories.some((c) => c.id === rawCategory) ? rawCategory : "all") as IntegrationCategory | "all";
   return (
     <>
       <PageHeader
         title="Integrations & apps"
-        description="Connect your calendars, video conferencing, payments and the tools you already use."
-        helpHref="/help"
-        helpLabel="Help with integrations"
+        description="Connect Google Calendar to check for conflicts, add new meetings to your calendar and give them Google Meet links."
       />
-      <IntegrationsHub tiles={tiles} initialQuery={q} initialCategory={category} />
+      <IntegrationsHub tiles={tiles} initialQuery={q} initialCategory={category} categories={categories.map((c) => c.id)} />
     </>
   );
 }

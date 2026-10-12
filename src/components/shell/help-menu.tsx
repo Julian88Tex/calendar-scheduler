@@ -1,17 +1,17 @@
 // OWNER: foundation-ui.
 //
-// HelpMenu (SPEC GEN-19): the sidebar "Help" flyout: "Help center" (/help), "Getting started" (reopens the onboarding
-// wizard), "What's new" (a static changelog dialog) and "Report a problem" (mailto the instance operator, MK-02). No
-// keyboard shortcuts item (the app defines no global shortcuts).
+// HelpMenu (SPEC GEN-19, narrowed by docs/SCOPE.md): the sidebar "Help" flyout: "Help center" (the in-app how-to
+// articles dialog, help-center.tsx), "What's new" (a static changelog dialog) and "Report a problem" (mailto the
+// instance operator, MK-02). "Getting started" reopened the onboarding wizard, which docs/SCOPE.md does not build, so
+// it is not offered. No keyboard shortcuts item (the app defines no global shortcuts).
 "use client";
 
-import { BookOpen, Bug, HelpCircle, Rocket, Sparkles } from "lucide-react";
+import { BookOpen, Bug, HelpCircle, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
-import { APP_NAME } from "@/lib/brand";
-import { Dialog } from "../ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Tooltip } from "../ui/tooltip";
+import { HelpCenterDialog, reportProblemHref, WhatsNewDialog } from "./help-center";
 
 export type HelpMenuProps = {
   /** Instance operator email for "Report a problem" (MK-02). */
@@ -20,34 +20,8 @@ export type HelpMenuProps = {
   collapsed?: boolean;
 };
 
-const CHANGELOG: { title: string; items: string[] }[] = [
-  {
-    title: "Scheduling",
-    items: [
-      "One-on-one, group, round robin and collective event types with a live booking page preview.",
-      "Single-use links, one-off meetings and meeting polls for finding a time with a group.",
-      "Routing forms that send visitors to the right event type, a message or a URL.",
-    ],
-  },
-  {
-    title: "Availability and calendars",
-    items: [
-      "Schedules with weekly hours, date-specific hours and holidays by country.",
-      "Google, Outlook, iCloud, CalDAV and ICS feed calendars checked for conflicts.",
-      "Zoom, Google Meet, Microsoft Teams and Jitsi meeting links.",
-    ],
-  },
-  {
-    title: "Automation and insights",
-    items: [
-      "Workflows for email and text reminders, follow-ups and webhooks.",
-      "Analytics for bookings, cancellations, popular times and routing.",
-      "A REST API, webhooks and website embeds for your own integrations.",
-    ],
-  },
-];
-
 export function HelpMenu({ operatorEmail, collapsed }: HelpMenuProps) {
+  const [helpCenter, setHelpCenter] = useState(false);
   const [whatsNew, setWhatsNew] = useState(false);
   const trigger = (
     <DropdownMenuTrigger
@@ -72,18 +46,15 @@ export function HelpMenu({ operatorEmail, collapsed }: HelpMenuProps) {
           trigger
         )}
         <DropdownMenuContent side="right" align="end" sideOffset={10} className="w-64">
-          <DropdownMenuItem href="/help" icon={<BookOpen aria-hidden="true" />}>
+          <DropdownMenuItem icon={<BookOpen aria-hidden="true" />} onSelect={() => setHelpCenter(true)}>
             Help center
-          </DropdownMenuItem>
-          <DropdownMenuItem href="/onboarding" icon={<Rocket aria-hidden="true" />}>
-            Getting started
           </DropdownMenuItem>
           <DropdownMenuItem icon={<Sparkles aria-hidden="true" />} onSelect={() => setWhatsNew(true)}>
             What&apos;s new
           </DropdownMenuItem>
           {operatorEmail && (
             <DropdownMenuItem asChild>
-              <a href={`mailto:${operatorEmail}?subject=${encodeURIComponent(`Report a problem with ${APP_NAME}`)}`}>
+              <a href={reportProblemHref(operatorEmail)}>
                 <span className="inline-flex text-ink-2">
                   <Bug aria-hidden="true" />
                 </span>
@@ -93,20 +64,8 @@ export function HelpMenu({ operatorEmail, collapsed }: HelpMenuProps) {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog open={whatsNew} onOpenChange={setWhatsNew} title="What's new" description={`Recent improvements to ${APP_NAME}.`} size="md">
-        <div className="flex flex-col gap-5">
-          {CHANGELOG.map((section) => (
-            <section key={section.title}>
-              <h3 className="text-title-sm text-ink">{section.title}</h3>
-              <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-body-md text-ink">
-                {section.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      </Dialog>
+      <HelpCenterDialog open={helpCenter} onOpenChange={setHelpCenter} operatorEmail={operatorEmail} />
+      <WhatsNewDialog open={whatsNew} onOpenChange={setWhatsNew} />
     </>
   );
 }

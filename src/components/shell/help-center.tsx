@@ -8,8 +8,8 @@
 // changelog dialog.
 "use client";
 
-import type * as React from "react";
 import { APP_NAME } from "@/lib/brand";
+import { mailtoAddress } from "../public/report-abuse";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { Dialog } from "../ui/dialog";
 
@@ -124,9 +124,9 @@ export type HelpCenterDialogProps = {
   operatorEmail?: string | null;
 };
 
+/** GEN-19 "Report a problem": mailto the instance operator with subject "Report a problem with {AppName}". */
 export function reportProblemHref(operatorEmail: string): string {
-  const to = encodeURIComponent(operatorEmail).replace(/%40/g, "@");
-  return `mailto:${to}?subject=${encodeURIComponent(`Report a problem with ${APP_NAME}`)}`;
+  return `mailto:${mailtoAddress(operatorEmail)}?subject=${encodeURIComponent(`Report a problem with ${APP_NAME}`)}`;
 }
 
 export function HelpCenterDialog({ open, onOpenChange, operatorEmail }: HelpCenterDialogProps) {
@@ -162,7 +162,7 @@ export function WhatsNewDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="What's new" description={`Recent improvements to ${APP_NAME}.`} size="md">
       <div className="flex flex-col gap-5">
-        {CHANGELOG.map((section): React.ReactNode => (
+        {CHANGELOG.map((section) => (
           <section key={section.title}>
             <h3 className="text-title-sm text-ink">{section.title}</h3>
             <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-body-md text-ink">

@@ -2,7 +2,8 @@
 //
 // Client side of the integrations hub (SPEC CAL-21, walkthrough 17): search "Find integrations, apps, and more",
 // category chips and the tile grid (logo, name, one-line description, "Connected" or "Not configured on this server"
-// badges). The query and category are mirrored in the URL (?q=&category=) without a navigation.
+// badges). The query and category are mirrored in the URL (?q=&category=) without a navigation. The page passes only
+// the tiles and categories docs/SCOPE.md keeps.
 "use client";
 
 import type { Route } from "next";
@@ -42,7 +43,15 @@ function syncUrl(q: string, category: Category) {
   }
 }
 
-export function IntegrationsHub({ tiles, initialQuery, initialCategory }: { tiles: HubTile[]; initialQuery: string; initialCategory: Category }) {
+export type IntegrationsHubProps = {
+  tiles: HubTile[];
+  initialQuery: string;
+  initialCategory: Category;
+  /** Category chips to show (ids from INTEGRATION_CATEGORIES, "all" first); default every category. */
+  categories?: readonly Category[];
+};
+
+export function IntegrationsHub({ tiles, initialQuery, initialCategory, categories }: IntegrationsHubProps) {
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState<Category>(initialCategory);
   const byId = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
@@ -63,7 +72,7 @@ export function IntegrationsHub({ tiles, initialQuery, initialCategory }: { tile
           onSearch={(v) => syncUrl(v, category)}
         />
         <div role="group" aria-label="Categories" className="flex flex-wrap gap-2">
-          {INTEGRATION_CATEGORIES.map((c) => {
+          {INTEGRATION_CATEGORIES.filter((c) => !categories || categories.includes(c.id)).map((c) => {
             const active = c.id === category;
             return (
               <button

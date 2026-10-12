@@ -353,20 +353,17 @@ describe("misc UI helpers", () => {
     expect(activeRouteTab("/app/admin", tabs)).toBeUndefined();
   });
 
-  it("orders the dashboard navigation per GEN-20", () => {
+  it("orders the dashboard navigation per GEN-20, limited to the areas docs/SCOPE.md keeps", () => {
     expect(PRIMARY_NAV.map((i) => [i.label, i.href])).toEqual([
       ["Scheduling", "/app/scheduling"],
       ["Meetings", "/app/meetings"],
       ["Availability", "/app/availability"],
-      ["Contacts", "/app/contacts"],
-      ["Workflows", "/app/workflows"],
       ["Integrations & apps", "/app/integrations"],
-      ["Routing", "/app/routing"],
     ]);
-    expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["Analytics", "Admin center"]);
-    expect(BOTTOM_NAV.find((i) => i.label === "Admin center")?.adminOnly).toBe(true);
-    expect(isNavActive("/app/workflows/new", "/app/workflows")).toBe(true);
-    expect(isNavActive("/app/workflowsx", "/app/workflows")).toBe(false);
+    expect(BOTTOM_NAV).toEqual([]);
+    expect(isNavActive("/app/availability/advanced", "/app/availability")).toBe(true);
+    expect(isNavActive("/app/scheduling/meeting-polls", "/app/scheduling")).toBe(true);
+    expect(isNavActive("/app/availabilityx", "/app/availability")).toBe(false);
   });
 
   it("builds the ET-02 create links", () => {
