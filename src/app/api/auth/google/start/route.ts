@@ -1,12 +1,20 @@
 // OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // GET /api/auth/google/start?intent=login|signup|connect_calendar|poll_freebusy|link_login_method|accept_invitation&next=...
-// (ARCHITECTURE sections 10.4 and 18.4): stores intent, PKCE verifier, state and returnTo in the 10 minute state cookie
-// and redirects to Google. Foundation stub: answers "not configured".
-import { json } from "@/lib/http";
+// (ARCHITECTURE sections 10.4 and 18.4, SPEC AU-02): stores intent, PKCE verifier, state and returnTo in the 10 minute
+// sealed state cookie and redirects to Google (src/lib/auth/oauth/flow.ts). Build links with oauthStartPath() from
+// src/lib/auth/oauth/links.ts.
+import { handleOAuthStart } from "@/lib/auth/oauth/flow";
+import { redirectResponse } from "@/lib/auth/oauth/redirects";
+import { log } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
-  return json({ error: "not_configured", message: "Sign in with Google is not configured on this server." }, { status: 501 });
+export async function GET(request: Request): Promise<Response> {
+  try {
+    return await handleOAuthStart(request, "google");
+  } catch (e) {
+    log.error("oauth.start_failed", { provider: "google", error: e });
+    return redirectResponse("/login?error=failed&provider=google");
+  }
 }

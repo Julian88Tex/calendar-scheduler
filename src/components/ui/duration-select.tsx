@@ -33,8 +33,8 @@ export function customDurationMinutes(amount: string, unit: "min" | "hrs", min =
   const n = Number(amount.replace(",", "."));
   if (!amount.trim() || !Number.isFinite(n)) return null;
   const minutes = unit === "hrs" ? n * 60 : n;
-  if (!Number.isInteger(Math.round(minutes * 1000) / 1000) || Math.abs(minutes - Math.round(minutes)) > 1e-9) return null;
   const rounded = Math.round(minutes);
+  if (Math.abs(minutes - rounded) > 1e-6) return null;
   return rounded >= min && rounded <= max ? rounded : null;
 }
 
