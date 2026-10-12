@@ -103,6 +103,8 @@ export type EventTypeEditorData = {
   /** Same-origin preview path for the iframe (ARCHITECTURE 17.1), null when the owner has no handle. */
   previewPath: string | null;
   schedules: EditorScheduleOption[];
+  /** False for team event types (each host's schedule applies, ET-19). */
+  scheduleEditable: boolean;
   conferencing: Record<string, EditorConferencingOption>;
   calendars: EditorCalendarOption[];
   /** The user's destination calendar name (the "Default ({calendar})" option, CAL-20). */
@@ -141,4 +143,11 @@ export type EventTypeListItem = {
 };
 
 /** The save action's success payload. */
-export type SaveEventTypeResult = { id: string; slug: string; version: string; created: boolean };
+export type SaveEventTypeResult = {
+  id: string;
+  slug: string;
+  version: string;
+  created: boolean;
+  /** The saved state as the editor shows it (server ids for new questions, normalized values). */
+  draft: EventTypeDraft;
+};

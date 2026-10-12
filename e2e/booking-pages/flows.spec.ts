@@ -215,6 +215,64 @@ test.describe("booking flows", () => {
     await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Ana Lima");
   });
 
+  test("redirects to the host's external page after booking (mocked endpoint)", async ({ page }) => {
+    const target = "https://thanks.example.com/done?event=intro";
+    await page.route("**/api/public/bookings", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, inviteeId: "44444444-4444-4444-8444-444444444444", scheduledEventId: "55555555-5555-4555-8555-555555555555", redirectUrl: target }) }),
+    );
+    await page.route("https://thanks.example.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>Thanks</title><h1>Thanks for booking</h1>" }),
+    );
+    await page.goto("/julianjoseph/30min/2030-10-08T18:00:00Z", SLOW);
+    await fillDetails(page);
+    await page.getByRole("button", { name: "Schedule Event" }).click();
+    await expect(page).toHaveURL(target, SLOW);
+    await expect(page.getByRole("heading", { name: "Thanks for booking" })).toBeVisible();
+  });
+
+  test("the editor preview renders a draft and never books", async ({ page, loginAs }) => {
+    await loginAs(page, seeded.owner.email);
+    await page.goto("/julianjoseph/30min?preview=1", SLOW);
+    await expect(page.getByTestId("preview-banner")).toContainText("This is a preview. To book an event, share the link with your invitees.");
+    await page.evaluate(() =>
+      window.postMessage(
+        {
+          type: "kairos:preview",
+          draft: {
+            name: "Draft Strategy Session",
+            color: "#0099ff",
+            durationMinutes: 45,
+            durationOptions: null,
+            locations: [{ id: "5eed0000-0000-4000-8000-000000000301", kind: "zoom_conference", position: 0 }],
+            descriptionHtml: "<p>Bring your <b>questions</b>.</p>",
+            priceMinor: null,
+            currency: null,
+            kind: "solo",
+            maxInvitees: 1,
+            showRemainingSpots: false,
+            timeZoneDisplay: "auto",
+            lockedTimeZone: null,
+          },
+        },
+        window.location.origin,
+      ),
+    );
+    await expect(page.getByRole("heading", { level: 1, name: "Draft Strategy Session" })).toBeVisible();
+    await expect(page.getByText("45 min")).toBeVisible();
+    await expect(page.getByText("Bring your questions.")).toBeVisible();
+    // Real availability for the saved settings, even with an unsaved duration.
+    await page.getByRole("button", { name: "Monday, October 7 - Times available" }).click();
+    await page.getByRole("list", { name: "Select a time" }).getByRole("button").first().click();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Booking is disabled in preview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Enter Details" })).toHaveCount(0);
+    // An invitee opening the same URL sees the saved event type, without the preview.
+    await page.context().clearCookies();
+    await page.goto("/julianjoseph/30min?preview=1", SLOW);
+    await expect(page.getByRole("heading", { level: 1, name: "30 Minute Virtual" })).toBeVisible();
+    await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+  });
+
   test("the meal event offers its 9 locations and requires a choice", async ({ page, axe }) => {
     // Block Off Work on Tuesdays is 17:00 to 20:00 Pacific: 20:00 in New York.
     const times = await openDay(page, "/julianjoseph/meal", "Tuesday, October 8 - Times available");

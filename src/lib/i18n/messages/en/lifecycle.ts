@@ -1,18 +1,117 @@
-// OWNER: lifecycle-core. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: lifecycle-core.
 //
-// English "lifecycle" namespace (ARCHITECTURE section 19): booking emails and ICS descriptions.
-// English files define the key type; other locales are DeepPartial of it. Placeholders use {name}. Minimal keys until
-// the owner adds every string.
+// English "lifecycle" namespace (ARCHITECTURE section 19): booking emails that lifecycle-core adds on top of the shared
+// meeting emails (common.meetingEmail), the provider calendar event description (CAL-11), the CR-17 reasons and the
+// invitee change rules (CR-02, CR-03, SCH-23). English files define the key type; other locales are DeepPartial of it.
+// Placeholders use {name}. Copy follows Calendly where the spec quotes it; no em or en dashes (GEN-11).
 const messages = {
   emails: {
+    // Kept from the foundation stub (other modules may read them).
     confirmationSubject: "Confirmed: {eventName} with {hostName} on {date}",
     canceledSubject: "Canceled: {eventName} with {hostName} on {date}",
     rescheduledSubject: "Updated: {eventName} with {hostName} on {date}",
     reason: "Reason: {reason}",
     cancel: "Cancel",
     reschedule: "Reschedule",
+    notices: {
+      spotsFilled: "{filled} of {limit} spots filled",
+      assigned: "You were assigned this meeting.",
+      fromPoll: "Booked from meeting poll",
+      overlapTitle: "Booked over another event",
+      overlap: "This meeting overlaps with {title} at {time}.",
+      overlapUntitled: "This meeting overlaps with another event at {time}.",
+      fallback: "We couldn't add {inviteeName} to your calendar invitation, so we emailed them a confirmation with a calendar file instead.",
+      calendarSync: "This change was made in your connected calendar.",
+    },
+    requestReschedule: {
+      subject: "{hostName} would like to reschedule",
+      reminderSubject: "Reminder: {hostName} would like to reschedule",
+      intro: "{hostName} asked to find a new time for your {eventName} on {date}. Please pick a new time that works for you.",
+      reminderIntro: "{hostName} is still waiting for you to pick a new time for your {eventName}.",
+      messageLabel: "Message from {hostName}",
+      button: "Pick a new time",
+      formerTime: "Original time",
+      reason: "You are receiving this email because you scheduled an event with {hostName}.",
+    },
+    conferenceFailure: {
+      subject: "We couldn't create a {provider} link for your meeting with {inviteeName}",
+      intro: "We couldn't create a {provider} link for your {eventName} with {inviteeName} on {date}. Your invitee sees \"Web conferencing details to follow.\" until a link exists.",
+      details: "What happened",
+      action: "Open the meeting and choose Retry once the problem is fixed.",
+      button: "View meeting",
+      reason: "You are receiving this email because you are a host of this event.",
+    },
+    calendarFallback: {
+      subject: "We emailed {inviteeName} a confirmation for {eventName}",
+      intro: "We couldn't send a calendar invitation for your {eventName} with {inviteeName} on {date}, so we emailed them a confirmation with a calendar file instead.",
+      action: "Check your calendar connection so future invitations go out from your calendar.",
+      button: "View meeting",
+      reason: "You are receiving this email because you are a host of this event.",
+    },
   },
-  ics: { needChanges: "Need to make changes to this event?" },
+  calendar: {
+    eventName: "Event Name: {eventName}",
+    invitee: "Invitee: {name}",
+    inviteeEmail: "Invitee Email: {email}",
+    guests: "Guests: {guests}",
+    invitees: "Invitees:",
+    spotsFilled: "{filled} of {limit} spots filled",
+    location: "Location: {location}",
+    webConference: "Location: This is a {provider} web conference.",
+    joinFrom: "You can join this meeting from your computer, tablet, or smartphone.",
+    joinLink: "Join link: {url}",
+    toFollow: "Location: Web conferencing details to follow.",
+    notes: "{notes}",
+    needChanges: "Need to make changes to this event?",
+    cancel: "Cancel: {url}",
+    reschedule: "Reschedule: {url}",
+    footer: "Booked with {appName}",
+    poweredBy: "Powered by {appName}",
+    fromPoll: "Booked from meeting poll: {title}",
+  },
+  reasons: {
+    calendarCanceled: "Canceled from connected calendar event",
+    calendarRescheduled: "Rescheduled from connected calendar event",
+    hostAskedNewTime: "The host asked to find a new time",
+    hostRemoved: "The host removed you from this event",
+    accountClosed: "The host is no longer available",
+  },
+  changes: {
+    canceled: "This event has already been canceled.",
+    rescheduled: "This event was already rescheduled.",
+    occurred: "This event has already occurred.",
+    cutoff: "This meeting can no longer be changed online. Please contact {hostName}.",
+    notReschedulable: "This event can no longer be rescheduled.",
+    reasonRequired: "Please share a reason for canceling.",
+    reasonTooLong: "Keep the reason under 2,000 characters.",
+    messageTooLong: "Keep the message under 2,000 characters.",
+  },
+  errors: {
+    notFound: "This meeting could not be found.",
+    forbidden: "You don't have permission to change this meeting.",
+    meetingCanceled: "This meeting was canceled.",
+    noShowBeforeStart: "You can mark a no-show once the meeting has started.",
+    noShowCanceled: "Canceled invitees can't be marked as no-shows.",
+    notesTooLong: "Keep notes under 10,000 characters.",
+    notGroup: "Only group events have an invitee limit.",
+    limitTooLow: "The limit can't be lower than the {count} invitees already booked.",
+    limitRange: "Enter a number between 1 and 9,999.",
+    lastInvitee: "This is the only invitee. Cancel the event instead.",
+    blockWindow: "You can block an invitee within 90 days of their booking.",
+    blockTarget: "Enter an email address or a domain to block.",
+    blockEmail: "Enter a valid email address.",
+    blockDomain: "Enter a valid domain, like example.com.",
+    blockSelf: "You can't block yourself.",
+    reassignNotRoundRobin: "Only round robin meetings can be reassigned to another host.",
+    moveInvalid: "The end time must be after the start time.",
+    moveTooLong: "A meeting can last at most 12 hours.",
+    overrideMultiHost: "Override available times works for events with a single host only.",
+    retryNotNeeded: "This meeting doesn't need to be provisioned again.",
+    requestPast: "You can only ask for a new time before the meeting starts.",
+  },
+  activity: {
+    fallback: "Calendar invitation could not be sent; email confirmation sent instead",
+  },
 };
 
 export default messages;

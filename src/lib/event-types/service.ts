@@ -52,7 +52,7 @@ import { slugify } from "@/lib/slugs";
 import { now } from "@/lib/time/now";
 import { copyEventTypeReminders } from "@/lib/workflows";
 import { DEFAULT_NAMES, DESCRIPTION_MAX, MESSAGES, SUPPORTED_LOCALES } from "./constants";
-import { canonicalJson, copyName, copySlugCandidates, dedupeSlug, defaultDraft, durationColumns } from "./draft";
+import { canonicalJson, copyName, copySlugCandidates, dedupeSlug, defaultDraft, draftOfRow, durationColumns } from "./draft";
 import { normalizeLocations, validateDraft, zEventSlug, type SaveEventTypeInput } from "./schemas";
 import type { EventTypeDraft, SaveEventTypeResult, ScheduleChoiceDraft } from "./types";
 
@@ -267,6 +267,22 @@ async function versionOf(db: DbOrTx, id: string): Promise<string> {
   return (row?.updatedAt ?? now()).toISOString();
 }
 
+/** The saved event type as an editor draft (returned by saveEventType so the editor adopts server ids). */
+async function savedResult(tx: DbOrTx, id: string, created: boolean): Promise<SaveEventTypeResult> {
+  const [row] = await tx.select().from(eventTypes).where(eq(eventTypes.id, id)).limit(1);
+  if (!row) throw notFoundError(NOT_FOUND);
+  const questions = await tx.select().from(eventTypeQuestions).where(eq(eventTypeQuestions.eventTypeId, id)).orderBy(asc(eventTypeQuestions.position));
+  let schedule: ScheduleChoiceDraft = { kind: "schedule", scheduleId: row.scheduleId };
+  if (row.ownerUserId) {
+    const state = await resolveEventTypeSchedule(id, row.ownerUserId, tx);
+    schedule =
+      state.custom && state.schedule
+        ? { kind: "custom", content: { timezone: state.schedule.timezone, weeklyHours: state.schedule.weeklyHours, overrides: state.schedule.overrides } }
+        : { kind: "schedule", scheduleId: state.scheduleId };
+  }
+  return { id, slug: row.slug, version: row.updatedAt.toISOString(), created, draft: draftOfRow(row, questions, schedule) };
+}
+
 function validationFailure(fieldErrors: Record<string, string[]>): AppError {
   return new AppError("validation", { fieldErrors });
 }
@@ -363,7 +379,7 @@ async function createEventType(db: DB | DbOrTx, actor: ActorCtx, raw: unknown): 
     await syncQuestions(tx, row.id, draft.questions);
     await applyScheduleChoice(tx, row.id, ownerUserId, draft.schedule, true);
     await publishEvent(tx, "event_type.created", { eventTypeId: row.id }, { organizationId: actor.orgId, actor: eventActor(actor) });
-    return { id: row.id, slug, version: await versionOf(tx, row.id), created: true };
+    return savedResult(tx, row.id, true);
   });
 }
 
@@ -414,7 +430,7 @@ async function updateEventType(db: DB | DbOrTx, actor: ActorCtx, id: string, ver
       );
     }
     await publishEvent(tx, "event_type.updated", { eventTypeId: id }, { organizationId: row.organizationId, actor: eventActor(actor) });
-    return { id, slug: draft.slug, version: await versionOf(tx, id), created: false };
+    return savedResult(tx, id, false);
   });
 }
 

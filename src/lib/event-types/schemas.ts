@@ -432,6 +432,12 @@ const FIELD_SECTIONS: Record<string, EditorSectionId> = {
   confirmationLinks: "confirmation",
 };
 
+/** A ?section= query value as a section id, or null. */
+export function parseEditorSection(value: string | string[] | undefined | null): EditorSectionId | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  return v && ([...PRIMARY_SECTIONS, ...MORE_SECTIONS] as string[]).includes(v) ? (v as EditorSectionId) : null;
+}
+
 /** The section of a dotted field error key, or null for form-level errors. */
 export function sectionOfField(key: string): EditorSectionId | null {
   const head = key.replace(/^draft\./, "").split(".")[0] ?? "";

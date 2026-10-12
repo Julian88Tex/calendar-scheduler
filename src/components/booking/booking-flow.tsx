@@ -161,6 +161,9 @@ export function BookingFlow(p: BookingPageProps) {
   const [start, setStart] = useState<string | null>(p.initial.start);
   const [durationChoice, setDurationChoice] = useState<number>(p.initial.duration ?? p.event.defaultDuration);
   const duration = event.durations.includes(durationChoice) ? durationChoice : event.defaultDuration;
+  // Editor previews show real availability for the saved settings (ET-29): a draft duration that is not saved yet
+  // queries the saved default instead.
+  const slotsDuration = p.preview && !p.event.durations.includes(duration) ? p.event.defaultDuration : duration;
   const [dateChoice, setDateChoice] = useState<{ value: string | null } | null>(null);
   const [monthChoice, setMonthChoice] = useState<string | null>(null);
   const [jumpMonth, setJumpMonth] = useState<string | null>(null);
@@ -183,7 +186,7 @@ export function BookingFlow(p: BookingPageProps) {
   // Slots (BK-04, BK-31).
   const slotsReq: SlotsRequest | null =
     p.slotsTarget && zoneReady
-      ? { target: p.slotsTarget, month, zone, duration, troubleshoot, first: autoMonth && !monthChoice && !jumpMonth }
+      ? { target: p.slotsTarget, month, zone, duration: slotsDuration, troubleshoot, first: autoMonth && !monthChoice && !jumpMonth }
       : null;
   const slots = useMonthSlots(slotsReq, (r, data) => {
     if (!r.first) return;
@@ -210,7 +213,7 @@ export function BookingFlow(p: BookingPageProps) {
     if (slotsReq && data) prefetch({ ...slotsReq, month: nextMonthOf(month), first: false });
     // slotsReq is rebuilt every render; its fields are listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, month, zone, duration, troubleshoot, prefetch]);
+  }, [data, month, zone, slotsDuration, troubleshoot, prefetch]);
 
   // Mutual availability (BK-33): the viewer's own busy times of the visible month.
   const [busyByMonth, setBusyByMonth] = useState<Record<string, BusyRange[] | "error">>({});

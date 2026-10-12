@@ -33,7 +33,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | calendar-integrations | Google Calendar: conflict checking, adding events, detecting moves and deletes (applied by lifecycle-core) | done |
-| conferencing | Google Meet links on created events, plus the stable join link | building |
+| conferencing | Google Meet links on created events, plus the stable join link | done |
 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |
@@ -52,7 +52,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | done |
-| settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | queued |
+| settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | building |
 | golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
 
 ### Skipped (owner decision, see docs/SCOPE.md)

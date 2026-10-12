@@ -3,19 +3,15 @@
 // validation, a real booking, the confirmation page in the invitee's zone and format, and the ICS download.
 import { expect, test } from "../fixtures";
 
-type Seeded = { owner: { userId: string; slug: string; email: string; eventTypeIds: Record<string, string> } };
-
 // Monday 2030-10-07 06:00 in Los Angeles: Working hours on Mondays are 12:00 to 17:00 Pacific, 4 hours notice, 15 minute
 // increments, so the first start is 12:00 Pacific (15:00 in New York, the Playwright default zone).
 const NOW = "2030-10-07T13:00:00Z";
 
 test.describe("booking pages", () => {
-  let seeded: Seeded;
-
   test.beforeEach(async ({ api, seed }) => {
     await api.reset();
     await api.setTime(NOW);
-    seeded = (await seed("owner")) as unknown as Seeded;
+    await seed("owner");
   });
 
   test.afterEach(async ({ api }) => {
