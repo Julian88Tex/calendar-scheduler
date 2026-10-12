@@ -18,11 +18,12 @@
 // after the change (snapshots, NT-15). Cross-tenant: the event type must be editable by the actor
 // (assertEventTypesEditable inside the transaction).
 import "server-only";
-import { and, count, countDistinct, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { getDb, type DB, type DbOrTx } from "@/db";
 import { advisoryXactLock } from "@/db/helpers";
-import { eventTypes, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
+import { eventTypes, invitees, scheduledEvents, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
 import { assertAccess, assertEventTypesEditable, eventTypeAccess, eventTypeAccessAtLeast, type ActorCtx } from "@/lib/authz";
+import { getFeatures } from "@/lib/env";
 import { AppError, notFoundError, validationError } from "@/lib/errors";
 import { escapeHtml, richTextToPlain, sanitizeRichText } from "@/lib/html";
 import { getT } from "@/lib/i18n";
@@ -135,10 +136,21 @@ async function scheduledMeetingCounts(db: DbOrTx, rows: Record<ReminderKind, Rem
   for (const kind of ["invitee", "host"] as const) {
     const ids = rows[kind].map((r) => r.workflow.id);
     if (!ids.length) continue;
+    // Only meetings that will really get one: active meeting and (for per-invitee rows) active invitee.
     const [row] = await db
       .select({ n: countDistinct(workflowExecutions.scheduledEventId) })
       .from(workflowExecutions)
-      .where(and(inArray(workflowExecutions.workflowId, ids), eq(workflowExecutions.status, "scheduled"), gt(workflowExecutions.runAt, at)));
+      .innerJoin(scheduledEvents, eq(scheduledEvents.id, workflowExecutions.scheduledEventId))
+      .leftJoin(invitees, eq(invitees.id, workflowExecutions.inviteeId))
+      .where(
+        and(
+          inArray(workflowExecutions.workflowId, ids),
+          eq(workflowExecutions.status, "scheduled"),
+          gt(workflowExecutions.runAt, at),
+          eq(scheduledEvents.status, "active"),
+          or(isNull(workflowExecutions.inviteeId), eq(invitees.status, "active")),
+        ),
+      );
     out[kind] = Number(row?.n ?? 0);
   }
   return out;
@@ -179,6 +191,7 @@ async function buildView(db: DbOrTx, actor: ActorCtx, et: EventTypeInfo, canEdit
       overdueCount: health.overdueCount,
       warning: health.warning,
       cronUrl: absoluteUrl("/api/cron"),
+      cronSecretConfigured: getFeatures().cronSecret,
       nowMs: at.getTime(),
     },
     variables: listTemplateVariables()

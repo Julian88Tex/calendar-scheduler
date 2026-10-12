@@ -4,7 +4,9 @@
 // - the meeting and the invitee are still active (except for "Event is canceled" messages);
 // - "Event ends" messages skip invitees marked as no-shows (NT-19);
 // - timed messages follow the meeting if it moved in place (the job is re-timed with RetryLaterError);
-// - reminders ("before event starts") still go out when late, but never once the meeting has started (too_late).
+// - reminders ("before event starts") still go out when late, but never once the meeting has started (too_late);
+// - every message is rendered first and the rules above are checked once more on fresh rows right before sending, so
+//   a cancellation or an Off switch that lands while the reminder is being prepared never gets an email out.
 // Emails are rendered with buildMeetingTemplateContext for each recipient (their zone, time format and locale) and
 // renderMeetingEmail (invitee_reminder / host_reminder: Calendly's reminder layout, custom subject and body when the
 // host wrote them, the "Need to make changes to this event?" Cancel and Reschedule links for invitees), sent with
@@ -14,7 +16,7 @@ import "server-only";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { inviteeGuests, inviteeNoShows, invitees, scheduledEventHosts, scheduledEvents, users, workflowExecutions, workflows } from "@/db/schema";
+import { inviteeGuests, inviteeNoShows, invitees, meetingActivity, scheduledEventHosts, scheduledEvents, users, workflowExecutions, workflows } from "@/db/schema";
 import { emailBrandForUser, isValidEmailAddress, meetingSender, renderMeetingEmail, sendEmail, type MeetingEmailKind } from "@/lib/email";
 import { sanitizeRichText } from "@/lib/html";
 import { getT, resolveLocale } from "@/lib/i18n";
@@ -25,7 +27,7 @@ import { buildMeetingTemplateContext } from "@/lib/template-context";
 import { now as clockNow } from "@/lib/time/now";
 import { absoluteUrl } from "@/lib/url";
 import { currentRunAt, isSmsAction, type WorkflowAction } from "./engine";
-import { recordActivity, workflowAppliesTo, type ExecutionRow } from "./store";
+import { EXECUTE_JOB_MAX_ATTEMPTS, recordActivity, workflowAppliesTo, type ExecutionRow } from "./store";
 
 const Payload = z.object({ executionId: z.uuid() });
 
@@ -112,17 +114,96 @@ async function recipientsFor(
   return [];
 }
 
-/** Runs one workflows.execute job (see the file header). */
+/**
+ * The last check before sending, in one read: why the execution must not be sent any more ("changed" when another
+ * writer already finished it), or null to send. Repeats the eligibility rules on fresh rows so the window between the
+ * checks above and the send is only the send itself.
+ */
+async function sendBlocker(db: DB, execution: ExecutionRow): Promise<string | null> {
+  const [row] = await db
+    .select({
+      status: workflowExecutions.status,
+      meetingStatus: scheduledEvents.status,
+      startAt: scheduledEvents.startAt,
+      inviteeStatus: invitees.status,
+      workflowId: workflows.id,
+      active: workflows.active,
+      deletedAt: workflows.deletedAt,
+    })
+    .from(workflowExecutions)
+    .innerJoin(scheduledEvents, eq(scheduledEvents.id, workflowExecutions.scheduledEventId))
+    .leftJoin(invitees, eq(invitees.id, workflowExecutions.inviteeId))
+    .leftJoin(workflows, eq(workflows.id, workflowExecutions.workflowId))
+    .where(eq(workflowExecutions.id, execution.id))
+    .limit(1);
+  if (!row || row.status !== "scheduled") return "changed";
+  if (!row.workflowId || row.deletedAt) return "workflow_deleted";
+  if (!row.active) return "workflow_off";
+  if (execution.trigger !== "canceled") {
+    if (row.meetingStatus !== "active") return "meeting_canceled";
+    if (execution.inviteeId && row.inviteeStatus !== "active") return "invitee_canceled";
+  }
+  if (execution.trigger === "before_start" && clockNow().getTime() >= row.startAt.getTime()) return "too_late";
+  return null;
+}
+
+/**
+ * The last attempt of a job failed: the reminder will not go out, so the execution says so ("failed" with the error)
+ * instead of staying scheduled forever, and the meeting activity shows it. Never throws (the job error matters more).
+ */
+async function markFailed(db: DB, executionId: string, error: unknown): Promise<void> {
+  try {
+    const at = clockNow();
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 500) || "Unknown error";
+    const [row] = await db
+      .update(workflowExecutions)
+      .set({ status: "failed", error: message, updatedAt: at })
+      .where(and(eq(workflowExecutions.id, executionId), eq(workflowExecutions.status, "scheduled")))
+      .returning();
+    if (!row) return;
+    await db.insert(meetingActivity).values({
+      scheduledEventId: row.scheduledEventId,
+      inviteeId: row.inviteeId,
+      type: "email_failed",
+      actorType: "system",
+      data: {
+        executionId: row.id,
+        workflowId: row.workflowId,
+        workflowName: row.snapshot.workflowName,
+        action: row.snapshot.action,
+        trigger: row.trigger,
+        error: message,
+      },
+      createdAt: at,
+    });
+  } catch (e) {
+    log.error("workflows.mark_failed_failed", { executionId, error: e });
+  }
+}
+
+/**
+ * Runs one workflows.execute job (see the file header). Errors are retried by the runner with backoff; when the last
+ * attempt fails too, the execution is marked failed before the job goes dead.
+ */
 export async function executeWorkflowJob(payload: unknown, ctx: JobContext): Promise<{ result: ExecuteOutcome }> {
   const parsed = Payload.safeParse(payload);
   if (!parsed.success) throw new PermanentJobError("Malformed workflows.execute payload");
+  try {
+    return await runExecution(parsed.data.executionId, ctx);
+  } catch (e) {
+    if (!(e instanceof RetryLaterError) && ctx.attempt >= EXECUTE_JOB_MAX_ATTEMPTS) await markFailed(ctx.db, parsed.data.executionId, e);
+    throw e;
+  }
+}
+
+async function runExecution(executionId: string, ctx: JobContext): Promise<{ result: ExecuteOutcome }> {
   const db = ctx.db;
   const [row] = await db
     .select({ execution: workflowExecutions, event: scheduledEvents, workflow: workflows })
     .from(workflowExecutions)
     .innerJoin(scheduledEvents, eq(scheduledEvents.id, workflowExecutions.scheduledEventId))
     .leftJoin(workflows, eq(workflows.id, workflowExecutions.workflowId))
-    .where(eq(workflowExecutions.id, parsed.data.executionId))
+    .where(eq(workflowExecutions.id, executionId))
     .limit(1);
   if (!row) return { result: { status: "noop", reason: "missing" } };
   const { execution, event, workflow } = row;
@@ -169,7 +250,9 @@ export async function executeWorkflowJob(payload: unknown, ctx: JobContext): Pro
   const brand = await emailBrandForUser(event.organizerUserId, db);
   const meetingLocale = event.locale || event.settingsSnapshot?.locale || "en";
   const bodyTemplate = snapshot.bodyHtml ? sanitizeRichText(snapshot.bodyHtml) || null : null;
-  const outboxIds: string[] = [];
+  // Render every message first, then re-check right before sending (the slow part is the rendering): a meeting
+  // canceled or a reminder turned off while this job was preparing never gets an email.
+  const prepared: { recipient: Recipient; kind: MeetingEmailKind; email: ReturnType<typeof renderMeetingEmail>; sender: Awaited<ReturnType<typeof meetingSender>> }[] = [];
   for (const r of recipients) {
     const recipient = r.kind === "host" ? "host" : r.kind === "other" ? "other" : "invitee";
     const vars = await buildMeetingTemplateContext({
@@ -209,6 +292,15 @@ export async function executeWorkflowJob(payload: unknown, ctx: JobContext): Pro
       r.kind === "host"
         ? await meetingSender({ hostUserId: event.organizerUserId, audience: "host", replyTo: invitee?.email ?? null, db })
         : await meetingSender({ hostUserId: event.organizerUserId, audience: "invitee", replyTo: snapshot.replyTo ?? undefined, db });
+    prepared.push({ recipient: r, kind, email, sender });
+  }
+
+  const blocker = await sendBlocker(db, execution);
+  if (blocker === "changed") return { result: { status: "noop", reason: "changed" } };
+  if (blocker) return { result: await markSkipped(db, execution, blocker) };
+
+  const outboxIds: string[] = [];
+  for (const { recipient: r, kind, email, sender } of prepared) {
     const sent = await sendEmail({
       to: [r.email],
       subject: email.subject,

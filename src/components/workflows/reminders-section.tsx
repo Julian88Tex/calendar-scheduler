@@ -11,7 +11,6 @@
 
 import { BellRing, Mail, MoreVertical, Pencil, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cronLastRunLabel } from "@/components/shell/cron-warning-banner";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -21,8 +20,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { loadEventTypeRemindersAction, setEventTypeRemindersEnabledAction } from "@/lib/workflows/actions";
+import { deliveryProblem, deliveryRemedy } from "@/lib/workflows/delivery-copy";
 import { offsetsSummary } from "@/lib/workflows/timing";
-import type { EventTypeRemindersView, ReminderKind } from "@/lib/workflows/types";
+import type { EventTypeRemindersView, ReminderDeliveryView, ReminderKind } from "@/lib/workflows/types";
 import { REMINDER_COPY, ReminderDialog } from "./reminder-dialog";
 
 export type RemindersSectionProps = {
@@ -35,6 +35,23 @@ const KINDS: ReminderKind[] = ["invitee", "host"];
 const ICONS: Record<ReminderKind, typeof Mail> = { invitee: Mail, host: BellRing };
 /** After a change that backfills, refresh the counts once the background job had time to run. */
 const REFRESH_AFTER_MS = 4_000;
+
+/** "Reminders may be sent late": shown when reminders are on and this deployment cannot send them on time. */
+export function DeliveryWarning({ delivery }: { delivery: ReminderDeliveryView }) {
+  return (
+    <Banner variant="warning" role="status" title="Reminders may be sent late">
+      <span className="flex flex-col gap-2">
+        <span>
+          {deliveryProblem(delivery)} {deliveryRemedy(delivery)}
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <code className="min-w-0 rounded-[6px] border border-line bg-surface px-2 py-1 text-[13px] break-all text-ink">{delivery.cronUrl}</code>
+          <CopyButton value={delivery.cronUrl} size="sm" label="Copy URL" toastMessage="URL copied" />
+        </span>
+      </span>
+    </Banner>
+  );
+}
 
 function scheduledLine(n: number): string | null {
   if (n <= 0) return null;
@@ -171,23 +188,8 @@ export function RemindersSection({ eventTypeId, canEdit, initial }: RemindersSec
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="event-type-reminders">
-      {anyOn && delivery.warning && (
-        <Banner variant="warning" role="status" title="Reminders may be sent late">
-          <span className="flex flex-col gap-2">
-            <span>
-              {delivery.overdueCount > 0
-                ? `${delivery.overdueCount} ${delivery.overdueCount === 1 ? "reminder is" : "reminders are"} past ${delivery.overdueCount === 1 ? "its" : "their"} send time and ${delivery.overdueCount === 1 ? "has" : "have"} not gone out yet. `
-                : `Scheduled jobs last ran: ${cronLastRunLabel(delivery.lastCronAt, delivery.nowMs)}. `}
-              Reminders are sent when /api/cron runs. Set up a pinger (for example cron-job.org) that calls this URL every 5 minutes.
-            </span>
-            <span className="flex min-w-0 flex-wrap items-center gap-2">
-              <code className="min-w-0 rounded-[6px] border border-line bg-white px-2 py-1 text-[13px] break-all text-ink">{delivery.cronUrl}</code>
-              <CopyButton value={delivery.cronUrl} size="sm" label="Copy URL" toastMessage="URL copied" />
-            </span>
-          </span>
-        </Banner>
-      )}
-      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-white">
+      {anyOn && delivery.warning && <DeliveryWarning delivery={delivery} />}
+      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
         {KINDS.map((kind) => {
           const row = view[kind];
           const copy = REMINDER_COPY[kind];

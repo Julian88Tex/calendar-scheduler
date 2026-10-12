@@ -16,6 +16,8 @@ import { currentRunAt, type ComputedExecution, type EngineStep, type EngineWorkf
 export const EXECUTE_JOB = "workflows.execute";
 export const BACKFILL_JOB = "workflows.backfill";
 export const EXECUTE_JOB_PRIORITY = 5;
+/** Attempts of a workflows.execute job (the runner's backoff spreads them over about 2 hours). */
+export const EXECUTE_JOB_MAX_ATTEMPTS = 8;
 export const BACKFILL_JOB_PRIORITY = 1;
 
 export type WorkflowRow = typeof workflows.$inferSelect;
@@ -202,6 +204,7 @@ export async function upsertExecutions(tx: DbOrTx, input: readonly ExecutionInse
       payload: { executionId: w.id },
       runAt: w.runAt,
       priority: EXECUTE_JOB_PRIORITY,
+      maxAttempts: EXECUTE_JOB_MAX_ATTEMPTS,
       idempotencyKey: executeJobKey(w.id),
       groupKey: executionGroupKey(w),
     })),
@@ -237,6 +240,7 @@ export async function enqueueExecutionJob(
     payload: { executionId: e.id },
     runAt: e.runAt,
     priority: EXECUTE_JOB_PRIORITY,
+    maxAttempts: EXECUTE_JOB_MAX_ATTEMPTS,
     idempotencyKey: executeJobKey(e.id),
     groupKey: executionGroupKey(e),
   });

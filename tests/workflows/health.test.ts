@@ -2,12 +2,12 @@
 // organization, and the cron freshness rule where cron is the dispatcher.
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { instanceSettings, workflowExecutions } from "@/db/schema";
+import { instanceSettings, jobs, workflowExecutions } from "@/db/schema";
 import { now, resetFakeTime } from "@/lib/time/now";
 import { getReminderDeliveryHealth } from "@/lib/workflows/health";
 import { setEventTypeRemindersEnabled } from "@/lib/workflows/reminders";
 import { useTestDb } from "../helpers/db";
-import { book, DAY, MINUTE, runWorkflowJobs, scheduledFor, setupOwner } from "./helpers";
+import { book, DAY, jobOf, MINUTE, runWorkflowJobs, scheduledFor, setupOwner } from "./helpers";
 
 const t = useTestDb();
 
@@ -41,6 +41,31 @@ describe("getReminderDeliveryHealth", () => {
     // Ten minutes late is not overdue yet.
     await t.db.update(workflowExecutions).set({ runAt: new Date(now().getTime() - 10 * MINUTE) }).where(eq(workflowExecutions.id, e!.id));
     expect((await getReminderDeliveryHealth({ organizationId: actor.orgId, db: t.db })).overdueCount).toBe(0);
+  });
+
+  it("counts only reminders still waiting for the dispatcher, so dead or canceled jobs never keep the warning on", async () => {
+    await setLastCron(null);
+    const { actor, eventType } = await setupOwner(t.db);
+    const m = await book(t.db, eventType, 3 * DAY);
+    await setEventTypeRemindersEnabled(actor, { eventTypeId: eventType.id, kind: "invitee", enabled: true }, t.db);
+    await runWorkflowJobs(t.db);
+    const [e] = await scheduledFor(t.db, m.invitee!.id);
+    const past = new Date(now().getTime() - 2 * 60 * MINUTE);
+    await t.db.update(workflowExecutions).set({ runAt: past }).where(eq(workflowExecutions.id, e!.id));
+    const job = await jobOf(t.db, e!.id);
+    // The dispatcher has not picked the job up: overdue.
+    await t.db.update(jobs).set({ runAt: past }).where(eq(jobs.id, job!.id));
+    expect(await getReminderDeliveryHealth({ organizationId: actor.orgId, db: t.db })).toMatchObject({ overdueCount: 1, warning: true });
+    // The job is retrying after a failure (its next try is later): still a late reminder.
+    await t.db.update(jobs).set({ runAt: new Date(now().getTime() + 30 * MINUTE), attempts: 2 }).where(eq(jobs.id, job!.id));
+    expect((await getReminderDeliveryHealth({ organizationId: actor.orgId, db: t.db })).overdueCount).toBe(1);
+    // A job that ran out of attempts, was canceled elsewhere, or was purged will never dispatch: not "late".
+    for (const status of ["dead", "canceled", "succeeded"] as const) {
+      await t.db.update(jobs).set({ status }).where(eq(jobs.id, job!.id));
+      expect(await getReminderDeliveryHealth({ organizationId: actor.orgId, db: t.db })).toMatchObject({ overdueCount: 0, warning: false });
+    }
+    await t.db.delete(jobs).where(eq(jobs.id, job!.id));
+    expect((await getReminderDeliveryHealth({ db: t.db })).overdueCount).toBe(0);
   });
 
   it("where cron dispatches jobs, a tick older than 15 minutes warns", async () => {

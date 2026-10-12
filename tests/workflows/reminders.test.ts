@@ -3,7 +3,7 @@
 // authorization, limits and the demo seed.
 import { and, eq, isNull } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
-import { jobs, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
+import { invitees, jobs, scheduledEvents, workflowEventTypes, workflowExecutions, workflowSteps, workflows } from "@/db/schema";
 import { loadActorCtx } from "@/lib/authz";
 import { resetFakeTime } from "@/lib/time/now";
 import { copyEventTypeReminders, getEventTypeReminders, saveEventTypeReminders, setEventTypeRemindersEnabled } from "@/lib/workflows/reminders";
@@ -96,6 +96,12 @@ describe("Email reminders (basic notification)", () => {
     expect(next[0]!.runAt.getTime()).toBe(later.scheduledEvent.startAt.getTime() - DAY);
     const view = await getEventTypeReminders(actor, eventType.id, t.db);
     expect(view.invitee.scheduledMeetings).toBe(2);
+    // A meeting canceled before its cancellation subscriber ran (or racing a backfill page) no longer counts: it
+    // will never get the reminder (skipped at send time).
+    await t.db.update(invitees).set({ status: "canceled" }).where(eq(invitees.id, later.invitee!.id));
+    expect((await getEventTypeReminders(actor, eventType.id, t.db)).invitee.scheduledMeetings).toBe(1);
+    await t.db.update(scheduledEvents).set({ status: "canceled" }).where(eq(scheduledEvents.id, inThreeDays.scheduledEvent.id));
+    expect((await getEventTypeReminders(actor, eventType.id, t.db)).invitee.scheduledMeetings).toBe(0);
   });
 
   it("turning it off and on again leaves exactly one scheduled reminder", async () => {

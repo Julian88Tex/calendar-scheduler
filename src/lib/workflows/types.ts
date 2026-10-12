@@ -32,6 +32,8 @@ export type ReminderDeliveryView = {
   warning: boolean;
   /** Absolute /api/cron URL for the pinger setup. */
   cronUrl: string;
+  /** CRON_SECRET is set: a pinger must send "Authorization: Bearer {CRON_SECRET}" (calls without it get 401). */
+  cronSecretConfigured: boolean;
   /** The business clock in ms when the view was built (for "Last run" labels). */
   nowMs: number;
 };
