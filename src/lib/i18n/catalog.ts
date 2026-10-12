@@ -1,8 +1,9 @@
 // OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
-// The message catalog (ARCHITECTURE section 19): every English namespace file, and for each other locale only its
-// messages/{locale}/index.ts (owned by localization, created as `export default {}`), so the catalog compiles before
-// any translation exists. Client safe (plain objects).
+// The message catalog (ARCHITECTURE section 19): every English namespace file (the English files define the key
+// types), and for each other locale only its messages/{locale}/index.ts (owned by localization: the aggregate of that
+// locale's namespace files, typed DeepPartial<Catalog>), so the catalog compiles before any translation exists and a
+// missing key falls back to English. Client safe (plain objects).
 import booking from "./messages/en/booking";
 import common from "./messages/en/common";
 import lifecycle from "./messages/en/lifecycle";

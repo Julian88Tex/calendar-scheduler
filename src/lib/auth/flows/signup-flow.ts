@@ -3,7 +3,7 @@
 //   instead." and the signup policy, limited per IP;
 // - signUpWithPassword (step 2 "Sign up"): 20 signups per IP per hour, scrypt hash, createAccountUnderPolicy inside one
 //   transaction (signup advisory lock, first account is instance admin), audit user.signup, then the welcome and the
-//   "Verify your email" emails after the response. The caller creates the session and redirects to /onboarding.
+//   "Verify your email" emails after the response. The caller creates the session and redirects to POST_SIGNUP_PATH.
 import "server-only";
 import { getDb, type DbOrTx } from "@/db";
 import { hashPassword } from "@/lib/crypto";
@@ -19,6 +19,12 @@ import { auditAuth } from "./audit";
 import { sendWelcomeEmail } from "./auth-emails";
 import { AUTH_RATE_LIMITS, signupEmailCheckIpKey, signupIpKey } from "./rate-limits";
 import type { RequestMeta } from "./request-context";
+
+/**
+ * Where a new account lands. The onboarding wizard is outside the reduced scope (docs/SCOPE.md), so new accounts go
+ * straight to Scheduling with the AU-13 defaults (URL from the name, browser time zone, "30 Minute Meeting").
+ */
+export const POST_SIGNUP_PATH = "/app/scheduling";
 
 /** Step 1: throws AppError with an email field error when the address cannot sign up. */
 export async function checkSignupEmail(p: { email: string; meta: RequestMeta; db?: DbOrTx }): Promise<void> {

@@ -23,6 +23,11 @@ export type BannerProps = {
   className?: string;
   /** Accessible name of the dismiss button (default "Dismiss"). */
   dismissLabel?: string;
+  /**
+   * Live region role. Default: "alert" for warning and error, "status" for info and success. Persistent page banners
+   * (the dashboard shell) pass "status" or "none" so they are not announced as urgent on every page.
+   */
+  role?: "alert" | "status" | "none";
 };
 
 const VARIANTS: Record<BannerVariant, string> = {
@@ -39,14 +44,14 @@ const ICON_COLORS: Record<BannerVariant, string> = {
 };
 const ICONS = { info: Info, success: CheckCircle2, warning: AlertTriangle, error: AlertCircle } as const;
 
-export function Banner({ variant = "info", title, children, action, dismissible, onDismiss, icon, className, dismissLabel = "Dismiss" }: BannerProps) {
+export function Banner({ variant = "info", title, children, action, dismissible, onDismiss, icon, className, dismissLabel = "Dismiss", role }: BannerProps) {
   const [hidden, setHidden] = useState(false);
   if (hidden) return null;
   const DefaultIcon = ICONS[variant];
   const iconNode = icon === false ? null : (icon ?? <DefaultIcon aria-hidden="true" className="size-5" />);
   return (
     <div
-      role={variant === "error" || variant === "warning" ? "alert" : "status"}
+      role={role === "none" ? undefined : (role ?? (variant === "error" || variant === "warning" ? "alert" : "status"))}
       className={cn("flex min-w-0 items-start gap-3 rounded-[var(--radius-card)] border px-4 py-3 text-[14px] leading-5", VARIANTS[variant], className)}
     >
       {iconNode && <span className={cn("mt-px inline-flex shrink-0 [&_svg]:size-5", ICON_COLORS[variant])}>{iconNode}</span>}

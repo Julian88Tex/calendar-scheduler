@@ -71,10 +71,10 @@ export function DatePicker({
             id={id}
             disabled={disabled}
             aria-haspopup="dialog"
-            aria-invalid={invalid || undefined}
+            data-invalid={invalid || undefined}
             aria-label={aria["aria-label"] ? `${aria["aria-label"]}${value ? `, ${shortDateLabel(value, locale)}` : ""}` : undefined}
             aria-describedby={aria["aria-describedby"]}
-            className={cn(FIELD_BASE, "inline-flex h-10 items-center gap-2 px-3 text-left text-[14px]", clearable && value && "pr-9")}
+            className={cn(FIELD_BASE, "inline-flex h-10 items-center gap-2 px-3 text-left text-[14px]", clearable && value && "pr-9", invalid && "border-danger hover:border-danger")}
           >
             <CalendarDays aria-hidden="true" className="size-4 shrink-0 text-ink-2" />
             <span className={cn("min-w-0 flex-1 truncate", !value && "text-ink-2")}>{value ? shortDateLabel(value, locale) : placeholder}</span>

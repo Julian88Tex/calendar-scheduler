@@ -1,8 +1,9 @@
 // OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // Job registry (ARCHITECTURE section 12.2): merges `handlers` and `periodic` from every module jobs.ts file, the
-// foundation handlers (src/lib/jobs/builtin.ts) and the event dispatcher (`event:{type}:{subscriberKey}` jobs created by
-// publishEvent). Loaded lazily by runDueJobs (import cycles: module jobs files call enqueueJob).
+// foundation handlers (src/lib/jobs/builtin.ts: email.retry, sms.retry, system.cleanup) and the event dispatcher
+// (`event:{type}:{subscriberKey}` jobs created by publishEvent). Loaded lazily by runDueJobs (import cycles: module
+// jobs files call enqueueJob). A job type without a handler here is rescheduled by the runner (module not built yet).
 import * as admin from "@/lib/admin/jobs";
 import * as booking from "@/lib/booking/jobs";
 import * as calendars from "@/lib/calendars/jobs";
@@ -16,8 +17,8 @@ import * as settings from "@/lib/settings/jobs";
 import * as teams from "@/lib/teams/jobs";
 import * as webhooks from "@/lib/webhooks/jobs";
 import * as workflows from "@/lib/workflows/jobs";
-import { getSubscriber } from "../events/registry";
-import type { DomainEventType } from "../events/types";
+import { log } from "../logger";
+import { dispatchEventJob } from "../events/dispatch";
 import * as builtin from "./builtin";
 import type { JobHandler, JobHandlers, PeriodicJob } from "./types";
 
@@ -41,24 +42,36 @@ export const JOB_MODULES: Record<string, JobsModule> = {
   teams,
 };
 
-export const JOB_HANDLERS: Readonly<JobHandlers> = Object.assign(
-  {},
-  ...Object.values(JOB_MODULES).map((m) => m.handlers),
-) as JobHandlers;
-
-export const PERIODIC_JOBS: readonly PeriodicJob[] = Object.values(JOB_MODULES).flatMap((m) => m.periodic ?? []);
-
-/** Runs one subscriber for one domain event (job type `event:{type}:{subscriberKey}`). */
-async function dispatchEvent(jobType: string, payload: unknown, ctx: Parameters<JobHandler>[1]): Promise<void> {
-  const p = payload as { domainEventId: string; type: DomainEventType; payload: unknown; meta: { organizationId: string | null } };
-  const key = jobType.split(":")[2] ?? "";
-  const handler = getSubscriber(key, p.type);
-  if (!handler) return; // the module no longer subscribes: nothing to do
-  await handler({ id: p.domainEventId, type: p.type, payload: p.payload as never, meta: p.meta }, ctx);
+function mergeHandlers(modules: Record<string, JobsModule>): JobHandlers {
+  const out: JobHandlers = {};
+  const owner: Record<string, string> = {};
+  for (const [name, m] of Object.entries(modules)) {
+    for (const [type, handler] of Object.entries(m.handlers ?? {})) {
+      if (typeof handler !== "function") continue;
+      if (owner[type]) {
+        log.warn("jobs.duplicate_handler", { type, kept: owner[type], ignored: name });
+        continue;
+      }
+      owner[type] = name;
+      out[type] = handler;
+    }
+  }
+  return out;
 }
+
+export const JOB_HANDLERS: Readonly<JobHandlers> = mergeHandlers(JOB_MODULES);
+
+export const PERIODIC_JOBS: readonly PeriodicJob[] = Object.values(JOB_MODULES)
+  .flatMap((m) => m.periodic ?? [])
+  .filter((p) => p && typeof p.type === "string" && Number.isFinite(p.everyMinutes) && p.everyMinutes >= 1);
 
 /** The handler for a job type, or null when no module registered one. */
 export function getJobHandler(type: string): JobHandler | null {
-  if (type.startsWith("event:")) return (payload, ctx) => dispatchEvent(type, payload, ctx);
-  return JOB_HANDLERS[type] ?? null;
+  if (type.startsWith("event:")) return (payload, ctx) => dispatchEventJob(type, payload, ctx);
+  return Object.prototype.hasOwnProperty.call(JOB_HANDLERS, type) ? (JOB_HANDLERS[type] ?? null) : null;
+}
+
+/** Every registered job type (admin filters). */
+export function registeredJobTypes(): string[] {
+  return Object.keys(JOB_HANDLERS).sort();
 }

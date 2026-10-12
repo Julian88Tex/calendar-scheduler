@@ -5,8 +5,7 @@
 //   1. an oauth_accounts row for (provider, provider account id): log in (the stored email follows the provider);
 //   2. else a live user with the same verified email: link the provider and log in;
 //   3. else create the account under the signup policy (advisory lock, first user is instance admin), with the name,
-//      avatar and verified email from the provider and the AU-13 default location (Google Meet for Google, Microsoft
-//      Teams for work Microsoft accounts).
+//      avatar and verified email from the provider and the AU-13 default location (Google Meet for Google).
 // Unverified provider emails can only log in to an already linked account (step 1).
 //
 // linkOAuthLoginMethod (link_login_method): connects the provider to the signed-in user; refuses an account that is
@@ -41,7 +40,7 @@ export class OAuthFlowError extends Error {
 export type OAuthResolution = {
   user: UserRow;
   oauthAccountId: string;
-  /** The account was created by this sign-in (onboarding next). */
+  /** The account was created by this sign-in (it lands on POST_SIGNUP_PATH). */
   created: boolean;
   /** The provider was connected to an existing account by this sign-in. */
   linked: boolean;
@@ -102,10 +101,13 @@ async function dropStaleLink(db: DbOrTx, link: LinkedAccount): Promise<void> {
   await db.delete(oauthAccounts).where(eq(oauthAccounts.id, link.oauthAccountId));
 }
 
-/** AU-13: Google Meet for Google signups, Microsoft Teams for work Microsoft accounts, else no location. */
+/**
+ * AU-13 default location of the first event type: Google Meet for Google signups. Microsoft Teams is outside the
+ * reduced scope (docs/SCOPE.md: Google Meet is the only conferencing), so Microsoft signups start without a location.
+ */
 export function defaultLocationFor(provider: OAuthProviderId, profile: OAuthProfile): "google_conference" | "microsoft_teams_conference" | null {
-  if (provider === "google") return "google_conference";
-  return profile.isWorkAccount ? "microsoft_teams_conference" : null;
+  void profile;
+  return provider === "google" ? "google_conference" : null;
 }
 
 function signupFields(provider: OAuthProviderId, profile: OAuthProfile, timezone: string | null | undefined) {

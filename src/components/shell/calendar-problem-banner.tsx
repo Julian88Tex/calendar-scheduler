@@ -1,17 +1,36 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// CalendarProblemBanner (SPEC CAL-15): shown when a calendar connection needs attention (calendars.getCalendarHealth).
+// CalendarProblemBanner (SPEC CAL-15): the red dashboard banner "There is a problem with your calendar connection.
+// Reconnect" while a connection is needs_reauth or error (calendars.getCalendarHealth). Dismissible for the session.
+"use client";
+
 import Link from "next/link";
 import { Banner } from "../ui/banner";
+import { useSessionDismissal } from "./dismissal";
 
 export type CalendarProblemBannerProps = { brokenConnections: { id: string; email: string | null; status: string }[] };
 
 export function CalendarProblemBanner({ brokenConnections }: CalendarProblemBannerProps) {
-  if (!brokenConnections.length) return null;
-  const first = brokenConnections[0];
+  const key = `calendar:${brokenConnections.map((c) => `${c.id}:${c.status}`).join(",")}`;
+  const [dismissed, dismiss] = useSessionDismissal(key);
+  if (!brokenConnections.length || dismissed) return null;
+  const emails = brokenConnections.map((c) => c.email).filter((e): e is string => Boolean(e));
   return (
-    <Banner variant="warning" dismissible action={<Link href="/app/availability/calendar-settings">Reconnect</Link>}>
-      {`We can't reach your calendar${first?.email ? ` ${first.email}` : ""}. Reconnect it so we can check for conflicts.`}
+    <Banner
+      variant="error"
+      role="status"
+      dismissible
+      onDismiss={dismiss}
+      action={
+        <Link href="/app/availability/calendar-settings" className="text-[14px] font-bold text-danger-text underline underline-offset-2">
+          Reconnect
+        </Link>
+      }
+    >
+      <span>
+        There is a problem with your calendar connection.
+        {emails.length > 0 && <span className="text-ink-2"> ({emails.join(", ")})</span>}
+      </span>
     </Banner>
   );
 }

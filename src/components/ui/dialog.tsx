@@ -10,6 +10,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
+import { useReturnFocus } from "./use-return-focus";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "full";
 
@@ -62,12 +63,14 @@ export function Dialog({
   preventOutsideClose,
   bodyClassName,
 }: DialogProps) {
+  const returnFocus = useReturnFocus(!trigger);
   return (
     <RadixDialog.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={OVERLAY_CLASS} />
         <RadixDialog.Content
+          {...returnFocus}
           onPointerDownOutside={preventOutsideClose ? (e) => e.preventDefault() : undefined}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col",

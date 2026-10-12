@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Job queue writes (ARCHITECTURE section 12.2): enqueue (run_at always explicit from the app clock, idempotency keys
 // dedupe), cancel, and the admin actions of ADM-06 (retry, run now, counts). No dependency on the runner or the
 // registry, so module code and the email and SMS cores can enqueue without import cycles.

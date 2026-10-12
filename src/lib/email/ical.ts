@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // ICS builder (SPEC NT-06, ARCHITECTURE section 13.3) on ical-generator, UTC only (tech-reference 10.3 gotcha: never
 // a native Date together with a TZID). One VEVENT per file.
 //

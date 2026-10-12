@@ -79,13 +79,16 @@ export function Combobox({
   const optionId = (i: number) => `${baseId}-opt-${i}`;
 
   const selected = options.find((o) => o.value === value) ?? null;
-  const lastSelected = useRef<ComboboxOption | null>(selected);
-  if (selected) lastSelected.current = selected;
-  const shownSelected = selected ?? (value !== null && lastSelected.current?.value === value ? lastSelected.current : null);
+  // With server search the chosen option may leave `options`; remember it to keep showing its label.
+  const [remembered, setRemembered] = useState<ComboboxOption | null>(selected);
+  const shownSelected = selected ?? (value !== null && remembered?.value === value ? remembered : null);
 
   const visible = useMemo(() => (onQueryChange ? options : filterOptions(options, query)), [options, query, onQueryChange]);
-  const groups = useMemo(() => groupOptions(visible), [visible]);
-  const flat = useMemo(() => groups.flatMap((g) => g.options), [groups]);
+  const groups = useMemo(() => {
+    let counter = 0;
+    return groupOptions(visible).map((g) => ({ group: g.group, options: g.options.map((option) => ({ option, index: counter++ })) }));
+  }, [visible]);
+  const flat = useMemo(() => groups.flatMap((g) => g.options.map((x) => x.option)), [groups]);
 
   const firstEnabled = (from = 0, dir: 1 | -1 = 1) => {
     for (let i = from; i >= 0 && i < flat.length; i += dir) if (!flat[i]?.disabled) return i;
@@ -113,7 +116,7 @@ export function Combobox({
 
   const choose = (o: ComboboxOption) => {
     if (o.disabled) return;
-    lastSelected.current = o;
+    setRemembered(o);
     onChange(o.value);
     openWith(false);
   };
@@ -142,7 +145,6 @@ export function Combobox({
 
   const triggerContent = renderValue ? renderValue(shownSelected) : shownSelected ? shownSelected.label : <span className="text-ink-2">{placeholder}</span>;
 
-  let index = -1;
   return (
     <RadixPopover.Root open={open} onOpenChange={openWith}>
       <RadixPopover.Trigger asChild disabled={disabled}>
@@ -153,13 +155,14 @@ export function Combobox({
             disabled={disabled}
             aria-haspopup="listbox"
             aria-expanded={open}
-            aria-invalid={invalid || undefined}
+            data-invalid={invalid || undefined}
             {...aria}
             className={cn(
               FIELD_BASE,
               "inline-flex items-center justify-between gap-2 text-left",
               size === "lg" ? "h-[46px] px-4 text-[16px]" : "h-10 px-3 text-[14px]",
               open && "border-primary",
+              invalid && "border-danger hover:border-danger",
               className,
             )}
           >
@@ -226,9 +229,7 @@ export function Combobox({
               <li key={g.group ?? "__none"} role="presentation">
                 {g.group && <div className="px-3 pt-3 pb-1 text-eyebrow text-ink-2" aria-hidden="true">{g.group}</div>}
                 <ul role="group" aria-label={g.group ?? undefined}>
-                  {g.options.map((o) => {
-                    index += 1;
-                    const i = index;
+                  {g.options.map(({ option: o, index: i }) => {
                     const isSelected = o.value === value;
                     return (
                       <li

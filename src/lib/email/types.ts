@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Email core types (ARCHITECTURE section 13.1). Type-only module: safe to import from anywhere.
 
 export type EmailCategory = "transactional" | "workflow" | "poll" | "system" | "auth";

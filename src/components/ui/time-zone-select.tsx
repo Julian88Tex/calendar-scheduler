@@ -8,7 +8,7 @@
 // non-English invitee pages. Any valid IANA zone (including legacy aliases) stays selectable.
 "use client";
 
-import { ChevronDown, Globe } from "lucide-react";
+import { Globe } from "lucide-react";
 import { useId, useMemo } from "react";
 import { cn } from "@/lib/cn";
 import { currentLocalTime, friendlyZoneName, groupedZones } from "@/lib/time/zones";
@@ -172,14 +172,16 @@ export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale
             aria-haspopup="listbox"
             aria-labelledby={`${headingId} ${headingId}-value`}
             disabled={disabled}
-            className="group -ml-2 inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-input)] px-2 py-1.5 text-left text-[14px] leading-5 text-ink hover:bg-primary-soft data-[state=open]:bg-primary-soft disabled:cursor-not-allowed"
+            className="group inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-input)] px-2.5 py-1.5 text-left text-[14px] leading-5 text-ink hover:bg-primary-soft data-[state=open]:bg-primary-soft disabled:cursor-not-allowed"
           >
             <Globe aria-hidden="true" className="size-4 shrink-0 text-ink" />
             <span id={`${headingId}-value`} className="min-w-0 truncate">
               {name}
               {time && <span> ({time})</span>}
             </span>
-            <ChevronDown aria-hidden="true" className="size-4 shrink-0 fill-current text-ink transition-transform group-data-[state=open]:rotate-180" />
+            <svg aria-hidden="true" viewBox="0 0 10 6" className="h-1.5 w-2.5 shrink-0 fill-navy transition-transform group-data-[state=open]:rotate-180">
+              <path d="M0 0h10L5 6z" />
+            </svg>
           </button>
         }
         header={

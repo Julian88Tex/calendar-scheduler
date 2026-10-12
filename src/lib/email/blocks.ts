@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Email content blocks (SPEC NT-01 to NT-05): the building blocks of Calendly-style notification emails, rendered to
 // HTML inside the shared layout AND to the plain text alternative from the same data, so both versions always match.
 //

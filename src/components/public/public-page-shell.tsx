@@ -1,8 +1,10 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// PublicPageShell (ARCHITECTURE 20.2, SPEC section 8, BK-25, BK-26, BR-07): the #FAFAFA canvas of public pages with
-// branding colors as CSS variables (--primary-color, --public-bg, --public-text), embed mode (no canvas padding, no
-// banner), the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
+// PublicPageShell (ARCHITECTURE 20.2, SPEC section 8, BK-03, BK-25, BK-26, BR-07, GEN-22): the #FAFAFA canvas of public
+// pages, always in the light classic tokens (data-force-light, even when the dashboard theme is dark), with branding
+// colors as CSS variables (--primary-color for every blue, --public-bg for the card, --public-text for its text),
+// the BK-03 spacing (66px top, 30px bottom, 5% sides; none on phones), embed mode (transparent canvas, no padding),
+// the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 import { CookieBanner } from "./cookie-banner";
@@ -28,21 +30,58 @@ export type PublicPageShellProps = {
   trackersConfigured?: boolean;
   hideGdprBanner?: boolean;
   className?: string;
+  /** Privacy policy URL for the footer links (default /privacy). */
+  privacyUrl?: string | null;
 };
+
+const HEX = /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/;
+
+/** "#rrggbb" for a valid 3 or 6 digit hex with or without "#" (embed params pass "ff0000"), else null (BK-26). */
+export function normalizeBrandColor(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = HEX.exec(value.trim());
+  if (!m) return null;
+  const hex = m[1]!;
+  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  return `#${full.toLowerCase()}`;
+}
 
 export function brandingStyle(branding?: PublicBranding | null): React.CSSProperties {
   const style: Record<string, string> = {};
-  if (branding?.primaryColor) style["--primary-color"] = branding.primaryColor;
-  if (branding?.backgroundColor) style["--public-bg"] = branding.backgroundColor;
-  if (branding?.textColor) style["--public-text"] = branding.textColor;
+  const primary = normalizeBrandColor(branding?.primaryColor);
+  const background = normalizeBrandColor(branding?.backgroundColor);
+  const text = normalizeBrandColor(branding?.textColor);
+  if (primary) style["--primary-color"] = primary;
+  if (background) style["--public-bg"] = background;
+  if (text) style["--public-text"] = text;
   return style as React.CSSProperties;
 }
 
-export function PublicPageShell({ children, branding, embed, showFooterLinks = true, operatorEmail, pageUrl, trackersConfigured = false, hideGdprBanner, className }: PublicPageShellProps) {
+export function PublicPageShell({
+  children,
+  branding,
+  embed,
+  showFooterLinks = true,
+  operatorEmail,
+  pageUrl,
+  trackersConfigured = false,
+  hideGdprBanner,
+  className,
+  privacyUrl,
+}: PublicPageShellProps) {
   return (
-    <div style={brandingStyle(branding)} className={cn("min-h-screen", embed ? "bg-transparent" : "bg-canvas px-4 py-8 md:py-16", className)}>
-      <main id="main">{children}</main>
-      {showFooterLinks && !embed && <PublicFooterLinks operatorEmail={operatorEmail} pageUrl={pageUrl} className="mx-auto mt-6 max-w-[1060px] justify-center" />}
+    <div
+      data-force-light=""
+      data-public-shell=""
+      style={brandingStyle(branding)}
+      className={cn("min-h-dvh overflow-x-clip text-ink", embed ? "bg-transparent" : "bg-canvas", className)}
+    >
+      <main id="main" className={cn(embed ? "p-0" : "px-0 pt-0 pb-0 min-[600px]:px-[5%] min-[600px]:pt-[66px] min-[600px]:pb-[30px]")}>
+        {children}
+      </main>
+      {showFooterLinks && !embed && (
+        <PublicFooterLinks operatorEmail={operatorEmail} pageUrl={pageUrl} privacyUrl={privacyUrl} className="mx-auto max-w-[1060px] justify-center px-4 pt-2 pb-8" />
+      )}
       {!hideGdprBanner && <CookieBanner trackersConfigured={trackersConfigured} />}
     </div>
   );

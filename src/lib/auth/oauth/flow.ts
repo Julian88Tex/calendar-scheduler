@@ -6,8 +6,8 @@
 //   - on another host than APP_URL, first moves to the same URL on APP_URL (the state cookie and the registered
 //     redirect URI must share one host);
 //   - unconfigured provider: back with error not_configured; connect_calendar and link_login_method need a signed-in
-//     user (else /login?next=<this start URL>); accept_invitation needs a pending invitation (its email becomes the
-//     login_hint);
+//     user (else /login?next=<this start URL>), link_login_method also the AU-10 confirmation (?confirm=, from
+//     verifyLoginMethodCode); accept_invitation needs a pending invitation (its email becomes the login_hint);
 //   - stores provider, state, PKCE verifier, intent, returnTo, invitation token, data and user id in the sealed
 //     10-minute state cookie and redirects to the provider (PKCE S256, scopes per intent).
 //
@@ -21,6 +21,7 @@ import { log } from "@/lib/logger";
 import { getPendingInvitation } from "@/lib/teams";
 import { appHost, absoluteUrl, safeNextPath } from "@/lib/url";
 import { isValidTimeZone } from "@/lib/validation";
+import { checkLoginMethodConfirmation } from "../flows/login-method-code";
 import { getCurrentUser } from "../session";
 import { getGoogleClient, getMicrosoftClient } from "./clients";
 import type { OAuthErrorCode } from "./errors";
@@ -102,6 +103,10 @@ export async function handleOAuthStart(request: Request, provider: OAuthProvider
     const user = await getCurrentUser();
     if (!user) return redirectResponse(appendQuery("/login", { next: `${url.pathname}${url.search}` }));
     userId = user.id;
+    // AU-10: a new sign-in method needs the confirmation of the code emailed to the login address.
+    if (intent === "link_login_method" && !(await checkLoginMethodConfirmation(user.id, params.get("confirm")))) {
+      return errorTo("confirmation_required");
+    }
   }
 
   let loginHint: string | null = null;

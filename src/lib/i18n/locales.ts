@@ -33,3 +33,20 @@ export function resolveLocale(value: string | null | undefined): Locale {
   }
   return DEFAULT_LOCALE;
 }
+
+/** BCP 47 tags for Intl formatting (dates, weekday and zone names): "pt" is Brazilian Portuguese (GEN-10). */
+export const INTL_LOCALES: Record<Locale, string> = {
+  en: "en-US",
+  fr: "fr-FR",
+  es: "es-ES",
+  de: "de-DE",
+  nl: "nl-NL",
+  pt: "pt-BR",
+  it: "it-IT",
+  uk: "uk-UA",
+};
+
+/** The Intl locale tag for a supported locale (or any tag resolved to one): intlLocale("pt") === "pt-BR". */
+export function intlLocale(value: string | null | undefined): string {
+  return INTL_LOCALES[resolveLocale(value)];
+}

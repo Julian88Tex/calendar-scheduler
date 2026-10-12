@@ -1,7 +1,8 @@
-// Configuration status for the setup page (SPEC GEN-09, ADM-03, ADM-11) and the admin instance page: one row per
-// integration with green "configured" or gray "Not configured", the env var names to set, the exact OAuth redirect
-// URIs, and (only when a database is reachable) the last cron tick and the job backlog. configurationChecklist() reads
-// the environment only, so the setup page can render it without a database (setup mode).
+// Configuration status for the setup page (SPEC GEN-09, ADM-03, ADM-11): one row per integration with green
+// "configured" or gray "Not configured", the env var names to set, the exact OAuth redirect URIs, and (only when a
+// database is reachable) the last cron tick and the job backlog. configurationChecklist() reads the environment only,
+// so the setup page can render it without a database (setup mode). Integrations outside the reduced scope
+// (docs/SCOPE.md: Zoom, SMS, payments) are not listed.
 import "server-only";
 import { and, count, eq, lte } from "drizzle-orm";
 import { getDb, setupRequired } from "@/db";
@@ -10,7 +11,7 @@ import { appName } from "@/lib/brand";
 import { getEnv, getFeatures } from "@/lib/env";
 import { now } from "@/lib/time/now";
 import { appUrl } from "@/lib/url";
-import { GOOGLE_REDIRECT_PATH, MICROSOFT_REDIRECT_PATH, ZOOM_REDIRECT_PATH } from "../oauth/clients";
+import { GOOGLE_REDIRECT_PATH, MICROSOFT_REDIRECT_PATH } from "../oauth/clients";
 
 export type ChecklistStatus = "ok" | "off" | "warning";
 
@@ -34,11 +35,10 @@ export function oauthRedirectUris(): RedirectUri[] {
   return [
     { provider: "Google (sign in, Calendar, Meet)", uri: `${base}${GOOGLE_REDIRECT_PATH}`, envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
     {
-      provider: "Microsoft (sign in, Outlook, Teams)",
+      provider: "Microsoft (sign in)",
       uri: `${base}${MICROSOFT_REDIRECT_PATH}`,
       envVars: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_TENANT"],
     },
-    { provider: "Zoom", uri: `${base}${ZOOM_REDIRECT_PATH}`, envVars: ["ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET"] },
   ];
 }
 
@@ -87,17 +87,10 @@ export function configurationChecklist(): ChecklistItem[] {
     },
     {
       id: "microsoft",
-      label: "Microsoft (sign in, Outlook, Teams)",
+      label: "Microsoft (sign in)",
       status: f.microsoftOAuth ? "ok" : "off",
       value: f.microsoftOAuth ? `Configured (tenant ${e.MICROSOFT_TENANT ?? "common"})` : off,
       envVars: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_TENANT"],
-    },
-    {
-      id: "zoom",
-      label: "Zoom",
-      status: f.zoom ? "ok" : "off",
-      value: f.zoom ? "Configured" : off,
-      envVars: ["ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET"],
     },
     {
       id: "email",
@@ -105,21 +98,7 @@ export function configurationChecklist(): ChecklistItem[] {
       status: f.email === "outbox" ? "off" : "ok",
       value: email,
       envVars: ["RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "EMAIL_FROM"],
-      hint: f.email === "outbox" ? "Emails are stored in the database and shown in Admin center > Outbox instead of being sent." : undefined,
-    },
-    {
-      id: "sms",
-      label: "SMS (Twilio)",
-      status: f.sms ? "ok" : "off",
-      value: f.sms ? "Configured" : off,
-      envVars: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "TWILIO_MESSAGING_SERVICE_SID"],
-    },
-    {
-      id: "stripe",
-      label: "Stripe payments",
-      status: f.stripe ? "ok" : "off",
-      value: f.stripe ? (f.stripeInline ? "Configured" : "Configured (Checkout redirect)") : off,
-      envVars: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"],
+      hint: f.email === "outbox" ? "Emails are stored in the database outbox instead of being sent. Set RESEND_API_KEY or SMTP_HOST to send them." : undefined,
     },
     {
       id: "cron_secret",

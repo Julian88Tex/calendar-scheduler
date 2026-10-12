@@ -1,42 +1,59 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// PublicFooterLinks (ARCHITECTURE 20.2, SPEC GEN-14, GEN-21): "Cookie settings", "Privacy Policy" and "Report abuse"
-// (mailto the instance operator with subject "Report abuse: {page URL}").
+// PublicFooterLinks (ARCHITECTURE 20.2, SPEC GEN-14, GEN-21, BK-01, BK-03): "Cookie settings" (opens the dialog; also
+// opened by the OPEN_COOKIE_SETTINGS_EVENT window event), "Privacy Policy" (the host's URL or /privacy) and "Report
+// abuse" (mailto the instance operator with subject "Report abuse: {page URL}"). Links read --primary-color.
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/cn";
+import { OPEN_COOKIE_SETTINGS_EVENT } from "./cookie-consent";
 import { CookieSettingsDialog } from "./cookie-settings-dialog";
 import { reportAbuseHref } from "./report-abuse";
 
 export type PublicFooterLinksProps = {
   /** Instance operator email (MK-02); the Report abuse link is hidden without one. */
   operatorEmail?: string | null;
-  /** The current page URL for the abuse report subject (default: window.location.href at click time). */
+  /** The current page URL for the abuse report subject (default: window.location.href). */
   pageUrl?: string;
   /** Show the Cookie settings link (default true). */
   showCookieSettings?: boolean;
   className?: string;
+  /** Show "Privacy Policy" (default true; the landing page shows only Cookie settings and Report abuse). */
+  showPrivacyPolicy?: boolean;
+  /** Host-configured privacy policy URL (default /privacy). */
+  privacyUrl?: string | null;
 };
 
-export function PublicFooterLinks({ operatorEmail, pageUrl, showCookieSettings = true, className }: PublicFooterLinksProps) {
+const noopSubscribe = () => () => {};
+
+const LINK = "rounded-[4px] text-[13px] leading-5 font-semibold text-brand-strong hover:underline";
+
+export function PublicFooterLinks({ operatorEmail, pageUrl, showCookieSettings = true, className, showPrivacyPolicy = true, privacyUrl }: PublicFooterLinksProps) {
   const [open, setOpen] = useState(false);
+  const href = useSyncExternalStore(noopSubscribe, () => pageUrl ?? window.location.href, () => pageUrl ?? "");
+  useEffect(() => {
+    if (!showCookieSettings) return;
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_COOKIE_SETTINGS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_COOKIE_SETTINGS_EVENT, onOpen);
+  }, [showCookieSettings]);
+  const privacyHref = privacyUrl || "/privacy";
+  const external = /^https?:\/\//.test(privacyHref);
   return (
-    <nav aria-label="Footer" className={cn("flex flex-wrap gap-4 text-body-sm text-primary-text", className)}>
+    <nav aria-label="Footer" className={cn("flex flex-wrap items-center gap-x-8 gap-y-2", className)}>
       {showCookieSettings && (
-        <button type="button" onClick={() => setOpen(true)}>
+        <button type="button" onClick={() => setOpen(true)} className={LINK}>
           Cookie settings
         </button>
       )}
-      <Link href="/privacy">Privacy Policy</Link>
+      {showPrivacyPolicy && (
+        <a href={privacyHref} className={LINK} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+          Privacy Policy
+        </a>
+      )}
       {operatorEmail && (
-        <a
-          href={reportAbuseHref(operatorEmail, pageUrl ?? "")}
-          onClick={(e) => {
-            if (!pageUrl) e.currentTarget.href = reportAbuseHref(operatorEmail, window.location.href);
-          }}
-        >
+        <a href={reportAbuseHref(operatorEmail, href)} className={LINK}>
           Report abuse
         </a>
       )}

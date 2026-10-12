@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Shared email layout (SPEC NT-05, ARCHITECTURE section 13.1): one responsive HTML layout for every email (600px max,
 // white card on #FAFAFA, logo or avatar at the top, #0A2540 text, #006BFF pill buttons, footer with "Powered by
 // {AppName}" (hideable) and a line saying why the recipient got the email) plus the matching plain text footer.

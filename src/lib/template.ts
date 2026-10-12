@@ -1,8 +1,10 @@
 // OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
-// Template variables (SPEC NT-07, ARCHITECTURE section 13.2): {{var}} tokens (whitespace inside the braces allowed)
-// replaced from a context; unknown variables render as empty text. With escape "html" the values are HTML-escaped
-// (the template itself is trusted, already sanitized HTML). Pure and client safe.
+// Template variables (SPEC NT-07, ARCHITECTURE section 13.2): {{var}} tokens (whitespace inside the braces allowed,
+// keys case-insensitive) replaced from a context; unknown variables render as empty text. With escape "html" the
+// values are HTML-escaped and line breaks become <br> (the template itself is trusted, already sanitized HTML). Used
+// by workflows (subjects and bodies), lifecycle-core (invitation titles, descriptions, confirmation subjects and
+// bodies) and polls-core. Pure and client safe (the workflow editor previews with it).
 
 export type TemplateContext = Record<string, string | number | null | undefined>;
 
@@ -42,6 +44,14 @@ export const TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
 /** Keys accepted besides the menu (aliases and extra context). */
 export const TEMPLATE_ALIASES: Readonly<Record<string, string>> = { host_name: "my_name" };
 
+/** Every supported variable key (menu keys, aliases and the extra NT-07 keys without a menu entry). */
+export const TEMPLATE_KEYS: readonly string[] = [
+  ...TEMPLATE_VARIABLES.map((v) => v.key),
+  ...Object.keys(TEMPLATE_ALIASES),
+  "host_email",
+  "event_type_url",
+];
+
 /** The NT-07 variable list with UI labels. */
 export function listTemplateVariables(): { key: string; label: string; smsOnly?: boolean }[] {
   return TEMPLATE_VARIABLES.map((v) => ({ ...v }));
@@ -58,15 +68,62 @@ export function renderTemplate(template: string, ctx: TemplateContext, opts: { e
   if (!template) return "";
   return template.replace(TOKEN, (_m, rawKey: string) => {
     const key = rawKey.toLowerCase();
-    let value = ctx[key];
-    if (value === undefined && TEMPLATE_ALIASES[key]) value = ctx[TEMPLATE_ALIASES[key]!];
+    const own = (k: string) => (Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : undefined);
+    let value = own(key);
+    if (value === undefined && Object.prototype.hasOwnProperty.call(TEMPLATE_ALIASES, key)) value = own(TEMPLATE_ALIASES[key]!);
     if (value === null || value === undefined) return "";
     const text = String(value);
-    return opts.escape === "html" ? escapeHtml(text).replace(/\r?\n/g, "<br>") : text;
+    return opts.escape === "html" ? escapeHtml(text).replace(/\r\n|\r|\n/g, "<br>") : text;
   });
 }
 
 /** Variable keys used in a template (for validation hints and SMS-only checks). */
 export function templateVariablesIn(template: string): string[] {
-  return [...new Set([...template.matchAll(TOKEN)].map((m) => m[1]!.toLowerCase()))];
+  return [...new Set([...(template ?? "").matchAll(TOKEN)].map((m) => m[1]!.toLowerCase()))];
 }
+
+/** Variables used in a template that the engine does not know (rendered as empty text). */
+export function unknownTemplateVariables(template: string): string[] {
+  const known = new Set(TEMPLATE_KEYS);
+  return templateVariablesIn(template).filter((k) => !known.has(k));
+}
+
+/** SMS-only variables used in a template (invitee_phone_number only works in text-to-invitee actions). */
+export function smsOnlyVariablesIn(template: string): string[] {
+  const smsOnly = new Set(TEMPLATE_VARIABLES.filter((v) => v.smsOnly).map((v) => v.key));
+  return templateVariablesIn(template).filter((k) => smsOnly.has(k));
+}
+
+/** Sample values for editor previews ("Preview" in the workflow builder). */
+export const TEMPLATE_PREVIEW_CONTEXT: Readonly<TemplateContext> = {
+  event_name: "30 Minute Meeting",
+  my_name: "Jordan Lee",
+  host_email: "jordan@example.com",
+  event_date: "Tuesday, October 20, 2026",
+  event_time: "10:00am",
+  event_end_time: "10:30am",
+  event_time_zone: "Eastern Time - US & Canada",
+  event_description: "A quick call to get to know each other.",
+  invitees_count: 1,
+  questions_and_answers: "Please share anything that will help prepare for our meeting.\nLooking forward to it.",
+  answer_1: "Looking forward to it.",
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`answer_${i + 2}`, ""])),
+  utm_source: "newsletter",
+  utm_medium: "email",
+  utm_campaign: "fall_launch",
+  utm_content: "",
+  utm_term: "",
+  invitee_first_name: "Sam",
+  invitee_last_name: "Rivera",
+  invitee_full_name: "Sam Rivera",
+  invitee_email: "sam@example.com",
+  invitee_phone_number: "+1 415 555 0100",
+  invitee_uuid: "00000000-0000-4000-8000-000000000000",
+  guests: "alex@example.com",
+  location: "https://meet.example.com/abc-defg-hij",
+  join_url: "https://example.com/events/00000000-0000-4000-8000-000000000000/join",
+  cancel_url: "https://example.com/cancellations/00000000-0000-4000-8000-000000000000",
+  reschedule_url: "https://example.com/reschedulings/00000000-0000-4000-8000-000000000000",
+  reconfirm_url: "https://example.com/reconfirm/00000000-0000-4000-8000-000000000000",
+  event_type_url: "https://example.com/jordan/30min",
+};

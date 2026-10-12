@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Email address and header helpers (ARCHITECTURE section 13.1, SPEC NT-20). Pure: no I/O.
 
 export type ParsedAddress = { name: string | null; address: string };

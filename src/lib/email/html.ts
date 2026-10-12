@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // HTML helpers for email markup (ARCHITECTURE section 13.1): escaping and the plain text alternative. Pure and client
 // safe (no imports).
 
@@ -49,11 +51,11 @@ const NAMED: Record<string, string> = {
   lsquo: "'",
   rdquo: '"',
   ldquo: '"',
-  middot: "·",
-  bull: "•",
-  copy: "©",
-  reg: "®",
-  trade: "™",
+  middot: "\u00b7",
+  bull: "\u2022",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
   zwnj: "",
   zwj: "",
   shy: "",
@@ -119,7 +121,7 @@ export function htmlToText(html: string): string {
   s = decodeEntities(s);
   return s
     .split("\n")
-    .map((line) => line.replace(/[ \t ]+/g, " ").trim())
+    .map((line) => line.replace(/[ \t\u00a0]+/g, " ").trim())
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

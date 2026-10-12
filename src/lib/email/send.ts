@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // sendEmail and the outbox delivery state machine (SPEC GEN-15, NT-06, NT-20, ADM-04; ARCHITECTURE section 13.1).
 //
 // Every email is an email_outbox row first (idempotent by msg.idempotencyKey: the first write wins), then delivered
@@ -40,12 +42,17 @@ export function emailTransportName(): EmailTransportName {
   return "outbox";
 }
 
+const warnedFrom = new Set<string>();
+
 /** The sender mailbox: EMAIL_FROM (address and optional display name), else "{AppName}" <notifications@{APP_URL host}>. */
 export function senderMailbox(): { name: string; address: string } {
   const configured = getEnv().EMAIL_FROM;
   const parsed = configured ? parseAddress(configured) : null;
   if (parsed) return { name: parsed.name ?? appName(), address: parsed.address };
-  if (configured) log.warn("email.invalid_email_from", { message: "EMAIL_FROM is not a valid address; using the default sender." });
+  if (configured && !warnedFrom.has(configured)) {
+    warnedFrom.add(configured);
+    log.warn("email.invalid_email_from", { message: "EMAIL_FROM is not a valid address; using the default sender." });
+  }
   const host = appHost().replace(/:\d+$/, "") || "localhost";
   return { name: appName(), address: `notifications@${host}` };
 }

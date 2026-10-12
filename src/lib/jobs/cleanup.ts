@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // system.cleanup retention rules (SPEC GEN-16, ADM-04; ARCHITECTURE section 12.2), run daily. Keeps a Neon Free
 // database (0.5 GB) small. Every comparison uses the app clock ($now), so tests and E2E runs with a fake clock see the
 // same behavior as production. Deletes run in chunks inside a time budget; when the budget runs out the handler
@@ -144,6 +146,9 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
     const rows = await db.delete(files).where(and(expired, isNull(files.blobUrl))).returning({ id: files.id });
     return { deleted: rows.length + blobs.length, done: blobs.length < 200 };
   });
+  await step("outbox_rows", () =>
+    chunkedDelete(db, emailOutbox, emailOutbox.id, lt(emailOutbox.createdAt, ago(RETENTION.outboxRowDays)), deadline),
+  );
   await step("outbox_bodies_purged", async () => {
     let purged = 0;
     while (performance.now() < deadline) {
@@ -162,9 +167,6 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
     }
     return { deleted: purged, done: false };
   });
-  await step("outbox_rows", () =>
-    chunkedDelete(db, emailOutbox, emailOutbox.id, lt(emailOutbox.createdAt, ago(RETENTION.outboxRowDays)), deadline),
-  );
   await step("sms_rows", () => chunkedDelete(db, smsMessages, smsMessages.id, lt(smsMessages.createdAt, ago(RETENTION.smsRowDays)), deadline));
   await step("verification_codes", () =>
     chunkedDelete(db, verificationCodes, verificationCodes.id, lt(verificationCodes.expiresAt, ago(RETENTION.verificationCodeDays)), deadline),

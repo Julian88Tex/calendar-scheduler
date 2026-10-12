@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Running jobs right after a response (SPEC GEN-16 (a), NT-23; ARCHITECTURE section 12.3).
 //
 //   await db.transaction(async (tx) => { ...; await publishEvent(tx, "booking.created", payload, meta); });

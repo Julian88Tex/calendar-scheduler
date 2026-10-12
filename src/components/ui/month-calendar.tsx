@@ -1,8 +1,8 @@
 // OWNER: foundation-ui.
 //
 // MonthCalendar (ARCHITECTURE 20.2, SPEC BK-04, GEN-05, walkthrough 11.2): the booking calendar. Month header
-// "October 2026" (14px bold) between 38px circular arrows ("Go to previous month" / "Go to next month", #F4F8FF fill
-// when enabled), weekday header in #476788 12px semibold, and 44px circle day buttons with 16px text:
+// "October 2026" (14px bold) between 38px circular arrows ("Go to previous month" / "Go to next month"; blue chevrons
+// with a #F4F8FF hover fill, #476788 when disabled, as on the owner's live page), weekday header in #476788 12px semibold, and 44px circle day buttons with 16px text:
 // available days #F4F8FF fill with bold #004EBA text, unavailable days plain #476788 and disabled, hover #E6F0FF,
 // selected #006BFF fill with white text, today with a 4px dot 13px below the number and aria-current="date", and
 // adjacent-month cells hidden. Every blue derives from --primary-color (branding, embed primary_color). The table is
@@ -170,7 +170,7 @@ export function MonthCalendar({
 
   return (
     <div className={cn("relative flex min-w-0 flex-col", className)} aria-busy={loading || undefined}>
-      <div className={cn("mb-3 grid grid-cols-[38px_minmax(120px,auto)_38px] items-center justify-center gap-3", size === "sm" && "mb-2")}>
+      <div className={cn("grid grid-cols-[38px_minmax(120px,auto)_38px] items-center justify-center gap-3", size === "md" ? "mb-[19px]" : "mb-2")}>
         <button
           type="button"
           aria-label={labels.previousMonth}
@@ -178,7 +178,7 @@ export function MonthCalendar({
           onClick={() => onMonthChange(shiftMonth(month, -1))}
           className={cn(
             "inline-flex size-[38px] items-center justify-center rounded-full transition-colors duration-100",
-            prevDisabled ? "cursor-not-allowed text-ink-3" : "cal-day-available hover:cal-day-hover",
+            prevDisabled ? "cursor-default text-ink-2" : "text-brand-strong hover:cal-day-hover",
           )}
         >
           <ChevronLeft aria-hidden="true" className="size-5" strokeWidth={2.25} />
@@ -193,7 +193,7 @@ export function MonthCalendar({
           onClick={() => onMonthChange(shiftMonth(month, 1))}
           className={cn(
             "inline-flex size-[38px] items-center justify-center rounded-full transition-colors duration-100",
-            nextDisabled ? "cursor-not-allowed text-ink-3" : "cal-day-available hover:cal-day-hover",
+            nextDisabled ? "cursor-default text-ink-2" : "text-brand-strong hover:cal-day-hover",
           )}
         >
           <ChevronRight aria-hidden="true" className="size-5" strokeWidth={2.25} />
@@ -211,7 +211,7 @@ export function MonthCalendar({
         <thead>
           <tr>
             {weekdays.map((w) => (
-              <th key={w.long} scope="col" abbr={w.long} className={cn("pb-1 text-center text-[12px] font-semibold text-ink-2", size === "md" ? "h-7" : "h-6")}>
+              <th key={w.long} scope="col" abbr={w.long} className={cn("p-0 text-center text-[12px] leading-5 font-semibold text-ink-2", size === "md" ? "h-5" : "h-6")}>
                 {w.short}
               </th>
             ))}

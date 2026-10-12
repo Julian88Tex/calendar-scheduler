@@ -1,0 +1,55 @@
+// OWNER: foundation-ui.
+//
+// EventTypeList (SPEC BK-01, BK-02; owner reference .reference/profile.png): the landing page grid of event types. Two
+// columns (one under 650px) with a 40px gutter; each item has a #D4E0ED top border, a 26px filled color circle, the
+// event name (#0A2540, bold 16px), an optional two-line description and a small dark right-pointing triangle at the
+// far right; rows are tall (about 220px) with whitespace below the title; the whole item links to its booking page
+// (with ?back=1) and fills #F4F8FF (from --primary-color) on hover. Server and client safe.
+import type { Route } from "next";
+import Link from "next/link";
+import { cn } from "@/lib/cn";
+
+export type EventTypeListItem = {
+  id: string;
+  name: string;
+  /** Event color (#8247f5). */
+  color: string;
+  /** Booking page link, usually "/{slug}/{eventSlug}?back=1". */
+  href: string;
+  /** Plain-text description excerpt (clamped to two lines). */
+  description?: string | null;
+  /** Extra line under the name ("30 min", "Group"), optional. */
+  meta?: string | null;
+};
+
+export type EventTypeListProps = {
+  items: EventTypeListItem[];
+  className?: string;
+  /** Accessible name of the list (default "Event types"). */
+  "aria-label"?: string;
+};
+
+export function EventTypeList({ items, className, ...aria }: EventTypeListProps) {
+  return (
+    <ul aria-label={aria["aria-label"] ?? "Event types"} className={cn("grid grid-cols-1 gap-x-10 min-[650px]:grid-cols-2", className)}>
+      {items.map((item) => (
+        <li key={item.id} className="min-w-0 border-t border-line">
+          <Link
+            href={item.href as Route}
+            className="group flex h-full min-h-[120px] w-full min-w-0 items-start gap-3 px-[22px] pt-6 pb-8 transition-colors duration-100 hover:bg-brand-soft focus-visible:outline-offset-[-2px] min-[650px]:min-h-[219px]"
+          >
+            <span aria-hidden="true" className="mt-px size-[26px] shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+            <span className="flex min-w-0 flex-1 flex-col gap-1.5 pt-[3px]">
+              <span className="text-[16px] leading-5 font-bold break-words text-public-text">{item.name}</span>
+              {item.meta && <span className="text-[14px] leading-5 text-ink-2">{item.meta}</span>}
+              {item.description && <span className="line-clamp-2 text-[14px] leading-5 text-ink-2">{item.description}</span>}
+            </span>
+            <svg aria-hidden="true" viewBox="0 0 8 12" className="mt-[7px] h-3 w-2 shrink-0 fill-[#0a2540] transition-transform group-hover:translate-x-0.5">
+              <path d="M0 0l8 6-8 6z" />
+            </svg>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}

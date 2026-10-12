@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // SMS segment math and phone number helpers (SPEC NT-16). Pure and client safe (the workflow editor shows the
 // counter): GSM-7 bodies use 160 characters per message (153 per part when split), anything else UCS-2 with 70 (67).
 
@@ -42,7 +44,7 @@ export function smsSegments(body: string): { encoding: SmsEncoding; segments: nu
  */
 export function normalizePhone(value: string | null | undefined): string | null {
   if (!value) return null;
-  let v = String(value).trim().replace(/[\s().\- ]/g, "");
+  let v = String(value).trim().replace(/[\s().\-\u00a0]/g, "");
   if (v.startsWith("00")) v = `+${v.slice(2)}`;
   if (!v.startsWith("+")) return null;
   return /^\+[1-9]\d{6,14}$/.test(v) ? v : null;

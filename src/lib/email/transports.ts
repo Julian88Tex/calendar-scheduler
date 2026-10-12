@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Email transports (SPEC GEN-15, NT-06; ARCHITECTURE section 13.1, tech-reference 10.1 and 10.2).
 //
 // - Resend (RESEND_API_KEY): REST through the official SDK, the ICS as an `invite.ics` attachment with

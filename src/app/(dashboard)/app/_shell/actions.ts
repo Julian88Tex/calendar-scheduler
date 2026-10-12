@@ -1,30 +1,46 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Shell server actions: persist the sidebar collapse state (GEN-20, users.preferences.sidebarCollapsed) and update the
-// profile time zone from the GEN-23 banner (profile zone only, never schedule zones).
+// Shell server actions (SPEC GEN-20, GEN-23, AU-08): persist the sidebar collapse state (users.preferences
+// .sidebarCollapsed, merged into the jsonb so other preferences are kept), update the profile time zone from the
+// GEN-23 banner (profile zone only, never schedule zones) and resend the verification email (rate limited).
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { getDb } from "@/db";
+import { z } from "zod";
 import { users } from "@/db/schema";
-import { requireUser } from "@/lib/auth/session";
+import { runAction, type ActionResult } from "@/lib/actions";
+import { sendVerificationEmail } from "@/lib/auth/verify-email";
 import { AppError } from "@/lib/errors";
-import { isValidTimeZone } from "@/lib/time/zones";
+import { assertRateLimit } from "@/lib/rate-limit";
+import { zTimeZone } from "@/lib/validation";
 
-export async function setSidebarCollapsed(collapsed: boolean): Promise<void> {
-  const user = await requireUser({ onMissing: "throw" });
-  const db = await getDb();
-  await db
-    .update(users)
-    .set({ preferences: { ...(user.preferences ?? {}), sidebarCollapsed: collapsed === true } })
-    .where(eq(users.id, user.id));
+const Collapsed = z.boolean();
+const Zone = zTimeZone;
+
+export async function setSidebarCollapsed(collapsed: boolean): Promise<ActionResult<{ collapsed: boolean }>> {
+  return runAction(Collapsed, collapsed, async (value, { actor, db }) => {
+    await db
+      .update(users)
+      .set({ preferences: sql`coalesce(${users.preferences}, '{}'::jsonb) || ${JSON.stringify({ sidebarCollapsed: value })}::jsonb` })
+      .where(eq(users.id, actor.user.id));
+    return { collapsed: value };
+  });
 }
 
-export async function updateProfileTimeZone(zone: string): Promise<void> {
-  const user = await requireUser({ onMissing: "throw" });
-  if (!isValidTimeZone(zone)) throw new AppError("validation", "Choose a valid time zone.");
-  const db = await getDb();
-  await db.update(users).set({ timezone: zone }).where(eq(users.id, user.id));
-  revalidatePath("/app", "layout");
+export async function updateProfileTimeZone(zone: string): Promise<ActionResult<{ timezone: string }>> {
+  return runAction(Zone, zone, async (value, { actor, db }) => {
+    await db.update(users).set({ timezone: value }).where(eq(users.id, actor.user.id));
+    revalidatePath("/app", "layout");
+    return { timezone: value };
+  });
+}
+
+export async function resendVerificationEmail(): Promise<ActionResult<{ sent: true }>> {
+  return runAction(z.undefined().optional(), undefined, async (_input, { actor }) => {
+    if (actor.user.emailVerifiedAt) throw new AppError("conflict", "Your email address is already verified.");
+    await assertRateLimit(`verify-email-resend:${actor.user.id}`, 5, 3600, { message: "Too many emails sent. Try again in an hour." });
+    await sendVerificationEmail(actor.user.id);
+    return { sent: true as const };
+  });
 }

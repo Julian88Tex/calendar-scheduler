@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Global leases in instance_settings (ARCHITECTURE section 12.2 and 12.3): "at most once per minute across every
 // server instance" throttles for the opportunistic runner (key job_runner_lease) and /api/cron in open mode (key
 // cron_open_lease). One atomic upsert: the row is taken only when the previous lease expired (app clock, $now) or this

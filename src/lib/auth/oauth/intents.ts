@@ -3,7 +3,7 @@
 // OAuth intent dispatch (ARCHITECTURE section 10.4), after the callback validated the state and exchanged the code:
 // - login, signup: resolveOAuthLogin (find, link by verified email, or create under the signup policy), then
 //   calendars.linkCalendarFromOAuth (CAL-17), a session (two_factor_pending when 2FA is on, AU-09), audit entries and
-//   a redirect: new accounts to /onboarding, others to the same-site returnTo or /app/scheduling.
+//   a redirect to the same-site returnTo or /app/scheduling (new accounts: POST_SIGNUP_PATH).
 // - link_login_method: connects the provider to the signed-in user who started the flow, then
 //   linkCalendarFromOAuth, then back to returnTo (default Settings > Login) with ?connected={provider}.
 // - accept_invitation: teams.getPendingInvitation, the email match rule ("Use {invited email} to accept this
@@ -29,6 +29,7 @@ import {
   type OAuthResolution,
 } from "../flows/oauth-accounts";
 import { requestMetaFrom } from "../flows/request-context";
+import { POST_SIGNUP_PATH } from "../flows/signup-flow";
 import { createSession, getSession, revokeSession } from "../session";
 import { appendQuery, oauthErrorRedirect, redirectResponse } from "./redirects";
 import type { OAuthCallbackContext, OAuthIntent } from "./types";
@@ -85,7 +86,7 @@ async function finishSignIn(ctx: OAuthCallbackContext, res: OAuthResolution, opt
   if (res.linked) {
     await auditAuth("login_method.connected", { user: res.user, details: { provider: ctx.provider, email: ctx.profile.email, auto: true }, meta });
   }
-  const destination = res.created ? "/onboarding" : safeNextPath(ctx.returnTo);
+  const destination = res.created ? POST_SIGNUP_PATH : safeNextPath(ctx.returnTo);
   if (res.user.twoFactorEnabled) {
     await startSession(res.user.id, true);
     return redirectResponse(appendQuery("/login/two-factor", { next: destination, method: ctx.provider }));
@@ -137,11 +138,12 @@ export async function dispatchOAuthIntent(ctx: OAuthCallbackContext): Promise<Re
     }
   } catch (e) {
     if (e instanceof OAuthFlowError) {
-      if (e.code === "signups_closed") {
+      // Every refused sign-in is audited (it needed a valid provider code, so this cannot be flooded).
+      if (ctx.intent === "login" || ctx.intent === "signup" || ctx.intent === "accept_invitation") {
         await auditAuth("user.login_failed", {
-          details: { method: ctx.provider, reason: "signups_closed", email: ctx.profile.email },
+          details: { method: ctx.provider, reason: e.code, email: ctx.profile.email },
           meta: requestMetaFrom(ctx.request),
-        });
+        }).catch(() => undefined);
       }
       return redirectResponse(oauthErrorRedirect(ctx.intent, ctx.state, ctx.provider, e.code));
     }

@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 import { OVERLAY_CLASS } from "./dialog";
+import { useReturnFocus } from "./use-return-focus";
 
 export type SheetProps = {
   open?: boolean;
@@ -52,12 +53,14 @@ export function Sheet({
   className,
   bodyClassName,
 }: SheetProps) {
+  const returnFocus = useReturnFocus(!trigger);
   return (
     <RadixDialog.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={OVERLAY_CLASS} />
         <RadixDialog.Content
+          {...returnFocus}
           className={cn("fixed z-50 flex flex-col bg-white text-ink shadow-[var(--shadow-pop)] outline-none", SIDES[side], side !== "bottom" && SIZES[size], className)}
           {...(description ? {} : { "aria-describedby": undefined })}
         >

@@ -1,25 +1,31 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Settings section (SPEC BR-14): account settings sub-navigation including Import from Calendly.
+// Settings section (SPEC BR-14): the account settings sub-navigation in groups: "Account" (Profile, Branding, My link,
+// Login and security, Notifications, Cookie settings, Privacy, Import from Calendly), "Calendar" (links to the
+// Availability tabs: Calendar settings, Availability, Advanced) and "Integrations" (the hub). Becomes a select on phones.
 import type * as React from "react";
 import { RouteTabs } from "@/components/ui/route-tabs";
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-6 md:flex-row">
+    <div className="flex min-w-0 flex-col gap-6 md:flex-row md:gap-8">
       <RouteTabs
         aria-label="Account settings"
         orientation="vertical"
-        className="md:w-56 md:shrink-0"
+        className="md:sticky md:top-4 md:w-56 md:shrink-0 md:self-start"
         tabs={[
-          { href: "/app/settings/profile", label: "Profile" },
-          { href: "/app/settings/branding", label: "Branding" },
-          { href: "/app/settings/link", label: "My Link" },
-          { href: "/app/settings/login", label: "Login preferences" },
-          { href: "/app/settings/notifications", label: "Notifications" },
-          { href: "/app/settings/cookies", label: "Cookie settings" },
-          { href: "/app/settings/privacy", label: "Privacy" },
-          { href: "/app/settings/import", label: "Import from Calendly" },
+          { href: "/app/settings/profile", label: "Profile", group: "Account" },
+          { href: "/app/settings/branding", label: "Branding", group: "Account" },
+          { href: "/app/settings/link", label: "My link", group: "Account" },
+          { href: "/app/settings/login", label: "Login and security", group: "Account" },
+          { href: "/app/settings/notifications", label: "Notifications", group: "Account" },
+          { href: "/app/settings/cookies", label: "Cookie settings", group: "Account" },
+          { href: "/app/settings/privacy", label: "Privacy", group: "Account" },
+          { href: "/app/settings/import", label: "Import from Calendly", group: "Account" },
+          { href: "/app/availability/calendar-settings", label: "Calendar settings", group: "Calendar" },
+          { href: "/app/availability", label: "Availability", group: "Calendar", exact: true },
+          { href: "/app/availability/advanced", label: "Advanced", group: "Calendar" },
+          { href: "/app/integrations", label: "Integrations & apps", group: "Integrations" },
         ]}
       />
       <div className="min-w-0 flex-1">{children}</div>

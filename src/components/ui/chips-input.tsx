@@ -1,11 +1,14 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// ChipsInput (ARCHITECTURE 20.2): values (emails) separated by comma, space or Enter, with per-value validation.
+// ChipsInput (ARCHITECTURE 20.2, SPEC BK-10, TM-02): values (emails) separated by comma, space, semicolon or Enter,
+// also on paste and blur, with per-value validation, case-insensitive de-duplication, a maximum count and Backspace to
+// remove the last chip. Pure parsing lives in ./chips-input-utils.ts.
 "use client";
 
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { Chip } from "./chip";
+import { addChips } from "./chips-input-utils";
 
 export type ChipsInputProps = {
   value: string[];
@@ -21,57 +24,96 @@ export type ChipsInputProps = {
   className?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  size?: "md" | "lg";
+  /** Lowercases values before validation (emails). Default false. */
+  lowercase?: boolean;
 };
 
-export function ChipsInput({ value, onChange, validate, placeholder, max, disabled, invalid, id, className, ...aria }: ChipsInputProps) {
+export function ChipsInput({ value, onChange, validate, placeholder, max, disabled, invalid, id, className, size = "md", lowercase, ...aria }: ChipsInputProps) {
+  const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const errorId = `${base}-error`;
+  const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const full = max !== undefined && value.length >= max;
+
   const commit = (raw: string) => {
-    const parts = raw.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean);
-    const next = [...value];
-    for (const p of parts) {
-      const problem = validate?.(p) ?? null;
-      if (problem) {
-        setError(problem);
-        return;
-      }
-      if (!next.includes(p) && (max === undefined || next.length < max)) next.push(p);
+    if (!raw.trim()) {
+      setDraft("");
+      return;
     }
-    setError(null);
-    setDraft("");
-    if (next.length !== value.length) onChange(next);
+    const result = addChips(value, raw, { validate, max, normalize: lowercase ? (v) => v.toLowerCase() : undefined });
+    if (result.added.length) onChange(result.values);
+    setError(result.error?.message ?? null);
+    setDraft(result.rest);
   };
+
   return (
-    <div className={cn("flex flex-wrap items-center gap-1 rounded-[var(--radius-input)] border border-line p-2", (invalid || error) && "border-danger", className)}>
-      {value.map((v) => (
-        <Chip key={v} onRemove={disabled ? undefined : () => onChange(value.filter((x) => x !== v))} removeLabel={`Remove ${v}`}>
-          {v}
-        </Chip>
-      ))}
-      <input
-        id={id}
-        value={draft}
-        disabled={disabled || (max !== undefined && value.length >= max)}
-        placeholder={placeholder}
-        aria-invalid={invalid || !!error || undefined}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === "," || e.key === " ") {
-            e.preventDefault();
-            commit(draft);
-          } else if (e.key === "Backspace" && !draft && value.length) {
-            onChange(value.slice(0, -1));
-          }
-        }}
-        onBlur={() => draft && commit(draft)}
-        className="min-w-32 flex-1 text-body-md outline-none"
-        {...aria}
-      />
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
+      <div
+        onClick={() => inputRef.current?.focus()}
+        className={cn(
+          "flex w-full min-w-0 cursor-text flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-line bg-white px-2 py-1.5 transition-colors",
+          "hover:border-ink-2 focus-within:border-primary focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-focus",
+          (invalid || error) && "border-danger hover:border-danger",
+          disabled && "cursor-not-allowed bg-pebble",
+          size === "lg" ? "min-h-[46px]" : "min-h-10",
+        )}
+      >
+        <ul className="contents" aria-label="Added values">
+          {value.map((v) => (
+            <li key={v} className="flex min-w-0">
+              <Chip variant="primary" disabled={disabled} onRemove={disabled ? undefined : () => onChange(value.filter((x) => x !== v))} removeLabel={`Remove ${v}`}>
+                {v}
+              </Chip>
+            </li>
+          ))}
+        </ul>
+        <input
+          ref={inputRef}
+          id={id}
+          value={draft}
+          disabled={disabled || full}
+          placeholder={value.length === 0 ? placeholder : undefined}
+          aria-invalid={invalid || !!error || undefined}
+          aria-label={aria["aria-label"]}
+          aria-describedby={[aria["aria-describedby"], error ? errorId : null].filter(Boolean).join(" ") || undefined}
+          autoComplete="off"
+          onChange={(e) => {
+            const v = e.target.value;
+            if (/[,;\s]$/.test(v) && v.trim()) commit(v);
+            else {
+              setDraft(v);
+              if (error) setError(null);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Tab") {
+              if (draft.trim()) {
+                if (e.key === "Enter") e.preventDefault();
+                commit(draft);
+              }
+            } else if (e.key === "Backspace" && !draft && value.length) {
+              onChange(value.slice(0, -1));
+            }
+          }}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text/plain");
+            if (/[,;\s]/.test(text.trim())) {
+              e.preventDefault();
+              commit(`${draft} ${text}`);
+            }
+          }}
+          onBlur={() => draft.trim() && commit(draft)}
+          className={cn("h-7 min-w-32 flex-1 bg-transparent px-1 text-ink outline-none disabled:cursor-not-allowed", size === "lg" ? "text-[16px]" : "text-[14px]")}
+        />
+      </div>
       {error && (
-        <p role="alert" className="w-full text-body-sm text-danger-text">
+        <p id={errorId} role="alert" className="text-body-sm font-semibold text-danger-text">
           {error}
         </p>
       )}
+      {max !== undefined && full && !error && <p className="text-body-sm text-ink-2">{`You can add up to ${max}.`}</p>}
     </div>
   );
 }

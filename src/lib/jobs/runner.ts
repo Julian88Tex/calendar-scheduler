@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // The job runner (SPEC GEN-16, ARCHITECTURE section 12.2), safe under Vercel serverless and concurrent workers:
 //
 // - Claim: one statement, `WITH next AS (SELECT id ... WHERE status = 'pending' AND run_at <= $now ORDER BY priority

@@ -21,6 +21,7 @@ export const OAUTH_ERROR_CODES = [
   "invitation_email_mismatch",
   "invitation_conflict",
   "sign_in_required",
+  "confirmation_required",
 ] as const;
 
 export type OAuthErrorCode = (typeof OAUTH_ERROR_CODES)[number];
@@ -62,6 +63,8 @@ export function oauthErrorMessage(
       return "You already belong to another workspace.";
     case "sign_in_required":
       return "Log in to continue.";
+    case "confirmation_required":
+      return "Confirm the change with the code we emailed you, then try again.";
     case "failed":
     default:
       return `We couldn't sign you in with ${name}. Please try again.`;

@@ -1,3 +1,5 @@
+// OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
 // Retry timing for jobs (SPEC GEN-16, ARCHITECTURE section 12.2): 30 seconds doubling per attempt, capped at 6 hours,
 // with up to 10% jitter added (never subtracted, so a retry never runs before its documented delay) to spread retries
 // of jobs that failed together. Pure.

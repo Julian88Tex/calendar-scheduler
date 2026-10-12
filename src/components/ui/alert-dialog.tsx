@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "./button";
 import { OVERLAY_CLASS } from "./dialog";
 import { toast } from "./toast";
+import { useReturnFocus } from "./use-return-focus";
 
 export type AlertDialogProps = {
   open?: boolean;
@@ -28,12 +29,14 @@ export type AlertDialogProps = {
 };
 
 export function AlertDialog({ open, defaultOpen, onOpenChange, trigger, title, description, children, footer, className }: AlertDialogProps) {
+  const returnFocus = useReturnFocus(!trigger);
   return (
     <RadixAlert.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <RadixAlert.Trigger asChild>{trigger}</RadixAlert.Trigger>}
       <RadixAlert.Portal>
         <RadixAlert.Overlay className={OVERLAY_CLASS} />
         <RadixAlert.Content
+          {...returnFocus}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto",
             "rounded-[var(--radius-card)] bg-white p-6 text-ink shadow-[var(--shadow-pop)] outline-none data-[state=open]:animate-pop-in",
