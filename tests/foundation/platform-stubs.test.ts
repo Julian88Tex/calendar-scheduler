@@ -29,8 +29,9 @@ vi.mock("@/lib/booking/jobs", async () => {
     periodic: [{ type: "booking.test_periodic", everyMinutes: 60 }],
   };
 });
-// Only the contacts test subscriber listens to booking.created here; real module subscribers (workflows) are muted.
+// Only the contacts test subscriber listens to booking.created here; real module subscribers (workflows, lifecycle) are muted.
 vi.mock("@/lib/workflows/subscribers", () => ({ subscribers: {} }));
+vi.mock("@/lib/lifecycle/subscribers", () => ({ subscribers: {} }));
 vi.mock("@/lib/contacts/subscribers", () => ({
   subscribers: {
     "booking.created": async (event: unknown) => {
