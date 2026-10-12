@@ -1,6 +1,11 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Avatar (image or initials on --mist) and AvatarGroup (overlapping stack with "+n") (ARCHITECTURE 20.2).
+// Avatar (image, or initials on --mist when there is no photo or it fails to load) and AvatarGroup (overlapping stack
+// with a "+n" circle, SPEC BK-03) (ARCHITECTURE 20.2). Client component (image error fallback); usable from Server
+// Components with serializable props.
+"use client";
+
+import { useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 
@@ -23,15 +28,36 @@ export function initialsOf(name: string | null | undefined): string {
 }
 
 export function Avatar({ src, name, alt, size = "md", shape = "circle", className }: AvatarProps) {
+  const [failed, setFailed] = useState<string | null>(null);
   const px = typeof size === "number" ? size : PX[size];
-  const style: React.CSSProperties = { width: px, height: px, fontSize: Math.max(10, Math.round(px * 0.4)) };
-  const radius = shape === "circle" ? "rounded-full" : "rounded";
-  if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={alt ?? name ?? ""} width={px} height={px} style={style} className={cn("object-cover", radius, className)} />;
+  const style: React.CSSProperties = { width: px, height: px, fontSize: Math.max(9, Math.round(px * 0.38)) };
+  const radius = shape === "circle" ? "rounded-full" : "rounded-[var(--radius-card)]";
+  const label = alt ?? name ?? "";
+  if (src && failed !== src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={label}
+        width={px}
+        height={px}
+        style={style}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(src)}
+        className={cn("shrink-0 bg-mist object-cover", radius, className)}
+      />
+    );
   }
   return (
-    <span role="img" aria-label={alt ?? name ?? "Avatar"} style={style} className={cn("inline-flex items-center justify-center bg-mist font-semibold text-ink-2", radius, className)}>
+    <span
+      role={label ? "img" : undefined}
+      aria-label={label || undefined}
+      aria-hidden={label ? undefined : true}
+      style={style}
+      className={cn("inline-flex shrink-0 items-center justify-center bg-mist leading-none font-semibold text-ink-2 select-none", radius, className)}
+    >
       {initialsOf(name)}
     </span>
   );
@@ -48,12 +74,21 @@ export type AvatarGroupProps = {
 export function AvatarGroup({ users, max = 3, size = "sm", className }: AvatarGroupProps) {
   const shown = users.slice(0, max);
   const rest = users.length - shown.length;
+  const px = PX[size];
   return (
-    <span className={cn("inline-flex -space-x-2", className)}>
+    <span className={cn("inline-flex items-center", className)} role="group" aria-label={users.map((u) => u.name ?? "").filter(Boolean).join(", ") || undefined}>
       {shown.map((u, i) => (
-        <Avatar key={i} src={u.src} name={u.name} size={size} className="ring-2 ring-white" />
+        <Avatar key={i} src={u.src} name={u.name} alt="" size={size} className={cn("ring-2 ring-white", i > 0 && "-ml-[25%]")} />
       ))}
-      {rest > 0 && <span className="inline-flex items-center rounded-full bg-mist px-1.5 text-body-sm ring-2 ring-white">+{rest}</span>}
+      {rest > 0 && (
+        <span
+          aria-hidden="true"
+          style={{ width: px, height: px, fontSize: Math.max(9, Math.round(px * 0.34)) }}
+          className="-ml-[25%] inline-flex shrink-0 items-center justify-center rounded-full bg-mist leading-none font-semibold text-ink ring-2 ring-white"
+        >
+          +{rest}
+        </span>
+      )}
     </span>
   );
 }

@@ -1,7 +1,9 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// AlertDialog and ConfirmDialog (ARCHITECTURE 20.2): interrupting confirmations (Radix AlertDialog: no outside click
-// dismiss). ConfirmDialog is the common "Cancel" / "Confirm" form with a destructive variant and an async onConfirm.
+// AlertDialog and ConfirmDialog (ARCHITECTURE 20.2): interrupting confirmations (Radix AlertDialog: focus trap, no
+// outside click dismiss, Escape cancels, focus returns to the trigger). ConfirmDialog is the common "Cancel" /
+// "Confirm" form with a destructive variant (#D53C00 confirm button) and an async onConfirm: the confirm button shows
+// loading, the dialog closes when it resolves and stays open (with an error toast) when it throws.
 "use client";
 
 import * as RadixAlert from "@radix-ui/react-alert-dialog";
@@ -9,6 +11,8 @@ import { useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "./button";
+import { OVERLAY_CLASS } from "./dialog";
+import { toast } from "./toast";
 
 export type AlertDialogProps = {
   open?: boolean;
@@ -28,15 +32,19 @@ export function AlertDialog({ open, defaultOpen, onOpenChange, trigger, title, d
     <RadixAlert.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <RadixAlert.Trigger asChild>{trigger}</RadixAlert.Trigger>}
       <RadixAlert.Portal>
-        <RadixAlert.Overlay className="fixed inset-0 z-40 bg-[var(--overlay)]" />
+        <RadixAlert.Overlay className={OVERLAY_CLASS} />
         <RadixAlert.Content
-          className={cn("fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card)] bg-white p-6 shadow-[var(--shadow-pop)]", className)}
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto",
+            "rounded-[var(--radius-card)] bg-white p-6 text-ink shadow-[var(--shadow-pop)] outline-none data-[state=open]:animate-pop-in",
+            className,
+          )}
           {...(description ? {} : { "aria-describedby": undefined })}
         >
-          <RadixAlert.Title className="text-title-md">{title}</RadixAlert.Title>
+          <RadixAlert.Title className="text-title-lg text-ink">{title}</RadixAlert.Title>
           {description && <RadixAlert.Description className="mt-2 text-body-md text-ink-2">{description}</RadixAlert.Description>}
-          {children && <div className="mt-4">{children}</div>}
-          <div className="mt-6 flex justify-end gap-2">{footer}</div>
+          {children && <div className="mt-4 text-body-md">{children}</div>}
+          <div className="mt-6 flex flex-wrap justify-end gap-2">{footer}</div>
         </RadixAlert.Content>
       </RadixAlert.Portal>
     </RadixAlert.Root>
@@ -65,6 +73,11 @@ export type ConfirmDialogProps = {
   confirmDisabled?: boolean;
 };
 
+function errorMessage(e: unknown): string {
+  const message = (e as { message?: unknown } | null)?.message;
+  return typeof message === "string" && message && !/^[A-Z_]+$/.test(message) ? message : "Something went wrong. Try again.";
+}
+
 export function ConfirmDialog({
   open,
   defaultOpen,
@@ -84,6 +97,7 @@ export function ConfirmDialog({
   const [busy, setBusy] = useState(false);
   const isOpen = open ?? inner;
   const setOpen = (v: boolean) => {
+    if (busy && !v) return;
     if (open === undefined) setInner(v);
     onOpenChange?.(v);
   };
@@ -97,7 +111,9 @@ export function ConfirmDialog({
       footer={
         <>
           <AlertDialogCancel asChild>
-            <Button variant="secondary">{cancelLabel}</Button>
+            <Button variant="secondary" disabled={busy}>
+              {cancelLabel}
+            </Button>
           </AlertDialogCancel>
           <Button
             variant={variant === "destructive" ? "destructive" : "primary"}
@@ -107,9 +123,12 @@ export function ConfirmDialog({
               setBusy(true);
               try {
                 await onConfirm();
-                setOpen(false);
-              } finally {
                 setBusy(false);
+                if (open === undefined) setInner(false);
+                onOpenChange?.(false);
+              } catch (e) {
+                setBusy(false);
+                toast.error(errorMessage(e));
               }
             }}
           >

@@ -1,6 +1,7 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// EmptyState (ARCHITECTURE 20.2, SPEC GEN-12): illustration slot, heading, body, action. Server and client safe.
+// EmptyState (ARCHITECTURE 20.2, SPEC GEN-12): illustration slot, heading, one sentence and the primary action.
+// Server and client safe. Pass `illustration={<Illustration name="calendar-plus" />}` for the classic drawings.
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 
@@ -14,16 +15,19 @@ export type EmptyStateProps = {
   icon?: React.ReactNode;
   size?: "sm" | "md";
   className?: string;
+  /** Heading level (default 2). */
+  headingLevel?: 1 | 2 | 3;
 };
 
-export function EmptyState({ heading, body, action, secondaryAction, illustration, icon, size = "md", className }: EmptyStateProps) {
+export function EmptyState({ heading, body, action, secondaryAction, illustration, icon, size = "md", className, headingLevel = 2 }: EmptyStateProps) {
+  const Heading = headingLevel === 1 ? "h1" : headingLevel === 3 ? "h3" : "h2";
   return (
-    <div className={cn("flex flex-col items-center gap-3 text-center", size === "md" ? "px-6 py-12" : "px-4 py-6", className)}>
-      {illustration ?? icon}
-      <h2 className={size === "md" ? "text-title-md" : "text-title-sm"}>{heading}</h2>
-      {body && <p className="max-w-md text-body-md text-ink-2">{body}</p>}
+    <div className={cn("flex flex-col items-center text-center", size === "md" ? "gap-3 px-6 py-14" : "gap-2 px-4 py-8", className)}>
+      {illustration ?? (icon && <span className="mb-1 inline-flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary-text [&_svg]:size-6">{icon}</span>)}
+      <Heading className={cn("max-w-lg text-ink", size === "md" ? "text-title-lg" : "text-title-sm")}>{heading}</Heading>
+      {body && <p className={cn("max-w-md text-ink-2", size === "md" ? "text-body" : "text-body-md")}>{body}</p>}
       {(action || secondaryAction) && (
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
           {action}
           {secondaryAction}
         </div>

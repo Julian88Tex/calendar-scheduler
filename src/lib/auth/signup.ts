@@ -10,11 +10,16 @@
 // - the default event type "30 Minute Meeting" (slug 30min, 30 minutes, color #8247F5, location empty or Google Meet /
 //   Microsoft Teams per AU-13, the ET-33 defaults, the default schedule, its host row and the default question),
 // - a user.created domain event.
-// FULLY IMPLEMENTED by the foundation core (the seed and factories need it); foundation-auth keeps the signature and
-// may extend it. It never sets cookies, sends email or checks the signup policy: callers do.
+// It never sets cookies, sends email or checks the signup policy: callers do.
+//
+// createAccountUnderPolicy (foundation-auth, SPEC AU-11): the policy-checked entry point used by email and OAuth
+// signups. It takes the instance-wide signup advisory lock inside the caller's transaction before reading the user
+// count, so two simultaneous first signups cannot both become instance admin (the second waits, then sees the first
+// account and follows the policy).
 import "server-only";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type { DbOrTx } from "@/db";
+import { withTx, type DbOrTx } from "@/db";
+import { advisoryXactLock } from "@/db/helpers";
 import { eventTypeHosts, eventTypeQuestions, eventTypes, organizationMemberships, organizations, users } from "@/db/schema";
 import type { LocationConfig } from "@/db/types";
 import { ensureDefaultSchedule } from "@/lib/availability";
@@ -25,6 +30,7 @@ import { newId } from "@/lib/ids";
 import { claimHandle, suggestHandle } from "@/lib/slugs";
 import { zoneOrUtc } from "@/lib/time/zones";
 import { normalizeEmail } from "@/lib/validation";
+import { signupPolicyAllows, type SignupDecision } from "./policy";
 
 export type UserRow = typeof users.$inferSelect;
 
@@ -176,4 +182,52 @@ export async function createUserAccount(tx: DbOrTx, input: CreateUserAccountInpu
     .limit(1);
   if (!user) throw new Error("createUserAccount: user vanished");
   return user;
+}
+
+/** Transaction advisory lock key that serializes account creation under the signup policy (AU-11). */
+export const SIGNUP_LOCK_KEY = "auth:signup";
+
+/** The live account for an email, or null. */
+export async function findUserByEmail(db: DbOrTx, email: string): Promise<UserRow | null> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.emailNormalized, normalizeEmail(email)), isNull(users.deletedAt)))
+    .limit(1);
+  return user ?? null;
+}
+
+export type CreateAccountUnderPolicyResult = { user: UserRow; decision: SignupDecision };
+
+/**
+ * Creates an account after checking the signup policy inside the transaction, serialized by SIGNUP_LOCK_KEY.
+ * - Email taken: AppError("conflict", EMAIL_TAKEN_MESSAGE) with an email field error (checked before the policy).
+ * - Policy closed: AppError("forbidden", "Sign ups are closed. Ask an admin for an invitation."), unless bypassPolicy
+ *   (invitation acceptance, AU-11).
+ * - First account of the instance: instance admin and owner of a new organization.
+ * - "domains" policy match: joins the first organization as User.
+ * When `db` is not a transaction a new one is opened (the advisory lock needs one).
+ */
+export async function createAccountUnderPolicy(
+  db: DbOrTx,
+  input: CreateUserAccountInput,
+  opts: { bypassPolicy?: boolean } = {},
+): Promise<CreateAccountUnderPolicyResult> {
+  return withTx(db, async (tx) => {
+    await advisoryXactLock(tx, SIGNUP_LOCK_KEY);
+    if (await findUserByEmail(tx, input.email)) {
+      throw new AppError("conflict", EMAIL_TAKEN_MESSAGE, { fieldErrors: { email: [EMAIL_TAKEN_MESSAGE] } });
+    }
+    const decision = await signupPolicyAllows(input.email, { db: tx });
+    if (!decision.allowed && !opts.bypassPolicy) throw new AppError("forbidden", decision.message);
+    const firstUser = decision.allowed && decision.firstUser;
+    const joinOrganizationId = input.organizationId ?? (decision.allowed ? decision.joinOrganizationId : null);
+    const user = await createUserAccount(tx, {
+      ...input,
+      isInstanceAdmin: Boolean(input.isInstanceAdmin) || firstUser,
+      organizationId: joinOrganizationId,
+      role: input.organizationId ? input.role : joinOrganizationId ? "user" : undefined,
+    });
+    return { user, decision };
+  });
 }

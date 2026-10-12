@@ -1,6 +1,7 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Skeleton (ARCHITECTURE 20.2): loading placeholders for loading.tsx files.
+// Skeleton (ARCHITECTURE 20.2, SPEC GEN-12): gray rounded placeholder bars for loading.tsx files and async panels
+// (decorative: the surrounding region carries aria-busy and a label). Server and client safe.
 import { cn } from "@/lib/cn";
 
 export type SkeletonProps = {
@@ -13,15 +14,15 @@ export type SkeletonProps = {
 };
 
 export function Skeleton({ width, height = 16, rounded = "md", lines, className }: SkeletonProps) {
-  const radius = rounded === "full" ? "rounded-full" : rounded === "sm" ? "rounded-sm" : "rounded";
+  const radius = rounded === "full" ? "rounded-full" : rounded === "sm" ? "rounded-[3px]" : "rounded-[6px]";
   if (lines && lines > 1) {
     return (
-      <div aria-hidden="true" className={cn("flex flex-col gap-2", className)}>
+      <div aria-hidden="true" className={cn("flex flex-col gap-2.5", className)}>
         {Array.from({ length: lines }, (_, i) => (
-          <div key={i} className={cn("animate-pulse bg-mist", radius)} style={{ height, width: i === lines - 1 ? "60%" : width }} />
+          <div key={i} className={cn("animate-pulse bg-mist", radius)} style={{ height, width: i === lines - 1 ? "60%" : (width ?? "100%") }} />
         ))}
       </div>
     );
   }
-  return <div aria-hidden="true" className={cn("animate-pulse bg-mist", radius, className)} style={{ width, height }} />;
+  return <div aria-hidden="true" className={cn("animate-pulse bg-mist", radius, className)} style={{ width: width ?? "100%", height }} />;
 }

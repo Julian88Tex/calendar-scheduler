@@ -1,8 +1,9 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
 // DropdownMenu (ARCHITECTURE 20.2, Radix): DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem
 // (icon, destructive, href), DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuGroup and DropdownMenuSwitchItem
-// (the kebab menu "On/Off" row, ET-05).
+// (the kebab menu "On/Off" row, ET-05). Classic look: white popover, 40px rows, #F4F8FF highlight, #476788 icons.
+// Keyboard: arrows, Home/End, typeahead, Enter/Space, Escape (focus returns to the trigger).
 "use client";
 
 import * as RadixMenu from "@radix-ui/react-dropdown-menu";
@@ -14,15 +15,21 @@ import { cn } from "@/lib/cn";
 export const DropdownMenu = RadixMenu.Root;
 export const DropdownMenuTrigger = RadixMenu.Trigger;
 export const DropdownMenuGroup = RadixMenu.Group;
+export const DropdownMenuSub = RadixMenu.Sub;
 
 export type DropdownMenuContentProps = React.ComponentProps<typeof RadixMenu.Content>;
-export function DropdownMenuContent({ className, sideOffset = 6, align = "end", ...rest }: DropdownMenuContentProps) {
+export function DropdownMenuContent({ className, sideOffset = 6, align = "end", collisionPadding = 8, ...rest }: DropdownMenuContentProps) {
   return (
     <RadixMenu.Portal>
       <RadixMenu.Content
         sideOffset={sideOffset}
         align={align}
-        className={cn("z-50 min-w-48 rounded-[var(--radius-card)] border border-line bg-white py-1 shadow-[var(--shadow-pop)]", className)}
+        collisionPadding={collisionPadding}
+        className={cn(
+          "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-52 max-w-[calc(100vw-16px)] overflow-y-auto",
+          "rounded-[var(--radius-card)] border border-line bg-white p-1 text-ink shadow-[var(--shadow-pop)] outline-none data-[state=open]:animate-pop-in",
+          className,
+        )}
         {...rest}
       />
     </RadixMenu.Portal>
@@ -36,16 +43,17 @@ export type DropdownMenuItemProps = React.ComponentProps<typeof RadixMenu.Item> 
   href?: Route;
   shortcut?: string;
 };
+
+const ITEM =
+  "relative flex min-h-10 cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[14px] leading-5 text-ink outline-none " +
+  "data-[highlighted]:bg-primary-soft data-[disabled]:pointer-events-none data-[disabled]:text-ink-3 [&_svg]:size-4 [&_svg]:shrink-0";
+
 export function DropdownMenuItem({ icon, destructive, href, shortcut, className, children, asChild, ...rest }: DropdownMenuItemProps) {
-  const cls = cn(
-    "flex cursor-pointer items-center gap-2 px-3 py-2 text-body-md outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-pebble",
-    destructive && "text-danger-text",
-    className,
-  );
+  const cls = cn(ITEM, destructive && "text-danger-text data-[highlighted]:bg-danger-soft", className);
   const content = (
     <>
-      {icon}
-      <span className="flex-1">{children}</span>
+      {icon && <span className={cn("inline-flex", destructive ? "text-danger-text" : "text-ink-2")}>{icon}</span>}
+      <span className="min-w-0 flex-1">{children}</span>
       {shortcut && <span className="text-body-sm text-ink-2">{shortcut}</span>}
     </>
   );
@@ -71,11 +79,11 @@ export function DropdownMenuItem({ icon, destructive, href, shortcut, className,
 }
 
 export function DropdownMenuSeparator({ className, ...rest }: React.ComponentProps<typeof RadixMenu.Separator>) {
-  return <RadixMenu.Separator className={cn("my-1 h-px bg-line", className)} {...rest} />;
+  return <RadixMenu.Separator className={cn("-mx-1 my-1 h-px bg-line", className)} {...rest} />;
 }
 
 export function DropdownMenuLabel({ className, ...rest }: React.ComponentProps<typeof RadixMenu.Label>) {
-  return <RadixMenu.Label className={cn("px-3 py-1 text-eyebrow text-ink-2", className)} {...rest} />;
+  return <RadixMenu.Label className={cn("px-3 pt-2 pb-1 text-eyebrow text-ink-2", className)} {...rest} />;
 }
 
 export type DropdownMenuSwitchItemProps = {
@@ -93,11 +101,21 @@ export function DropdownMenuSwitchItem({ checked, onCheckedChange, children, dis
       disabled={disabled}
       onCheckedChange={(v) => onCheckedChange(v === true)}
       onSelect={(e) => e.preventDefault()}
-      className={cn("flex cursor-pointer items-center justify-between gap-4 px-3 py-2 text-body-md outline-none data-[highlighted]:bg-pebble", className)}
+      className={cn(ITEM, "justify-between gap-4", className)}
     >
-      <span>{children}</span>
-      <span aria-hidden="true" className={cn("inline-flex h-5 w-9 rounded-full p-0.5", checked ? "bg-primary" : "bg-ink-3")}>
-        <span className={cn("size-4 rounded-full bg-white", checked && "translate-x-4")} />
+      <span className="min-w-0 flex-1">{children}</span>
+      <span className="inline-flex items-center gap-2">
+        <span aria-hidden="true" className="w-6 text-right text-body-sm font-semibold text-ink-2">
+          {checked ? "On" : "Off"}
+        </span>
+        <span aria-hidden="true" className={cn("inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors", checked ? "bg-primary" : "bg-ink-3")}>
+          <span
+            className={cn(
+              "block size-4 rounded-full bg-white shadow-[0_1px_2px_rgba(10,37,64,0.3)] transition-transform",
+              checked ? "translate-x-[18px]" : "translate-x-0.5",
+            )}
+          />
+        </span>
       </span>
     </RadixMenu.CheckboxItem>
   );

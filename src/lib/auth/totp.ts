@@ -1,8 +1,10 @@
 // OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
-// TOTP (SPEC AU-09, RFC 6238): SHA-1, 6 digits, 30 second steps, one step of drift accepted. Foundation stub: a
-// complete, dependency-free verify and secret generator (enrollment UI is settings-onboarding).
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+// TOTP (SPEC AU-09, RFC 6238): SHA-1, 6 digits, 30 second steps, one step of drift accepted, plus one-time recovery
+// codes. Pure and dependency free (node:crypto only); the database side (encrypted secrets, hashed recovery codes,
+// replay protection, the /login/two-factor challenge) lives in src/lib/auth/flows/two-factor.ts. The enrollment UI
+// belongs to settings-onboarding.
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -55,17 +57,84 @@ export function totpCode(secretBase32: string, counter: number): string {
   return String(bin % 1_000_000).padStart(6, "0");
 }
 
-/** True when `code` matches the current step or one step of drift either way. */
-export function verifyTotp(secretBase32: string, code: string, opts: { atMs?: number; window?: number } = {}): boolean {
-  const digits = code.replace(/\s/g, "");
-  if (!/^\d{6}$/.test(digits)) return false;
-  const counter = Math.floor((opts.atMs ?? Date.now()) / 30_000);
+/** RFC 6238 step length in seconds. */
+export const TOTP_PERIOD_SECONDS = 30;
+
+/** The 30-second step counter of an instant. */
+export function totpStep(atMs: number = Date.now()): number {
+  return Math.floor(atMs / (TOTP_PERIOD_SECONDS * 1000));
+}
+
+/** Digits of a submitted code ("123 456" and "123-456" accepted), or null when it is not 6 digits. */
+export function normalizeTotpCode(code: string): string | null {
+  const digits = String(code ?? "").replace(/[\s-]/g, "");
+  return /^\d{6}$/.test(digits) ? digits : null;
+}
+
+/**
+ * The step counter that `code` matches (current step or `window` steps of drift either way), or null. Callers that
+ * persist the last accepted step use it to reject a replayed code (RFC 6238 section 5.2).
+ */
+export function matchTotpStep(
+  secretBase32: string,
+  code: string,
+  opts: { atMs?: number; window?: number } = {},
+): number | null {
+  const digits = normalizeTotpCode(code);
+  if (!digits) return null;
+  let secretOk = true;
+  try {
+    base32Decode(secretBase32);
+  } catch {
+    secretOk = false;
+  }
+  if (!secretOk) return null;
+  const counter = totpStep(opts.atMs ?? Date.now());
   const window = opts.window ?? 1;
+  let matched: number | null = null;
+  // Check every step (no early exit) so timing does not reveal which step matched.
   for (let d = -window; d <= window; d++) {
     const expected = Buffer.from(totpCode(secretBase32, counter + d));
-    if (timingSafeEqual(expected, Buffer.from(digits))) return true;
+    if (timingSafeEqual(expected, Buffer.from(digits)) && matched === null) matched = counter + d;
   }
-  return false;
+  return matched;
+}
+
+/** True when `code` matches the current step or one step of drift either way. */
+export function verifyTotp(secretBase32: string, code: string, opts: { atMs?: number; window?: number } = {}): boolean {
+  return matchTotpStep(secretBase32, code, opts) !== null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Recovery codes (AU-09): 10 one-time codes shown once after enrollment ("Download" and "Copy").
+
+/** Number of recovery codes generated per enrollment. */
+export const RECOVERY_CODE_COUNT = 10;
+
+/** Lowercase letters and digits without look-alikes (no 0/o, 1/l/i). */
+const RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+/** `count` random codes formatted "xxxxx-xxxxx" (10 characters, about 49 bits each). */
+export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): string[] {
+  const out = new Set<string>();
+  while (out.size < count) {
+    let code = "";
+    for (let i = 0; i < 10; i++) code += RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)];
+    out.add(`${code.slice(0, 5)}-${code.slice(5)}`);
+  }
+  return [...out];
+}
+
+/** Canonical form for hashing and comparison: lowercase, without spaces and hyphens. */
+export function normalizeRecoveryCode(code: string): string {
+  return String(code ?? "")
+    .toLowerCase()
+    .replace(/[\s-]/g, "");
+}
+
+/** True when the input has the shape of a recovery code (10 characters of the alphabet). */
+export function looksLikeRecoveryCode(code: string): boolean {
+  return /^[a-z0-9]{10}$/.test(normalizeRecoveryCode(code));
 }
 
 /** otpauth:// URI for authenticator apps (QR code). */

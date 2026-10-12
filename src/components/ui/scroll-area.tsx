@@ -1,6 +1,8 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// ScrollArea (ARCHITECTURE 20.2): a scroll container with styled scrollbars (Radix ScrollArea in the final version).
+// ScrollArea (ARCHITECTURE 20.2): a keyboard-scrollable container (focusable region with an accessible name when
+// labelled) with thin, quiet scrollbars. Native scrolling keeps momentum and screen reader behavior intact. Server and
+// client safe.
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 
@@ -16,8 +18,13 @@ export function ScrollArea({ children, maxHeight, orientation = "vertical", clas
   return (
     <div
       tabIndex={0}
+      role={aria["aria-label"] ? "region" : undefined}
       style={{ maxHeight }}
-      className={cn(orientation === "horizontal" ? "overflow-x-auto" : orientation === "both" ? "overflow-auto" : "overflow-y-auto", className)}
+      className={cn(
+        "scrollbar-thin min-w-0 overscroll-contain rounded-[inherit] focus-visible:outline-offset-0",
+        orientation === "horizontal" ? "overflow-x-auto overflow-y-hidden" : orientation === "both" ? "overflow-auto" : "overflow-x-hidden overflow-y-auto",
+        className,
+      )}
       {...aria}
     >
       {children}

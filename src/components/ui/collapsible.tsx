@@ -1,6 +1,7 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Collapsible (ARCHITECTURE 20.2, Radix): Collapsible, CollapsibleTrigger, CollapsibleContent.
+// Collapsible (ARCHITECTURE 20.2, Radix): Collapsible, CollapsibleTrigger, CollapsibleContent ("More options" style
+// disclosures; the trigger gets aria-expanded and aria-controls).
 "use client";
 
 import * as RadixCollapsible from "@radix-ui/react-collapsible";

@@ -1,9 +1,10 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Banner (ARCHITECTURE 20.2): info, success, warning, error; optionally dismissible.
+// Banner (ARCHITECTURE 20.2): info, success, warning, error notices with a default icon per variant, optional title,
+// actions and a dismiss button. Warnings and errors use role="alert"; info and success use role="status".
 "use client";
 
-import { X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
@@ -20,34 +21,51 @@ export type BannerProps = {
   /** Custom icon; false hides it. */
   icon?: React.ReactNode | false;
   className?: string;
+  /** Accessible name of the dismiss button (default "Dismiss"). */
+  dismissLabel?: string;
 };
 
 const VARIANTS: Record<BannerVariant, string> = {
-  info: "bg-[var(--info-soft)] text-ink",
-  success: "bg-[var(--success-soft)] text-[var(--success-text)]",
-  warning: "bg-[var(--warning-soft)] text-[var(--warning-text)]",
-  error: "bg-[var(--danger-soft)] text-danger-text",
+  info: "border-primary-soft-2 bg-info-soft text-ink",
+  success: "border-success-soft bg-success-soft text-success-text",
+  warning: "border-warning-soft bg-warning-soft text-warning-text",
+  error: "border-danger-soft bg-danger-soft text-danger-text",
 };
+const ICON_COLORS: Record<BannerVariant, string> = {
+  info: "text-primary-text",
+  success: "text-success-text",
+  warning: "text-warning-text",
+  error: "text-danger-text",
+};
+const ICONS = { info: Info, success: CheckCircle2, warning: AlertTriangle, error: AlertCircle } as const;
 
-export function Banner({ variant = "info", title, children, action, dismissible, onDismiss, icon, className }: BannerProps) {
+export function Banner({ variant = "info", title, children, action, dismissible, onDismiss, icon, className, dismissLabel = "Dismiss" }: BannerProps) {
   const [hidden, setHidden] = useState(false);
   if (hidden) return null;
+  const DefaultIcon = ICONS[variant];
+  const iconNode = icon === false ? null : (icon ?? <DefaultIcon aria-hidden="true" className="size-5" />);
   return (
-    <div role={variant === "error" || variant === "warning" ? "alert" : "status"} className={cn("flex items-start gap-3 rounded-[var(--radius-card)] px-4 py-3 text-body-md", VARIANTS[variant], className)}>
-      {icon !== false && icon}
-      <div className="flex-1">
-        {title && <p className="font-semibold">{title}</p>}
-        {children}
+    <div
+      role={variant === "error" || variant === "warning" ? "alert" : "status"}
+      className={cn("flex min-w-0 items-start gap-3 rounded-[var(--radius-card)] border px-4 py-3 text-[14px] leading-5", VARIANTS[variant], className)}
+    >
+      {iconNode && <span className={cn("mt-px inline-flex shrink-0 [&_svg]:size-5", ICON_COLORS[variant])}>{iconNode}</span>}
+      <div className="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          {title && <p className="font-semibold">{title}</p>}
+          {children && <div className={cn(title && "mt-0.5")}>{children}</div>}
+        </div>
+        {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
       </div>
-      {action}
       {dismissible && (
         <button
           type="button"
-          aria-label="Dismiss"
+          aria-label={dismissLabel}
           onClick={() => {
             setHidden(true);
             onDismiss?.();
           }}
+          className="-mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full opacity-80 hover:bg-black/5 hover:opacity-100"
         >
           <X aria-hidden="true" className="size-4" />
         </button>

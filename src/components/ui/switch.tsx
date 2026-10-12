@@ -1,9 +1,11 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Switch (ARCHITECTURE 20.2): 36x20 toggle with optional On/Off state label. Foundation stub: a role="switch" button.
+// Switch (ARCHITECTURE 20.2, walkthrough 1.5, Radix Switch): 36x20 track (#A6BBD1 off, #006BFF on) with a white knob,
+// optional "On" / "Off" state label and a visible label (its accessible name). With `name` it submits "on" or "off".
 "use client";
 
-import { useState } from "react";
+import * as RadixSwitch from "@radix-ui/react-switch";
+import { useId, useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 
@@ -23,35 +25,65 @@ export type SwitchProps = {
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
+  /** Put the label before the switch (settings rows). */
+  labelPosition?: "start" | "end";
 };
 
-export function Switch({ checked, defaultChecked, onCheckedChange, disabled, id, name, label, showStateLabel, size = "md", className, ...aria }: SwitchProps) {
+export function Switch({
+  checked,
+  defaultChecked,
+  onCheckedChange,
+  disabled,
+  id,
+  name,
+  label,
+  showStateLabel,
+  size = "md",
+  className,
+  labelPosition = "end",
+  ...aria
+}: SwitchProps) {
+  const generated = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const switchId = id ?? `sw-${generated}`;
   const [inner, setInner] = useState(defaultChecked ?? false);
   const on = checked ?? inner;
+  const labelEl = label ? (
+    <label htmlFor={switchId} className={cn("cursor-pointer text-[14px] leading-5 text-ink", disabled && "cursor-not-allowed text-ink-2")}>
+      {label}
+    </label>
+  ) : null;
   return (
-    <span className={cn("inline-flex items-center gap-2", className)}>
-      <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={on}
+    <span className={cn("inline-flex items-center gap-2.5", className)}>
+      {labelPosition === "start" && labelEl}
+      <RadixSwitch.Root
+        id={switchId}
+        checked={on}
         disabled={disabled}
-        onClick={() => {
-          if (checked === undefined) setInner(!on);
-          onCheckedChange?.(!on);
+        onCheckedChange={(v) => {
+          if (checked === undefined) setInner(v);
+          onCheckedChange?.(v);
         }}
-        className={cn("relative inline-flex shrink-0 rounded-full transition-colors disabled:opacity-50", size === "sm" ? "h-4 w-7" : "h-5 w-9", on ? "bg-primary" : "bg-ink-3")}
         {...aria}
+        className={cn(
+          "relative inline-flex shrink-0 items-center rounded-full transition-colors duration-150",
+          "bg-ink-3 data-[state=checked]:bg-primary disabled:cursor-not-allowed disabled:opacity-50",
+          size === "sm" ? "h-4 w-7" : "h-5 w-9",
+        )}
       >
-        <span className={cn("absolute top-0.5 rounded-full bg-white transition-transform", size === "sm" ? "size-3" : "size-4", on ? "translate-x-[18px]" : "translate-x-0.5")} />
-      </button>
+        <RadixSwitch.Thumb
+          className={cn(
+            "pointer-events-none block rounded-full bg-white shadow-[0_1px_2px_rgba(10,37,64,0.3)] transition-transform duration-150",
+            size === "sm" ? "size-3 translate-x-0.5 data-[state=checked]:translate-x-[14px]" : "size-4 translate-x-0.5 data-[state=checked]:translate-x-[18px]",
+          )}
+        />
+      </RadixSwitch.Root>
       {name && <input type="hidden" name={name} value={on ? "on" : "off"} />}
-      {showStateLabel && <span className="text-body-sm text-ink-2">{on ? "On" : "Off"}</span>}
-      {label && (
-        <label htmlFor={id} className="text-body-md">
-          {label}
-        </label>
+      {showStateLabel && (
+        <span aria-hidden="true" className="min-w-6 text-body-sm font-semibold text-ink-2">
+          {on ? "On" : "Off"}
+        </span>
       )}
+      {labelPosition === "end" && labelEl}
     </span>
   );
 }

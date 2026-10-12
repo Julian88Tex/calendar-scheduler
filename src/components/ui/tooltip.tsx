@@ -1,6 +1,7 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Tooltip (ARCHITECTURE 20.2, Radix): wraps one focusable trigger element.
+// Tooltip (ARCHITECTURE 20.2, Radix): wraps one focusable trigger element; shows on hover and keyboard focus, hides on
+// Escape. Navy chip with 12px text (theme aware).
 "use client";
 
 import * as RadixTooltip from "@radix-ui/react-tooltip";
@@ -21,11 +22,21 @@ export type TooltipProps = {
 export function Tooltip({ content, children, side = "top", align = "center", delayDuration = 300, disabled, className }: TooltipProps) {
   if (disabled) return children;
   return (
-    <RadixTooltip.Provider delayDuration={delayDuration}>
+    <RadixTooltip.Provider delayDuration={delayDuration} skipDelayDuration={200}>
       <RadixTooltip.Root>
         <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
         <RadixTooltip.Portal>
-          <RadixTooltip.Content side={side} align={align} sideOffset={6} className={cn("z-50 rounded bg-ink px-2 py-1 text-body-sm text-white", className)}>
+          <RadixTooltip.Content
+            side={side}
+            align={align}
+            sideOffset={6}
+            collisionPadding={8}
+            className={cn(
+              "z-[70] max-w-60 rounded-[4px] bg-navy px-2.5 py-1.5 text-[12px] leading-4 font-semibold text-surface shadow-[var(--shadow-pop)]",
+              "data-[state=delayed-open]:animate-fade-in data-[state=instant-open]:animate-fade-in",
+              className,
+            )}
+          >
             {content}
           </RadixTooltip.Content>
         </RadixTooltip.Portal>

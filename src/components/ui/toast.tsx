@@ -1,10 +1,11 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// Toasts (ARCHITECTURE 20.2): toast("Changes saved"), toast.success(...), toast.error(...), toast.info(...),
+// Toasts (ARCHITECTURE 20.2, SPEC GEN-12): toast("Changes saved"), toast.success(...), toast.error(...), toast.info(...),
 // toast.dismiss(id?) from any client component; <Toaster /> (root layout) renders them bottom-center in an aria-live
-// region. Foundation stub: a tiny module-level store.
+// region (errors use role="alert"). A tiny module-level store; timers pause while the pointer is over a toast.
 "use client";
 
+import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
@@ -23,24 +24,56 @@ export type ToastOptions = {
 
 export type ToastItem = { id: string; message: React.ReactNode; kind: ToastKind; description?: React.ReactNode; action?: ToastOptions["action"] };
 
+const MAX_VISIBLE = 4;
 let items: ToastItem[] = [];
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
+const timers = new Map<string, { handle: ReturnType<typeof setTimeout> | null; duration: number }>();
 let counter = 0;
 
+function clearTimer(id: string) {
+  const t = timers.get(id);
+  if (t?.handle) clearTimeout(t.handle);
+}
+
+function schedule(id: string, duration: number) {
+  clearTimer(id);
+  if (!Number.isFinite(duration)) {
+    timers.set(id, { handle: null, duration });
+    return;
+  }
+  timers.set(id, { handle: setTimeout(() => dismiss(id), duration), duration });
+}
+
 function dismiss(id?: string): void {
-  items = id ? items.filter((t) => t.id !== id) : [];
+  if (id) {
+    clearTimer(id);
+    timers.delete(id);
+    items = items.filter((t) => t.id !== id);
+  } else {
+    for (const key of timers.keys()) clearTimer(key);
+    timers.clear();
+    items = [];
+  }
   emit();
 }
 
 function show(message: React.ReactNode, opts: ToastOptions = {}): string {
   const id = opts.id ?? `toast-${++counter}`;
   const kind = opts.kind ?? "info";
-  items = [...items.filter((t) => t.id !== id), { id, message, kind, description: opts.description, action: opts.action }];
+  items = [...items.filter((t) => t.id !== id), { id, message, kind, description: opts.description, action: opts.action }].slice(-MAX_VISIBLE);
   emit();
-  const duration = opts.durationMs ?? (kind === "error" ? 6000 : 4000);
-  if (Number.isFinite(duration)) setTimeout(() => dismiss(id), duration);
+  schedule(id, opts.durationMs ?? (kind === "error" ? 6000 : 4000));
   return id;
+}
+
+/** Pauses (pointer over the toast) and resumes (pointer left) the auto-dismiss timer. */
+function pause(id: string) {
+  clearTimer(id);
+}
+function resume(id: string) {
+  const t = timers.get(id);
+  if (t) schedule(id, Math.min(t.duration, 2500));
 }
 
 export const toast = Object.assign(show, {
@@ -69,28 +102,46 @@ export type ToastProps = {
   className?: string;
 };
 
+const ICONS = { success: CheckCircle2, error: AlertCircle, info: Info } as const;
+const ICON_COLORS = { success: "text-[#70e1ac]", error: "text-[#ff906b]", info: "text-[#8cc6fd]" } as const;
+
 /** One toast (rendered by <Toaster />; also usable inline, for example on /app/dev/ui). */
 export function Toast({ message, kind = "info", description, action, onDismiss, className }: ToastProps) {
+  const Icon = ICONS[kind];
   return (
     <div
+      role={kind === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex items-center gap-3 rounded-[var(--radius-card)] px-4 py-3 text-body-md text-white shadow-[var(--shadow-pop)]",
-        kind === "error" ? "bg-danger" : kind === "success" ? "bg-success" : "bg-ink",
+        "pointer-events-auto flex w-full max-w-[min(440px,calc(100vw-32px))] min-w-0 items-start gap-3 rounded-[var(--radius-card)] bg-[#0a2540] px-4 py-3 text-[14px] leading-5 text-white shadow-[var(--shadow-pop)] sm:min-w-80",
+        "animate-toast-in",
         className,
       )}
     >
-      <div>
-        <p>{message}</p>
-        {description && <p className="text-body-sm opacity-90">{description}</p>}
+      <Icon aria-hidden="true" className={cn("mt-px size-5 shrink-0", ICON_COLORS[kind])} />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold break-words">{message}</p>
+        {description && <p className="mt-0.5 text-[13px] break-words text-white/85">{description}</p>}
       </div>
       {action && (
-        <button type="button" className="font-semibold underline" onClick={action.onClick}>
+        <button
+          type="button"
+          className="shrink-0 rounded-full px-2 py-0.5 font-semibold text-[#8cc6fd] underline-offset-2 hover:underline focus-visible:outline-white"
+          onClick={() => {
+            action.onClick();
+            onDismiss?.();
+          }}
+        >
           {action.label}
         </button>
       )}
       {onDismiss && (
-        <button type="button" aria-label="Dismiss" className="ml-2" onClick={onDismiss}>
-          &times;
+        <button
+          type="button"
+          aria-label="Dismiss"
+          className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-white"
+          onClick={onDismiss}
+        >
+          <X aria-hidden="true" className="size-4" />
         </button>
       )}
     </div>
@@ -104,18 +155,17 @@ export function Toaster({ position = "bottom-center" }: ToasterProps) {
   return (
     <div
       aria-live="polite"
-      role="status"
-      className={cn("pointer-events-none fixed left-1/2 z-[60] flex -translate-x-1/2 flex-col gap-2", position === "bottom-center" ? "bottom-6" : "top-6")}
+      aria-label="Notifications"
+      role="region"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-[80] flex flex-col items-center gap-2 px-4",
+        position === "bottom-center" ? "bottom-6" : "top-6",
+      )}
     >
       {list.map((t) => (
-        <Toast
-          key={t.id}
-          message={t.message}
-          kind={t.kind}
-          description={t.description}
-          action={t.action}
-          onDismiss={() => dismiss(t.id)}
-        />
+        <div key={t.id} className="flex w-full justify-center" onMouseEnter={() => pause(t.id)} onMouseLeave={() => resume(t.id)}>
+          <Toast message={t.message} kind={t.kind} description={t.description} action={t.action} onDismiss={() => dismiss(t.id)} />
+        </div>
       ))}
     </div>
   );

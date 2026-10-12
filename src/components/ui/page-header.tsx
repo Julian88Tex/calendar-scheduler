@@ -1,7 +1,9 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// PageHeader (ARCHITECTURE 20.2): the page title (h1), optional description, actions and help link. Server and client
-// safe.
+// PageHeader (ARCHITECTURE 20.2, walkthrough 4.2): the page title (h1, 28px bold #0A2540), optional badge, description,
+// a small "?" help link, actions on the right (wrapping under the title on phones) and an optional back link above.
+// Server and client safe.
+import { ArrowLeft, HelpCircle } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import type * as React from "react";
@@ -21,30 +23,37 @@ export type PageHeaderProps = {
 };
 
 export function PageHeader({ title, description, actions, helpHref, helpLabel = "Learn more", back, badge, className }: PageHeaderProps) {
+  const external = helpHref ? /^https?:\/\//.test(helpHref) : false;
   return (
-    <header className={cn("mb-6 flex flex-col gap-2", className)}>
+    <header className={cn("mb-6 flex min-w-0 flex-col gap-2", className)}>
       {back && (
-        <Link href={back.href} className="text-body-md text-primary-text">
+        <Link
+          href={back.href}
+          className="inline-flex w-fit items-center gap-1.5 rounded-full py-1 pr-2 text-[14px] font-semibold text-primary-text hover:underline"
+        >
+          <ArrowLeft aria-hidden="true" className="size-4" />
           {back.label}
         </Link>
       )}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <h1 className="text-headline-3">{title}</h1>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="min-w-0 text-[24px] leading-8 font-bold break-words text-ink sm:text-headline-2">{title}</h1>
           {badge}
-        </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
-      </div>
-      {(description || helpHref) && (
-        <p className="text-body-md text-ink-2">
-          {description}{" "}
           {helpHref && (
-            <a href={helpHref} className="text-primary-text underline">
-              {helpLabel}
+            <a
+              href={helpHref}
+              aria-label={helpLabel}
+              title={helpLabel}
+              {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-primary-soft hover:text-primary-text"
+            >
+              <HelpCircle aria-hidden="true" className="size-5" />
             </a>
           )}
-        </p>
-      )}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </div>
+      {description && <p className="max-w-3xl text-body-md text-ink-2">{description}</p>}
     </header>
   );
 }

@@ -1,14 +1,17 @@
-// OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
-//
 // Signup policy (SPEC AU-11): instance setting signup_policy ("invite_only" default once an account exists, "open",
 // "domains" with signup_domains), overridden by the SIGNUP_POLICY env var. The very first signup of a fresh instance is
-// always allowed and becomes the instance admin and org owner. Invitation acceptance bypasses the policy.
-// Foundation stub: a minimal real implementation of these rules (foundation-auth owns and extends it).
+// always allowed and becomes the instance admin and org owner. ADMIN_EMAILS addresses may always sign up (they become
+// instance admins once their email is verified, src/lib/authz.ts). Invitation acceptance bypasses the policy.
+//
+// signupPolicyAllows() reads the user count, so a caller that creates an account must evaluate it inside the signup
+// transaction after taking the signup advisory lock (createAccountUnderPolicy in src/lib/auth/signup.ts); otherwise
+// two simultaneous first signups could both become instance admin.
 import "server-only";
 import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { instanceSettings, organizations, users } from "@/db/schema";
-import { getEnv } from "@/lib/env";
+import { adminEmails, getEnv } from "@/lib/env";
+import { normalizeEmail } from "@/lib/validation";
 
 export type SignupPolicy = "invite_only" | "open" | "domains";
 
@@ -18,39 +21,103 @@ export type SignupDecision =
 
 export const SIGNUPS_CLOSED_MESSAGE = "Sign ups are closed. Ask an admin for an invitation.";
 
+/** Labels of the instance setting "Who can sign up" (Admin > Instance). */
+export const SIGNUP_POLICY_LABELS: Record<SignupPolicy, string> = {
+  invite_only: "Only people I invite",
+  open: "Anyone",
+  domains: "Anyone with an email at these domains",
+};
+
 function asPolicy(value: unknown): SignupPolicy | null {
   return value === "invite_only" || value === "open" || value === "domains" ? value : null;
 }
 
+/** True when SIGNUP_POLICY is set (the admin setting is then read only). */
+export function signupPolicyFromEnv(): SignupPolicy | null {
+  return asPolicy(getEnv().SIGNUP_POLICY);
+}
+
 /** The effective policy: SIGNUP_POLICY env, else the instance setting, else invite_only. */
 export async function getSignupPolicy(db?: DbOrTx): Promise<SignupPolicy> {
-  const fromEnv = asPolicy(getEnv().SIGNUP_POLICY);
+  const fromEnv = signupPolicyFromEnv();
   if (fromEnv) return fromEnv;
   const d = db ?? (await getDb());
   const [row] = await d.select({ value: instanceSettings.value }).from(instanceSettings).where(eq(instanceSettings.key, "signup_policy")).limit(1);
   return asPolicy(row?.value) ?? "invite_only";
 }
 
+/** Lowercase email domains allowed by the "domains" policy (instance setting signup_domains). */
+export async function getSignupDomains(db?: DbOrTx): Promise<string[]> {
+  const d = db ?? (await getDb());
+  const [row] = await d.select({ value: instanceSettings.value }).from(instanceSettings).where(eq(instanceSettings.key, "signup_domains")).limit(1);
+  if (!Array.isArray(row?.value)) return [];
+  return (row.value as unknown[])
+    .map((v) => String(v).trim().toLowerCase().replace(/^@/, ""))
+    .filter((v) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(v));
+}
+
+/** The domain part of an email ("" when malformed). */
+export function emailDomain(email: string): string {
+  const at = normalizeEmail(email).lastIndexOf("@");
+  return at > 0 ? normalizeEmail(email).slice(at + 1) : "";
+}
+
+/** True when the email is listed in ADMIN_EMAILS. */
+export function isAdminEmail(email: string): boolean {
+  return adminEmails().includes(normalizeEmail(email));
+}
+
+/** Live (not deleted) accounts on the instance. */
+export async function countLiveUsers(db?: DbOrTx): Promise<number> {
+  const d = db ?? (await getDb());
+  const [{ n } = { n: 0 }] = await d.select({ n: count() }).from(users).where(isNull(users.deletedAt));
+  return Number(n);
+}
+
+/** The oldest live organization (the "domains" policy joins it as User). */
+async function firstOrganizationId(db: DbOrTx): Promise<string | null> {
+  const [org] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(and(isNull(organizations.deletedAt)))
+    .orderBy(asc(organizations.createdAt))
+    .limit(1);
+  return org?.id ?? null;
+}
+
 /** Whether a new account may be created for this email (outside an invitation). */
 export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } = {}): Promise<SignupDecision> {
   const db = opts.db ?? (await getDb());
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(users).where(isNull(users.deletedAt));
+  const n = await countLiveUsers(db);
   const policy = await getSignupPolicy(db);
-  if (Number(n) === 0) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
+  if (n === 0) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
   if (policy === "open") return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
+  let domainMatch = false;
   if (policy === "domains") {
-    const [row] = await db.select({ value: instanceSettings.value }).from(instanceSettings).where(eq(instanceSettings.key, "signup_domains")).limit(1);
-    const domains = Array.isArray(row?.value) ? (row.value as unknown[]).map((d) => String(d).toLowerCase()) : [];
-    const domain = email.trim().toLowerCase().split("@")[1] ?? "";
-    if (domain && domains.includes(domain)) {
-      const [org] = await db
-        .select({ id: organizations.id })
-        .from(organizations)
-        .where(and(isNull(organizations.deletedAt)))
-        .orderBy(asc(organizations.createdAt))
-        .limit(1);
-      return { allowed: true, firstUser: false, policy, joinOrganizationId: org?.id ?? null };
-    }
+    const domain = emailDomain(email);
+    domainMatch = Boolean(domain && (await getSignupDomains(db)).includes(domain));
+    if (domainMatch) return { allowed: true, firstUser: false, policy, joinOrganizationId: await firstOrganizationId(db) };
   }
+  if (isAdminEmail(email)) return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
   return { allowed: false, firstUser: false, policy, message: SIGNUPS_CLOSED_MESSAGE };
+}
+
+export type SignupAvailability = {
+  policy: SignupPolicy;
+  /** No account exists yet: the next signup becomes the instance admin. */
+  firstUser: boolean;
+  /**
+   * Whether /signup shows the form. False only when nobody without an invitation can sign up (invite_only with
+   * accounts and no ADMIN_EMAILS); the "domains" policy shows the form and checks the email on submit.
+   */
+  open: boolean;
+};
+
+/** What the signup and login pages show (closed message, "Sign up for free" link). */
+export async function getSignupAvailability(db?: DbOrTx): Promise<SignupAvailability> {
+  const d = db ?? (await getDb());
+  const [n, policy] = await Promise.all([countLiveUsers(d), getSignupPolicy(d)]);
+  const firstUser = n === 0;
+  const open = firstUser || policy !== "invite_only" || adminEmails().length > 0;
+  return { policy, firstUser, open };
 }
