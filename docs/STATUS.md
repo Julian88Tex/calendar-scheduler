@@ -5,8 +5,21 @@ Updated after every finished module. Scope was reduced to the features the owner
 
 ## Testable right now
 
-- Nothing interactive yet. The foundation is done (database, sessions, background jobs, placeholder pages), so the
-  app runs and every sidebar link opens, but each page says "This page is being built."
+Run locally (no database or accounts needed): check out the `claude/scheduler-app` branch, then
+`npm install`, `npm run db:seed -- --demo`, `npm run dev`, and open http://localhost:3000. Sign in with
+`owner@example.com` / `password123`.
+
+What works:
+- Public booking flow: http://localhost:3000/julianjoseph (profile), pick an event type, pick a date and time,
+  enter details (the meal event offers the 9 locations), book, and see the "You are scheduled" confirmation page with
+  add-to-calendar links. The booking respects schedules, buffers, increments and limits.
+- Availability (sidebar > Availability): edit weekly hours and date-specific hours, switch schedules, set meeting
+  limits under Advanced, and open the Troubleshoot view to see why any time is unavailable.
+- Google Calendar settings (Availability > Calendar settings) work once a Google OAuth client is configured
+  (docs/GOOGLE_SETUP.md); without it the app runs with no calendar conflicts.
+
+Not working yet (being built): editing event types, confirmation/cancel/reschedule emails and the cancel and
+reschedule pages, the Meetings list, meeting polls, profile settings.
 
 ## Milestones (in build order)
 
@@ -20,7 +33,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | foundation-platform | Email sending with Calendly-style layout and calendar invites, background jobs, cron | done |
 | slot-engine | The scheduling brain: hours, buffers, minimum notice, increments, limits, DST, why-blocked diagnostics | done |
 | booking-core | Taking a booking safely (no double booking), daily/weekly and account-wide limits, slot API | done |
-| booking-pages | Your profile page, the month calendar and time slots, details form, confirmation page | building |
+| booking-pages | Your profile page, the month calendar and time slots, details form, confirmation page | done |
 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |

@@ -6,7 +6,7 @@
 //   npm run db:seed -- --scenario=team      owner plus 2 members, team "Sales" with round robin and collective types
 //   npm run db:seed -- --scenario=empty     only migrations
 //
-// Runs through tsx with NODE_OPTIONS=--conditions=react-server (so "server-only" resolves to an empty module) and
+// Runs through tsx with NODE_OPTIONS=--import=./scripts/server-only-hook.mjs (so "server-only" resolves to an empty module) and
 // may import any src/** module. Uses the same database as the app: DATABASE_URL / POSTGRES_URL, else PGlite at
 // PGLITE_DIR or .data/pglite (stop `next dev` first: one process per PGlite directory). The scenarios live in
 // scripts/seed-scenarios.ts (shared with POST /api/test/seed) and the data in scripts/seed-data.ts.

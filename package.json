@@ -19,7 +19,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "NODE_OPTIONS=--conditions=react-server tsx scripts/seed.ts",
+    "db:seed": "NODE_OPTIONS=--import=./scripts/server-only-hook.mjs tsx scripts/seed.ts",
     "check:dashes": "node scripts/check-dashes.mjs",
     "check:bundle": "node scripts/check-bundle-size.mjs"
   },
