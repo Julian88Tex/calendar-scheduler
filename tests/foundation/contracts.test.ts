@@ -20,7 +20,8 @@ function filesUnder(dir: string): string[] {
   return out;
 }
 
-const header = (owner: string) => `OWNER: ${owner}. Stub created by foundation`;
+// Implemented files keep "OWNER: <id>." and may drop the "Stub created by foundation" sentence.
+const header = (owner: string) => `OWNER: ${owner}.`;
 
 describe("handover files", () => {
   for (const { path: p, owner } of workplan.foundation.handover) {
@@ -261,18 +262,13 @@ describe("component contracts", () => {
     });
   }
 
-  it("the sidebar lists every GEN-20 nav item in order", async () => {
+  it("the sidebar lists the GEN-20 nav items kept by docs/SCOPE.md, in order", async () => {
     const { ALL_NAV } = await import("@/components/shell/nav");
     expect(ALL_NAV.map((i) => [i.label, i.href])).toEqual([
       ["Scheduling", "/app/scheduling"],
       ["Meetings", "/app/meetings"],
       ["Availability", "/app/availability"],
-      ["Contacts", "/app/contacts"],
-      ["Workflows", "/app/workflows"],
       ["Integrations & apps", "/app/integrations"],
-      ["Routing", "/app/routing"],
-      ["Analytics", "/app/analytics"],
-      ["Admin center", "/app/admin"],
     ]);
   });
 });

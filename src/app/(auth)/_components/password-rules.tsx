@@ -1,4 +1,4 @@
-// OWNER: foundation-auth.
+// OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // The AU-01 password rule hint shown under "Choose a password" (signup) and "New password" (reset): "At least 8
 // characters" and "At least one letter and one number", each turning green with a check as it is met. The list is the
