@@ -133,6 +133,8 @@ describe("validateDraft", () => {
     expect(errorsOf({ ...base(), afterBooking: "redirect", redirectUrl: "" }).redirectUrl).toEqual([MESSAGES.redirectRequired]);
     expect(errorsOf({ ...base(), afterBooking: "redirect", redirectUrl: "javascript:alert(1)" }).redirectUrl).toEqual([MESSAGES.url]);
     expect(validateDraft({ ...base(), afterBooking: "redirect", redirectUrl: "https://example.com/thanks" }).ok).toBe(true);
+    // With the confirmation page the redirect field is hidden: a leftover value never blocks the save.
+    expect(validateDraft({ ...base(), afterBooking: "confirmation_page", redirectUrl: "not a url" }).ok).toBe(true);
     const link = { label: "Docs", url: "https://example.com" };
     expect(errorsOf({ ...base(), confirmationLinks: Array.from({ length: 6 }, () => link) }).confirmationLinks).toEqual([MESSAGES.linksTooMany]);
     expect(errorsOf({ ...base(), confirmationLinks: [{ label: "", url: "https://example.com" }] })["confirmationLinks.0.label"]).toEqual([MESSAGES.linkName]);
@@ -201,5 +203,25 @@ describe("sections", () => {
     expect(parseEditorSection("limits")).toBe("limits");
     expect(parseEditorSection(["bookingPage"])).toBe("bookingPage");
     expect(parseEditorSection("nope")).toBeNull();
+  });
+});
+
+describe("invalid number input (NaN in the draft)", () => {
+  it("fails validation on the field instead of saving the last valid value", () => {
+    const nan = Number.NaN;
+    const errors = errorsOf({
+      ...base(),
+      limitPerDay: nan,
+      bufferBeforeMinutes: nan,
+      slotIncrementMinutes: nan,
+      minimumNoticeMinutes: nan,
+      dateRange: { ...base().dateRange, days: nan },
+    });
+    expect(errors.limitPerDay).toEqual([MESSAGES.limit]);
+    expect(errors.bufferBeforeMinutes).toEqual([MESSAGES.buffer]);
+    expect(errors.slotIncrementMinutes).toEqual([MESSAGES.increment]);
+    expect(errors.minimumNoticeMinutes).toEqual([MESSAGES.notice]);
+    expect(errors["dateRange.days"]).toEqual([MESSAGES.dateRangeDays]);
+    expect(firstErrorSection(errors)).toBe("availability");
   });
 });

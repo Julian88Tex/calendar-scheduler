@@ -19,11 +19,11 @@ import { RadioGroup } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
 import { dayOrder, formatDayIntervals, formatOverrideDate, WEEKDAY_SHORT, type ScheduleContent } from "@/lib/availability/intervals";
 import { scheduleHref } from "@/lib/availability/links";
-import { DATE_RANGE_DAYS_MAX, DATE_RANGE_DAYS_MIN, NOTICE_MAX_MINUTES } from "@/lib/event-types/constants";
-import { noticeText, noticeUnitOf, rollingRangeText, scheduleContentOf } from "@/lib/event-types/draft";
+import { DATE_RANGE_DAYS_MAX, DATE_RANGE_DAYS_MIN } from "@/lib/event-types/constants";
+import { noticeMinutesOf, noticeText, noticeUnitOf, rollingRangeText, scheduleContentOf, wholeNumberIn } from "@/lib/event-types/draft";
 import type { DateRangeDraft, EditorScheduleOption, ScheduleChoiceDraft } from "@/lib/event-types/types";
 import { formatZoneLabel } from "@/lib/time/format";
-import { errorOf, InlineDropdownButton, wholeNumberIn, type SectionProps } from "./fields";
+import { errorOf, InlineDropdownButton, type SectionProps } from "./fields";
 
 type Props = SectionProps & {
   schedules: EditorScheduleOption[];
@@ -142,15 +142,6 @@ function RangePopover({ value, onChange, disabled, today, error, weekStart }: { 
       </div>
     </Popover>
   );
-}
-
-/** Minutes of a typed notice amount in a unit of `factor` minutes, or null when invalid (SCH-06: 0 to 365 days). */
-export function noticeMinutesOf(text: string, factor: number): number | null {
-  if (!text.trim()) return null;
-  const n = Number(text);
-  if (!Number.isFinite(n) || n < 0) return null;
-  const minutes = Math.round(n * factor * 1e6) / 1e6;
-  return Number.isInteger(minutes) && minutes <= NOTICE_MAX_MINUTES ? minutes : null;
 }
 
 function NoticePopover({ minutes, onChange, disabled, error }: { minutes: number; onChange: (m: number) => void; disabled: boolean; error: string | null }) {

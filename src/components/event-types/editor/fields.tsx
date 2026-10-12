@@ -8,6 +8,7 @@ import type * as React from "react";
 import { FIELD_BASE } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
+import { wholeNumberIn } from "@/lib/event-types/draft";
 import type { EventTypeDraft } from "@/lib/event-types/types";
 
 export type SectionErrors = Record<string, string[]>;
@@ -36,13 +37,6 @@ export type SectionProps = {
   errors: SectionErrors;
   disabled: boolean;
 };
-
-/** The whole number typed in `text` when it lies in [min, max], else null. */
-export function wholeNumberIn(text: string, min: number, max: number): number | null {
-  if (!text.trim()) return null;
-  const n = Number(text);
-  return Number.isInteger(n) && n >= min && n <= max ? n : null;
-}
 
 /** "0 min", "15 min", "1 hr", "1.5 hrs", "2 hrs" (Calendly's buffer and increment labels). */
 export function minutesLabel(m: number): string {

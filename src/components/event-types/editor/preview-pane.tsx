@@ -44,9 +44,16 @@ export type PreviewPaneProps = {
   className?: string;
   /** Scale the desktop layout to fit (side pane); false renders at the pane width (phone preview). */
   scaled?: boolean;
+  /**
+   * False while the pane is hidden (phones before "Preview" is tapped): the booking page and its availability requests
+   * are not loaded until the preview is first shown, then the frame stays mounted.
+   */
+  active?: boolean;
 };
 
-export function PreviewPane({ previewPath, draft, availabilityDirty, reloadKey, className, scaled = true }: PreviewPaneProps) {
+export function PreviewPane({ previewPath, draft, availabilityDirty, reloadKey, className, scaled = true, active = true }: PreviewPaneProps) {
+  const [mounted, setMounted] = useState(active);
+  if (active && !mounted) setMounted(true);
   const frame = useRef<HTMLIFrameElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
   const latest = useRef(draft);
@@ -113,7 +120,7 @@ export function PreviewPane({ previewPath, draft, availabilityDirty, reloadKey, 
         </div>
       )}
       <div ref={box} className="relative min-h-0 flex-1 overflow-hidden">
-        {previewPath ? (
+        {!mounted ? null : previewPath ? (
           <>
             {!loaded && (
               <div aria-hidden="true" className="absolute inset-0 flex items-start justify-center p-10">

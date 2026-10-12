@@ -75,13 +75,10 @@ test.describe("workflows: email reminders", () => {
     await api.setTime(null);
     await loginAs(page, seeded.owner.email);
     const id = seeded.owner.eventTypeIds["30min"]!;
-    await page.goto(`/app/event-types/${id}`);
+    await page.goto(`/app/event-types/${id}?section=notifications`);
+    // The editor keeps Calendly's collapsed "More options" sections; ?section=notifications opens and scrolls to it.
     const section = page.getByTestId("event-type-reminders");
-    const mounted = await section
-      .waitFor({ state: "visible", timeout: 15_000 })
-      .then(() => true)
-      .catch(() => false);
-    test.skip(!mounted, "The event type editor does not mount EventTypeWorkflowsSection yet (event-types-editor module).");
+    await expect(section).toBeVisible({ timeout: 15_000 });
 
     await expect(section.getByText("Email reminders", { exact: true })).toBeVisible();
     await expect(section.getByText("Sent 24 hours before event")).toBeVisible();

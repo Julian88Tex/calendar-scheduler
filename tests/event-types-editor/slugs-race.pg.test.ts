@@ -10,7 +10,7 @@ vi.mock("@/lib/conferencing", () => ({ getConferencingOptions: vi.fn(async () =>
 
 const { eventTypes } = await import("@/db/schema");
 const { loadActorCtx } = await import("@/lib/authz");
-const { duplicateEventType, getNewEventTypeEditorData, saveEventType } = await import("@/lib/event-types");
+const { duplicateEventType, getEventTypeEditorData, getNewEventTypeEditorData, reorderEventTypes, saveEventType } = await import("@/lib/event-types");
 const f = await import("../factories");
 const { createTestDb } = await import("../helpers/db");
 
@@ -48,6 +48,40 @@ describe.runIf(process.env.TEST_DATABASE_URL)("event type slug races on real Pos
       const original = typed.find((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof saveEventType>>> => r.status === "fulfilled")!.value;
       const copies = await Promise.all(Array.from({ length: 3 }, () => duplicateEventType(t.db, actor, original.id)));
       expect(new Set(copies.map((c) => c.slug))).toEqual(new Set(["coffee-copy", "coffee-copy-2", "coffee-copy-3"]));
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("reorders, duplicates and saves of one profile running together never deadlock", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 16 });
+    try {
+      const user = await f.createUser(t.db);
+      await f.createSchedule(t.db, { userId: user.id });
+      const actor = await loadActorCtx(t.db, user);
+      const base = (await getNewEventTypeEditorData(actor, t.db)).draft;
+      const created = [];
+      for (const name of ["A", "B", "C", "D"]) created.push(await saveEventType(t.db, actor, { id: null, version: null, draft: { ...base, name } }));
+      const ids = created.map((c) => c.id);
+      for (let round = 0; round < 4; round++) {
+        const editors = await Promise.all(ids.slice(0, 2).map((id) => getEventTypeEditorData(actor, id, t.db)));
+        const results = await Promise.allSettled([
+          reorderEventTypes(t.db, actor, [...ids].reverse()),
+          duplicateEventType(t.db, actor, ids[0]!),
+          reorderEventTypes(t.db, actor, ids),
+          ...editors.map((e, i) =>
+            saveEventType(t.db, actor, { id: ids[i]!, version: null, draft: { ...e!.draft, bufferAfterMinutes: 5 * (round + 1) } }),
+          ),
+          duplicateEventType(t.db, actor, ids[1]!),
+        ]);
+        const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => String(r.reason));
+        expect(failures).toEqual([]);
+      }
+      const rows = await t.db
+        .select({ position: eventTypes.position })
+        .from(eventTypes)
+        .where(and(eq(eventTypes.ownerUserId, user.id), isNull(eventTypes.deletedAt)));
+      expect(rows).toHaveLength(4 + 4 * 2);
     } finally {
       await t.close();
     }

@@ -174,6 +174,35 @@ test.describe("event type editor", () => {
     await expect(page.getByRole("combobox", { name: "Schedule" })).toContainText("Block Off Work");
   });
 
+  test("invalid numbers stop the save on their field; removing the default duration promotes the next one", async ({ page }) => {
+    test.setTimeout(180_000);
+    const id = seeded.owner.eventTypeIds["30min"]!;
+    await open(page, `/app/event-types/${id}`);
+    await moreOptions(page);
+    await section(page, "Limits and buffers");
+    await page.getByRole("button", { name: "Set limit" }).click();
+    await page.getByLabel("Max number of meetings").fill("0");
+    await expect(page.getByText("Enter a number from 1 to 999.").first()).toBeVisible();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Check the highlighted fields and try again.").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Limits and buffers/ })).toContainText("Fix errors");
+    await page.getByLabel("Max number of meetings").fill("3");
+    await save(page);
+
+    await section(page, "Duration");
+    await page.getByRole("button", { name: "Add duration option" }).click();
+    await expect(page.getByRole("combobox", { name: "Duration option 2" })).toContainText("15 min");
+    await page.getByRole("button", { name: "Remove the default 30 min option" }).click();
+    await expect(page.getByRole("combobox", { name: "Duration option 2" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Duration", exact: true })).toContainText("15 min");
+    await save(page);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("button", { name: /^Duration/ })).toContainText("15 min");
+    await moreOptions(page);
+    await expect(page.getByRole("button", { name: /^Limits and buffers/ })).toContainText("max 3 per day");
+  });
+
   test("make secret, duplicate and delete from the editor kebab", async ({ page }) => {
     test.setTimeout(180_000);
     const id = seeded.owner.eventTypeIds["60min"]!;

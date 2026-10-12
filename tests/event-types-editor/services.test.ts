@@ -309,6 +309,57 @@ describe("update (ET-14 to ET-26)", () => {
     await expectError(saveEventType(t.db, f.actor, { id, version, draft: { ...data.draft, name: "Stale" } }), "conflict");
   });
 
+  it("On/Off and reordering elsewhere do not reject an open editor's save; a secret change does", async () => {
+    const f = await owner();
+    const a = await create(f.actor, { name: "A" });
+    const b = await create(f.actor, { name: "B" });
+    const open = await editorOf(f.actor, a.id);
+    // The Scheduling list in another tab: turn it off and move it (both bump updated_at).
+    await setEventTypeActive(t.db, f.actor, a.id, false);
+    await reorderEventTypes(t.db, f.actor, [b.id, a.id]);
+    const saved = await saveEventType(t.db, f.actor, { id: a.id, version: open.version, draft: { ...open.draft, name: "Renamed" } });
+    expect(saved.draft.name).toBe("Renamed");
+    expect((await rowOf(a.id)).active).toBe(false);
+    // Making it secret changes what the editor shows and saves: the stale editor must reload.
+    const again = await editorOf(f.actor, a.id);
+    await setEventTypeSecret(t.db, f.actor, a.id, true);
+    await expectError(saveEventType(t.db, f.actor, { id: a.id, version: again.version, draft: { ...again.draft, name: "Stale" } }), "conflict");
+    // The version returned by the kebab action keeps the editor's own save working.
+    const { version } = await setEventTypeSecret(t.db, f.actor, a.id, false);
+    const fresh = await editorOf(f.actor, a.id);
+    expect(fresh.version).toBe(version);
+    await saveEventType(t.db, f.actor, { id: a.id, version, draft: { ...fresh.draft, name: "Fine" } });
+    expect((await rowOf(a.id)).name).toBe("Fine");
+  });
+
+  it("stores notification template bodies sanitized (NT-08)", async () => {
+    const f = await owner();
+    const { id } = await create(f.actor);
+    await update(f.actor, id, {
+      notificationTemplates: {
+        confirmationSubject: "Booked: {{event_name}}",
+        confirmationBody: '<p onclick="steal()">Hi {{invitee_first_name}}</p><script>alert(1)</script><a href="javascript:alert(2)">x</a><a href="{{reschedule_url}}">Reschedule</a>',
+        invitationDescription: "<p><br></p>",
+      },
+    });
+    const t2 = (await rowOf(id)).notificationTemplates;
+    expect(t2.confirmationSubject).toBe("Booked: {{event_name}}");
+    expect(t2.confirmationBody).toContain("Hi {{invitee_first_name}}");
+    expect(t2.confirmationBody).toContain('href="{{reschedule_url}}"');
+    expect(t2.confirmationBody).not.toMatch(/script|onclick|javascript:/);
+    expect(t2.invitationDescription).toBeUndefined();
+  });
+
+  it("keeps a valid leftover redirect URL and drops an invalid one with the confirmation page (ET-26)", async () => {
+    const f = await owner();
+    const { id } = await create(f.actor);
+    await update(f.actor, id, { afterBooking: "confirmation_page", redirectUrl: "https://example.com/thanks" });
+    expect((await rowOf(id)).redirectUrl).toBe("https://example.com/thanks");
+    await update(f.actor, id, { afterBooking: "confirmation_page", redirectUrl: "example dot com" });
+    expect((await rowOf(id)).redirectUrl).toBeNull();
+    await expectError(update(f.actor, id, { afterBooking: "redirect", redirectUrl: "example dot com" }), "validation");
+  });
+
   it("slug changes are unique per profile and audited (ET-23, GEN-17)", async () => {
     const f = await owner();
     const a = await create(f.actor, { name: "A", slug: "alpha" });

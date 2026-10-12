@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
 import { StickyFooterBar } from "@/components/ui/sticky-footer-bar";
 import { toast } from "@/components/ui/toast";
-import { copyText } from "@/lib/client";
+import { copyText, useMediaQuery } from "@/lib/client";
 import { cn } from "@/lib/cn";
 import {
   duplicateEventTypeAction,
@@ -98,6 +98,8 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mobilePreview, setMobilePreview] = useState(false);
+  // The side preview shows from the lg breakpoint (1024px); narrower screens load it on "Preview".
+  const wide = useMediaQuery("(min-width: 1024px)");
   const [reloadKey, setReloadKey] = useState(0);
   const [noteOpen, setNoteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -482,6 +484,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
         reloadKey={reloadKey}
         className={cn("h-full flex-1", mobilePreview ? "flex pt-14 lg:pt-0" : "hidden lg:flex")}
         scaled={!mobilePreview}
+        active={wide || mobilePreview}
       />
       {mobilePreview && (
         <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-white px-4 lg:hidden">

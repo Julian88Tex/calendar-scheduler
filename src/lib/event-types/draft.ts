@@ -6,7 +6,7 @@ import type { eventTypeQuestions, eventTypes } from "@/db/schema";
 import { LOCATION_KIND_LABELS } from "@/components/event-types/location-labels";
 import { weeklySummary, type ScheduleContent } from "@/lib/availability/intervals";
 import { formatDuration } from "@/lib/time/format";
-import { DEFAULT_QUESTION_LABEL, LOCATION_TEXT_MAX } from "./constants";
+import { DEFAULT_QUESTION_LABEL, LOCATION_TEXT_MAX, NOTICE_MAX_MINUTES } from "./constants";
 import type { EditorScheduleOption, EventTypeDraft, QuestionDraft, ScheduleChoiceDraft } from "./types";
 
 type EventTypeRow = typeof eventTypes.$inferSelect;
@@ -156,6 +156,9 @@ export function draftOfRow(row: EventTypeRow, questions: readonly QuestionRow[],
 }
 
 function stable(value: unknown): unknown {
+  // JSON turns NaN into null: keep invalid number input (NaN in the draft) distinct from "no value" so the editor sees
+  // the change, enables "Save changes" and reports the field error instead of looking clean.
+  if (typeof value === "number" && !Number.isFinite(value)) return `__${String(value)}__`;
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -286,6 +289,22 @@ export function availabilitySummary(
 ): string {
   const content = scheduleContentOf(choice, schedules);
   return content ? weeklySummary(content.weeklyHours, hour12, weekStart) : "No schedule";
+}
+
+/** The whole number typed in `text` when it lies in [min, max], else null (the editor's number inputs). */
+export function wholeNumberIn(text: string, min: number, max: number): number | null {
+  if (!text.trim()) return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+
+/** Minutes of a typed notice amount in a unit of `factor` minutes, or null when invalid (SCH-06: 0 to 365 days). */
+export function noticeMinutesOf(text: string, factor: number): number | null {
+  if (!text.trim()) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const minutes = Math.round(n * factor * 1e6) / 1e6;
+  return Number.isInteger(minutes) && minutes <= NOTICE_MAX_MINUTES ? minutes : null;
 }
 
 /** "4 hours", "1 day", "30 minutes" (the notice dropdown text). */

@@ -16,7 +16,8 @@ import { ADVANCED_SETTINGS_PATH } from "@/lib/availability/links";
 import { cn } from "@/lib/cn";
 import { BUFFER_MAX, BUFFER_PRESETS, LIMIT_MAX, LIMIT_MIN, MESSAGES } from "@/lib/event-types/constants";
 import type { EventTypeDraft } from "@/lib/event-types/types";
-import { errorOf, FieldGroup, MinutesSelect, wholeNumberIn, type SectionProps } from "./fields";
+import { wholeNumberIn } from "@/lib/event-types/draft";
+import { errorOf, FieldGroup, MinutesSelect, type SectionProps } from "./fields";
 
 type Period = "day" | "week" | "month";
 const PERIODS: Period[] = ["day", "week", "month"];

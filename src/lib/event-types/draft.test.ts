@@ -11,6 +11,7 @@ import {
   dedupeSlug,
   defaultDraft,
   draftsEqual,
+  draftVersion,
   durationColumns,
   durationsOf,
   durationSummary,
@@ -18,11 +19,14 @@ import {
   inviteeFormSummary,
   limitsSummary,
   locationSummary,
+  noticeMinutesOf,
   noticeText,
   noticeUnitOf,
+  notificationsSummary,
   previewDraftOf,
   rollingRangeText,
   sortedLocations,
+  wholeNumberIn,
 } from "./draft";
 import type { EditorScheduleOption } from "./types";
 
@@ -209,5 +213,76 @@ describe("slugs and names (ET-11, ET-15)", () => {
     expect(uiKindOf({ kind: "solo", poolingType: null })).toBe("one_on_one");
     expect(uiKindOf({ kind: "group", poolingType: null })).toBe("group");
     expect(uiKindOf({ kind: "solo", poolingType: "round_robin" })).toBe("round_robin");
+  });
+});
+
+describe("editor version (ET-14 concurrency)", () => {
+  it("is stable for equal content, whatever the key order or custom schedule order", () => {
+    const a = {
+      ...draft(),
+      schedule: {
+        kind: "custom" as const,
+        content: {
+          timezone: "America/Los_Angeles",
+          weeklyHours: [[], [{ start: 780, end: 900 }, { start: 540, end: 720 }], [], [], [], [], []] as never,
+          overrides: [
+            { date: "2026-12-31", intervals: [] },
+            { date: "2026-12-24", intervals: [{ start: 600, end: 660 }] },
+          ],
+        },
+      },
+    };
+    const reordered = JSON.parse(canonicalJson(a));
+    reordered.schedule.content.weeklyHours[1].reverse();
+    reordered.schedule.content.overrides.reverse();
+    expect(draftVersion(reordered)).toBe(draftVersion(a));
+    expect(draftVersion(a)).toMatch(/^d1-[0-9a-z]+-[0-9a-z]+$/);
+  });
+
+  it("changes with any saved setting", () => {
+    const a = draft();
+    expect(draftVersion({ ...a, name: "Other" })).not.toBe(draftVersion(a));
+    expect(draftVersion({ ...a, secret: true })).not.toBe(draftVersion(a));
+    expect(draftVersion({ ...a, limitPerDay: 2 })).not.toBe(draftVersion(a));
+    expect(draftVersion({ ...a, questions: [] })).not.toBe(draftVersion(a));
+  });
+});
+
+describe("number inputs keep invalid text out of the draft (ET-19, ET-21, ET-23)", () => {
+  it("parses whole numbers within a range", () => {
+    expect(wholeNumberIn("15", 0, 720)).toBe(15);
+    expect(wholeNumberIn(" 0 ", 0, 720)).toBe(0);
+    expect(wholeNumberIn("", 0, 720)).toBeNull();
+    expect(wholeNumberIn("721", 0, 720)).toBeNull();
+    expect(wholeNumberIn("1.5", 0, 720)).toBeNull();
+    expect(wholeNumberIn("0", 1, 999)).toBeNull();
+    expect(wholeNumberIn("abc", 1, 999)).toBeNull();
+  });
+
+  it("converts notice amounts to whole minutes up to 365 days (SCH-06)", () => {
+    expect(noticeMinutesOf("4", 60)).toBe(240);
+    expect(noticeMinutesOf("1.5", 60)).toBe(90);
+    expect(noticeMinutesOf("0", 1440)).toBe(0);
+    expect(noticeMinutesOf("365", 1440)).toBe(525_600);
+    expect(noticeMinutesOf("366", 1440)).toBeNull();
+    expect(noticeMinutesOf("1.5", 1)).toBeNull();
+    expect(noticeMinutesOf("-1", 60)).toBeNull();
+    expect(noticeMinutesOf("", 60)).toBeNull();
+  });
+
+  it("a NaN left by invalid input makes the draft dirty, also against an empty value", () => {
+    const a = { ...draft(), bufferBeforeMinutes: 15 };
+    expect(draftsEqual(a, { ...a, bufferBeforeMinutes: Number.NaN })).toBe(false);
+    // "Set limit" then "0" on an event type without limits: still dirty, so Save runs and shows the error.
+    expect(draftsEqual(draft(), { ...draft(), limitPerDay: Number.NaN })).toBe(false);
+  });
+});
+
+describe("notifications summary (ET-25)", () => {
+  it("names the confirmation kind and the reminders that are on", () => {
+    expect(notificationsSummary("email_confirmation", null)).toBe("Email confirmation");
+    expect(notificationsSummary("calendar_invitation", { invitee: { enabled: true }, host: { enabled: false } })).toBe("Calendar invitation, email reminders");
+    expect(notificationsSummary("email_confirmation", { invitee: { enabled: true }, host: { enabled: true } })).toBe("Email confirmation, email reminders, host reminders");
+    expect(notificationsSummary("calendar_invitation", { invitee: { enabled: false }, host: { enabled: false } })).toBe("Calendar invitation");
   });
 });
