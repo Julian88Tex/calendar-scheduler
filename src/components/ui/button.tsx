@@ -28,24 +28,26 @@ export type ButtonProps = React.ComponentProps<"button"> & {
 const BASE =
   "relative inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-full border font-semibold " +
   "transition-[background-color,border-color,color,box-shadow] duration-100 ease-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus " +
-  "disabled:cursor-not-allowed aria-disabled:cursor-not-allowed aria-disabled:pointer-events-none [&_svg]:shrink-0";
+  "disabled:cursor-not-allowed aria-disabled:cursor-not-allowed aria-disabled:pointer-events-none aria-busy:cursor-progress [&_svg]:shrink-0";
 
+// Disabled styles apply only when the control is not busy: a loading button keeps its colors and shows the spinner.
+// (Tailwind needs every class spelled out literally, hence the repetition.)
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
     "border-transparent bg-primary text-white hover:bg-primary-hover active:bg-primary-active " +
-    "disabled:bg-mist disabled:text-ink-3 aria-disabled:bg-mist aria-disabled:text-ink-3",
+    "[&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:bg-mist [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:text-ink-3",
   secondary:
     "border-ink-2 bg-white text-ink hover:bg-primary-soft active:bg-primary-soft-2 " +
-    "disabled:border-line disabled:bg-white disabled:text-ink-3 aria-disabled:border-line aria-disabled:text-ink-3",
+    "[&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:border-line [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:bg-white [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:text-ink-3",
   tertiary:
     "border-transparent bg-transparent text-primary-text hover:bg-primary-soft active:bg-primary-soft-2 " +
-    "disabled:bg-transparent disabled:text-ink-3 aria-disabled:text-ink-3",
+    "[&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:bg-transparent [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:text-ink-3",
   destructive:
     "border-transparent bg-danger text-white hover:bg-danger-text active:bg-danger-text " +
-    "disabled:bg-mist disabled:text-ink-3 aria-disabled:bg-mist aria-disabled:text-ink-3",
+    "[&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:bg-mist [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:text-ink-3",
   ghost:
     "border-transparent bg-transparent text-ink hover:bg-pebble active:bg-mist " +
-    "disabled:bg-transparent disabled:text-ink-3 aria-disabled:text-ink-3",
+    "[&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:bg-transparent [&:is(:disabled,[aria-disabled=true]):not([aria-busy=true])]:text-ink-3",
 };
 
 const SIZES: Record<ButtonSize, string> = {
