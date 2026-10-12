@@ -54,8 +54,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |
 |---|---|---|
-| lifecycle-core | Booking emails, cancel, reschedule, host changes synced back to the calendar | building |
-| lifecycle-ui | Cancel and reschedule pages for invitees, host meeting dialogs | queued |
+| lifecycle-core | Booking emails, cancel, reschedule, host changes synced back to the calendar | done |
+| lifecycle-ui | Cancel and reschedule pages for invitees, host meeting dialogs | building |
 | meetings-dashboard | Meetings page: upcoming, past, filters, details, no-show, export | queued |
 
 ### Milestone 5: meeting polls (the Doodle replacement)
