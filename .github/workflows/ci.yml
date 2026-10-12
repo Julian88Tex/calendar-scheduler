@@ -1,0 +1,85 @@
+# Continuous integration (ARCHITECTURE section 23): lint, GEN-11 dash check, type check, unit and PGlite tests,
+# real Postgres race tests (embedded-postgres), production build without a database URL, GEN-07 bundle budget,
+# seed against PGlite, Playwright golden paths.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # No database URL anywhere: the build must succeed without one and every test uses PGlite or embedded Postgres.
+      DATABASE_URL: ""
+      POSTGRES_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: No em or en dashes (GEN-11)
+        run: npm run check:dashes
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit and PGlite integration tests
+        run: npm test
+
+      - name: Real Postgres race tests (embedded-postgres)
+        run: npm run test:pg
+
+      - name: Production build (no database URL)
+        run: npm run build
+
+      - name: Booking page bundle budget (GEN-07)
+        run: npm run check:bundle
+
+      - name: Seed the demo account on PGlite
+        run: npm run db:seed -- --demo
+        env:
+          PGLITE_DIR: .data/pglite-ci-seed
+
+      # GitHub runners have no preinstalled Chromium (the build sandbox does, at /opt/pw-browsers, where
+      # `playwright install` must never run).
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright golden paths
+        run: npx playwright test
+        env:
+          CI: "1"
+          E2E_SERVER: start
+          E2E_PORT: "3313"
+          NEXT_DIST_DIR: .next
+          PGLITE_DIR: .data/pglite-e2e
+          # E2E_TEST_MODE=1 and a random E2E_SECRET are set for the web server by playwright.config.ts.
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

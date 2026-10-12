@@ -1,0 +1,90 @@
+/* OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures. */
+/* Design tokens verbatim from ARCHITECTURE 20.1 (Classic theme), plus the typography utilities of 20.1. Dark tokens
+   (GEN-22) and the rest of the polish belong to foundation-ui. */
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+:root {
+  --ink: #0a2540; --ink-2: #476788; --ink-3: #a6bbd1; --navy: #0b3558;
+  --line: #d4e0ed; --line-medium: #a6bbd1; --canvas: #fafafa; --cloud: #f8f9fb; --pebble: #f0f3f8; --mist: #e7edf6; --white: #ffffff;
+  --primary: #006bff; --primary-hover: #004eba; --primary-active: #004796; --primary-text: #004eba;
+  --primary-soft: #f4f8ff; --primary-soft-2: #e6f0ff;
+  --danger: #d53c00; --danger-text: #b03200; --danger-soft: #ffe2d9;
+  --success: #0d804b; --success-text: #0a6439; --success-soft: #cdf9e5;
+  --warning: #ffa600; --warning-text: #894800; --warning-soft: #ffe7ba; --info-soft: #e6f0ff;
+  --overlay: rgba(10, 37, 64, 0.5); --ribbon: #505960; --ribbon-hover: #40474c;
+  --radius-card: 8px; --radius-input: 8px; --radius-pill: 9999px; --radius-slot: 4px;
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.08); --shadow-pop: 0 2px 15px rgba(0, 0, 0, 0.1);
+  --shadow-next: 0 1px 6px 0 rgba(10, 37, 64, 0.1);
+  --shadow-embed: 0 16px 48px 0 rgb(25 72 112 / 6%), 0 0 24px 0 rgb(25 72 112 / 6%);
+  --primary-color: var(--primary);                   /* public pages: overridden by branding / embed params */
+  --public-bg: var(--white); --public-text: var(--ink);
+}
+@theme inline {
+  --font-sans: "Figtree Variable", "Proxima Nova", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-ink: var(--ink); --color-ink-2: var(--ink-2); --color-ink-3: var(--ink-3); --color-navy: var(--navy);
+  --color-line: var(--line); --color-canvas: var(--canvas); --color-pebble: var(--pebble); --color-mist: var(--mist);
+  --color-primary: var(--primary); --color-primary-hover: var(--primary-hover); --color-primary-active: var(--primary-active);
+  --color-primary-text: var(--primary-text); --color-primary-soft: var(--primary-soft); --color-primary-soft-2: var(--primary-soft-2);
+  --color-brand: var(--primary-color);
+  --color-danger: var(--danger); --color-danger-text: var(--danger-text); --color-success: var(--success); --color-warning: var(--warning);
+  --radius-card: var(--radius-card); --radius-input: var(--radius-input);
+  --shadow-card: var(--shadow-card); --shadow-pop: var(--shadow-pop);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+@utility text-headline-2 {
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+}
+@utility text-headline-3 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+}
+@utility text-title-lg {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+}
+@utility text-title-md {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+}
+@utility text-title-sm {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+@utility text-body {
+  font-size: 16px;
+  line-height: 1.4;
+}
+@utility text-body-md {
+  font-size: 14px;
+  line-height: 1.4;
+}
+@utility text-body-sm {
+  font-size: 12px;
+  line-height: 1.4;
+}
+@utility text-label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+@utility text-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.72px;
+}
