@@ -44,6 +44,8 @@ export interface HostInput {
   poolId: string | null;                                       // null = required host
   rr: { count: number; lastAssignedAt: Millis | null } | null; // round robin state for this event type + pool (caller excludes
                                                                // query.ignoreMeetingIds; lastAssignedAt = max(assigned_at))
+  weekStart?: 0 | 1;                                           // additive: host limit week start (the host's setting); default
+                                                               // rules.weekStart
 }
 
 export interface PoolInput { id: string; distribution: "availability" | "equal" }
@@ -77,6 +79,7 @@ export interface EventTypeRules {
   pools: PoolInput[];
   freeBusyExceptions: { mode: "includes" | "exact"; text: string }[];
   spots?: Interval[] | null;                                   // explicit offered windows (one-off): candidates = spot starts only
+  organizerUserId?: string | null;                             // additive: event_types.organizer_user_id (selectHosts organizer)
 }
 
 export interface SlotQuery {

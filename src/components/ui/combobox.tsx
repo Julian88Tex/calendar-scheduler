@@ -137,8 +137,6 @@ export function Combobox({
       e.preventDefault();
       const o = flat[active];
       if (o) choose(o);
-    } else if (e.key === "Tab") {
-      openWith(false);
     }
   };
 

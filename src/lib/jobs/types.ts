@@ -5,7 +5,17 @@
 import type { DB } from "@/db";
 import type { Logger } from "../logger";
 
-export type JobContext = { db: DB; jobId: string; attempt: number; now: Date; log: Logger };
+export type JobContext = {
+  db: DB;
+  jobId: string;
+  attempt: number;
+  now: Date;
+  log: Logger;
+  /** Job type being run (set by the runner). */
+  type?: string;
+  /** Aborted when the job exceeds its time limit; pass it to fetch() and long loops (set by the runner). */
+  signal?: AbortSignal;
+};
 
 // Payloads are whatever the enqueuer wrote (validated by each handler).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,10 +43,15 @@ export type EnqueueJobInput = {
 export type CancelJobsFilter = { groupKey?: string; type?: string; ids?: string[] };
 
 export type RunDueJobsOptions = {
+  /** Wall clock budget: no new job is claimed after it runs out (the running job finishes). */
   budgetMs: number;
   maxJobs?: number;
   /** Job types to run; a trailing "*" matches a prefix ("event:booking.created:*"). */
   types?: string[];
+  /** Only jobs with one of these group keys (after() runs for the jobs a request just enqueued). */
+  groupKeys?: string[];
+  /** Only these job ids. */
+  ids?: string[];
   workerId?: string;
 };
 

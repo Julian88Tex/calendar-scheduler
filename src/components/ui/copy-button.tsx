@@ -1,6 +1,7 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// CopyButton (ARCHITECTURE 20.2): copies a value, shows a copied state and a toast ("Link copied").
+// CopyButton (ARCHITECTURE 20.2, walkthrough 5.1): copies a value, switches its label to "Copied" for 2 seconds and
+// toasts "Link copied"; shows an error toast when the clipboard is unavailable.
 "use client";
 
 import { Check, Copy } from "lucide-react";
@@ -30,15 +31,17 @@ export function CopyButton({ value, label = "Copy link", copiedLabel = "Copied",
     <Button
       variant={variant}
       size={size}
-      className={className}
-      aria-label={iconOnly ? label : undefined}
+      className={iconOnly ? `${className ?? ""} aspect-square px-0` : className}
+      aria-label={iconOnly ? (copied ? copiedLabel : label) : undefined}
       onClick={async () => {
         if (await copy(value)) {
           if (toastMessage) toast.success(toastMessage);
           onCopied?.();
+        } else {
+          toast.error("Couldn't copy. Select the text and copy it manually.");
         }
       }}
-      leftIcon={copied ? <Check aria-hidden="true" className="size-4" /> : <Copy aria-hidden="true" className="size-4" />}
+      leftIcon={copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
     >
       {iconOnly ? null : copied ? copiedLabel : label}
     </Button>

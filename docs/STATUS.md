@@ -1,6 +1,6 @@
 # Build status
 
-Updated after every finished module. "Testable" means you can click through it in a running app (locally with
+Updated after every finished module. Scope was reduced to the features the owner uses today (docs/SCOPE.md). "Testable" means you can click through it in a running app (locally with
 `npm run dev` after `npm run db:seed`, or on a Vercel preview). Seed login: `owner@example.com` / `password123`.
 
 ## Testable right now
@@ -25,15 +25,15 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |
 |---|---|---|
-| availability | Schedules, weekly hours, date-specific hours, holidays, troubleshoot view | next |
-| event-types-editor | Create and edit event types: duration, locations, questions, buffers, limits, notice, increments | queued |
+| availability | Schedules, weekly hours, date-specific hours, schedule time zone | next |
+| event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | queued |
 | event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | queued |
 
 ### Milestone 3: real calendars and video links
 | Module | What it gives you | Status |
 |---|---|---|
-| calendar-integrations | Google, Outlook/Microsoft 365, iCloud/CalDAV, ICS feeds: conflict checking and adding events | queued |
-| conferencing | Google Meet, Teams, Zoom, Jitsi links and the stable join link | queued |
+| calendar-integrations | Google Calendar: conflict checking, adding events, syncing moves and deletes | queued |
+| conferencing | Google Meet, Zoom, Jitsi and custom links, plus the stable join link | queued |
 
 ### Milestone 4: life after booking
 | Module | What it gives you | Status |
@@ -46,25 +46,19 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | polls-core | Poll logic: proposing times, voting, booking the winner, emails | queued |
-| links-sharing | Single-use links, one-off meetings, share tools, book on behalf (polls UI needs it) | queued |
 | polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | queued |
 
-### Milestone 6: everything else Calendly has
+### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |
 |---|---|---|
-| workflows | Automated reminders, follow-ups, SMS, reconfirmation | queued |
-| teams-org | Organization, people, invitations, teams, round robin, collective, managed events | queued |
-| settings-onboarding | Profile, branding, your link, security, privacy, Calendly import, onboarding flow | queued |
-| routing-forms | Routing forms with conditional routing to event types | queued |
-| contacts | Contacts built from invitees, meeting history | queued |
-| payments | Stripe payments, coupons, refunds | queued |
-| analytics | Analytics dashboard (created, completed, canceled, popular times) | queued |
-| api-v1 | Public REST API (Calendly-compatible), personal access tokens, calendar feed | queued |
-| webhooks-embed | Webhooks and the embed script for websites | queued |
-| admin-compliance | Admin overview, outbox, jobs, audit log, data deletion | queued |
-| marketing-site | Landing page, legal and help pages | queued |
-| localization | Invitee-facing translations (FR, ES, DE, NL, PT, IT, UK) | queued |
-| golden-path-qa | End-to-end test suite over every main flow, deployment guide, QA report | last |
+| workflows (lite) | Default email reminders before meetings, on/off and timing per event type | queued |
+| settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | queued |
+| golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
+
+### Skipped (owner decision, see docs/SCOPE.md)
+Teams and round robin, single-use links and one-off meetings, payments, contacts, routing forms, public API,
+webhooks and embed, analytics, admin tools, marketing site, translations, Microsoft/iCloud/ICS calendars,
+Teams/Webex video, the custom workflow builder and SMS. Any of these can be added back later.
 
 ## Setup you can do now
 - Vercel: import the repo at vercel.com/new, add a Neon database from the Storage tab (Production and Preview), and
