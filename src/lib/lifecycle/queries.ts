@@ -15,6 +15,10 @@ export type InviteeChangeContext = {
   invitee: InviteeRow;
   /** True when the URL's invitee was rescheduled: pages redirect to the active invitee's URL. */
   moved: boolean;
+  /**
+   * The meeting as this invitee may see it: `invitees` holds only this invitee and `guests` only their guests (other
+   * seats of a group slot stay private), and the host-only meeting notes are removed (CR-14).
+   */
   meeting: MeetingBundle;
   host: { userId: string; name: string; email: string } | null;
   /** Why canceling online is not possible now, or null. */
@@ -32,8 +36,15 @@ export async function getInviteeChangeContext(inviteeId: string, opts: { now?: D
   const db = await getDb();
   const invitee = await resolveActiveInviteeChain(inviteeId, db);
   if (!invitee) return null;
-  const meeting = await loadMeeting(db, invitee.scheduledEventId);
-  if (!meeting) return null;
+  const full = await loadMeeting(db, invitee.scheduledEventId);
+  if (!full) return null;
+  // Capability pages see their own seat only (GEN-08) and never the host's notes (CR-14).
+  const meeting: MeetingBundle = {
+    ...full,
+    meeting: { ...full.meeting, meetingNotesHtml: null, meetingNotesPlain: null },
+    invitees: full.invitees.filter((i) => i.id === invitee.id),
+    guests: full.guests.filter((g) => g.inviteeId === invitee.id),
+  };
   const at = opts.now ?? now();
   const m = meeting.meeting;
   const host = meeting.organizer ? { userId: meeting.organizer.userId, name: meeting.organizer.name, email: meeting.organizer.email } : null;

@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { revokeOtherSessionsAction, revokeSessionAction } from "@/lib/settings/actions";
 import type { DeviceKind, SessionListItem } from "@/lib/settings/schemas";
+import { formatSessionDate, lastActiveLabel } from "./session-dates";
 
 export type SessionsCardProps = {
   sessions: SessionListItem[];
@@ -24,24 +25,6 @@ export type SessionsCardProps = {
 };
 
 const DEVICE_ICON: Record<DeviceKind, typeof Monitor> = { desktop: Monitor, mobile: Smartphone, tablet: Tablet };
-
-function dayKey(iso: string, zone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-}
-
-/** "Oct 12, 2026" in the zone. */
-export function formatSessionDate(iso: string, zone: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: zone, month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
-}
-
-/** "today", "yesterday" or "Oct 12, 2026" (sessions record activity once a day). */
-export function lastActiveLabel(iso: string, zone: string, nowIso: string): string {
-  const day = dayKey(iso, zone);
-  if (day === dayKey(nowIso, zone)) return "today";
-  const yesterday = new Date(new Date(nowIso).getTime() - 24 * 60 * 60 * 1000).toISOString();
-  if (day === dayKey(yesterday, zone)) return "yesterday";
-  return formatSessionDate(iso, zone);
-}
 
 export function SessionsCard({ sessions: initial, timezone, nowIso }: SessionsCardProps) {
   const router = useRouter();
@@ -60,7 +43,8 @@ export function SessionsCard({ sessions: initial, timezone, nowIso }: SessionsCa
         return;
       }
       setSessions((list) => list.filter((x) => x.id !== s.id));
-      toast.success(res.ok ? `Logged out of ${s.label}` : res.error.message);
+      if (res.ok) toast.success(`Logged out of ${s.label}`);
+      else toast.info(res.error.message);
       router.refresh();
     } catch {
       toast.error("Couldn't log out of that session. Try again.");

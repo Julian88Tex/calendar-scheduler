@@ -98,14 +98,32 @@ async function deliver(db: DB, b: MeetingBundle, out: Outgoing): Promise<void> {
   ]);
 }
 
-/** The invitee-facing ICS of a meeting for one invitee (NT-06, MP-19, MP-20). */
-async function inviteeIcs(db: DB, b: MeetingBundle, inv: InviteeRow, method: "REQUEST" | "CANCEL", sequence?: number): Promise<MeetingIcs | null> {
+/**
+ * The invitee-facing ICS of a meeting for one invitee (NT-06, MP-19, MP-20). `forGuest`: the copy for that invitee's
+ * guests, the same event (UID, attendees) without the invitee's Cancel and Reschedule links in its description: those
+ * are the invitee's capability URLs and never reach guests (NT-01).
+ */
+async function inviteeIcs(
+  db: DB,
+  b: MeetingBundle,
+  inv: InviteeRow,
+  method: "REQUEST" | "CANCEL",
+  sequence?: number,
+  opts: { forGuest?: boolean } = {},
+): Promise<MeetingIcs | null> {
+  const noLinks = opts.forGuest ? { manageLinks: false } : {};
   if (b.poll) {
     // Polls: one shared invite listing everyone (Calendly), or individual invites when invitees are hidden (MP-20).
-    if (b.poll.hideInvitees) return buildMeetingIcs({ scheduledEventId: b.meeting.id, inviteeId: inv.id, method, uid: icsUid(inv.id, appHost()), sequence, db });
+    if (b.poll.hideInvitees) return buildMeetingIcs({ scheduledEventId: b.meeting.id, inviteeId: inv.id, method, uid: icsUid(inv.id, appHost()), sequence, db, ...noLinks });
     return buildMeetingIcs({ scheduledEventId: b.meeting.id, method, manageLinks: false, sequence, locale: inv.locale, db });
   }
-  return buildMeetingIcs({ scheduledEventId: b.meeting.id, inviteeId: inv.id, method, sequence, db });
+  return buildMeetingIcs({ scheduledEventId: b.meeting.id, inviteeId: inv.id, method, sequence, db, ...noLinks });
+}
+
+/** The guests' copy of an invitee ICS (see inviteeIcs), built only when the invitee has guests. */
+async function guestIcsFor(db: DB, b: MeetingBundle, inv: InviteeRow, method: "REQUEST" | "CANCEL", sequence?: number): Promise<MeetingIcs | null> {
+  if (!guestsOf(b, inv.id, { includeCanceled: method === "CANCEL" }).length) return null;
+  return inviteeIcs(db, b, inv, method, sequence, { forGuest: true });
 }
 
 /** NT-02: hosts without a writable destination calendar get the event as an ICS. */
@@ -227,12 +245,13 @@ async function sendBooked(db: DB, b: MeetingBundle, inv: InviteeRow, brand: Emai
       template: "lifecycle.invitee_confirmation",
       inviteeId: inv.id,
     });
+    const guestIcs = await guestIcsFor(db, b, inv, "REQUEST");
     for (const g of guestsOf(b, inv.id)) {
       await deliver(db, b, {
         to: g.email,
         email: bookingEmail("guest_confirmation", { ...common, ctx: { ...ctx, invitee_first_name: "" }, questions: null, manageLinks: false }),
         sender,
-        ics,
+        ics: guestIcs,
         key: `lc:booked:${inv.id}:guest:${g.emailNormalized}`,
         template: "lifecycle.guest_confirmation",
         inviteeId: inv.id,
@@ -314,7 +333,13 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
       template: "lifecycle.invitee_rescheduled",
       inviteeId: inv.id,
     });
+    const guestIcs = await guestIcsFor(db, b, inv, "REQUEST");
+    const guestExtraIcs = groupMove && guestIcs
+      ? await buildMeetingIcs({ scheduledEventId: old.scheduledEventId, inviteeId: old.id, method: "CANCEL", sequence: oldMeeting.meeting.icsSequence + 1, manageLinks: false, db })
+      : null;
+    const kept = new Set<string>();
     for (const g of guestsOf(b, inv.id)) {
+      kept.add(g.emailNormalized);
       await deliver(db, b, {
         to: g.email,
         email: bookingEmail("guest_rescheduled", {
@@ -325,12 +350,37 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
           manageLinks: false,
         }),
         sender,
-        ics,
-        extraIcs,
+        ics: guestIcs,
+        extraIcs: guestExtraIcs,
         key: `lc:resched:${inv.id}:guest:${g.emailNormalized}`,
         template: "lifecycle.guest_rescheduled",
         inviteeId: inv.id,
       });
+    }
+    // Guests dropped in the reschedule form: their calendar still holds the former event, so it is canceled (the
+    // one-on-one UID is shared with the new meeting; a group seat had its own UID).
+    const dropped = guestsOf(oldMeeting, old.id, { includeCanceled: true }).filter((g) => !kept.has(g.emailNormalized) && g.emailNormalized !== inv.emailNormalized);
+    if (dropped.length) {
+      const cancelIcs = groupMove
+        ? await buildMeetingIcs({ scheduledEventId: old.scheduledEventId, inviteeId: old.id, method: "CANCEL", sequence: oldMeeting.meeting.icsSequence + 1, manageLinks: false, db })
+        : await buildMeetingIcs({ scheduledEventId: m.id, inviteeId: inv.id, method: "CANCEL", manageLinks: false, db });
+      for (const g of dropped) {
+        await deliver(db, oldMeeting, {
+          to: g.email,
+          email: bookingEmail("guest_canceled", {
+            ctx: { ...formerCtx, invitee_first_name: "" },
+            brand,
+            locale,
+            cancellation: { canceledBy: old.canceledByName ?? (old.cancelerType === "invitee" ? old.name : null), reason },
+            manageLinks: false,
+          }),
+          sender,
+          ics: cancelIcs,
+          key: `lc:resched:${inv.id}:guest-removed:${g.emailNormalized}`,
+          template: "lifecycle.guest_canceled",
+          inviteeId: old.id,
+        });
+      }
     }
   }
   const oldHostIds = new Set(oldMeeting.hosts.map((h) => h.userId));
@@ -485,7 +535,10 @@ export async function notifyCanceled(db: DB, p: { scheduledEventId: string; invi
     });
   }
   const whole = p.meetingCanceled && meetingMetaOf(m.metadata).canceledAsWhole === true;
-  const list = b.invitees.filter((i) => i.status === "canceled" && !i.rescheduled);
+  // The invitees canceled by this same action (one cancel stamps them all with the same time); seats canceled
+  // earlier already had their own host email.
+  const at = inv.canceledAt?.getTime() ?? null;
+  const list = b.invitees.filter((i) => i.status === "canceled" && !i.rescheduled && (i.canceledAt?.getTime() ?? null) === at);
   if (whole && list.length > 1 && inv.id !== list[0]!.id) return; // one host email for the whole meeting
   for (const host of b.hosts) {
     const hctx = await hostContext(db, m.id, inv, host);
@@ -500,7 +553,9 @@ export async function notifyCanceled(db: DB, p: { scheduledEventId: string; invi
         facts: { fromCalendar: meta.cancelKind === "calendar", spots: m.isGroup && !p.meetingCanceled ? { filled: activeInvitees(b).length, limit: m.inviteesLimit } : null },
       }),
       sender: await meetingSender({ hostUserId: m.organizerUserId, audience: "host", replyTo: inv.email, db }),
-      ics: await hostIcs(db, b, host, inv, "CANCEL", sequence),
+      // The host's file holds the whole meeting (one UID for a group slot or a poll meeting): it is canceled only
+      // with the meeting, never when one seat leaves a meeting that goes on.
+      ics: p.meetingCanceled ? await hostIcs(db, b, host, inv, "CANCEL", sequence) : null,
       key: whole && list.length > 1 ? `lc:cancel:${m.id}:host:${host.userId}` : `lc:cancel:${inv.id}:host:${host.userId}`,
       template: "lifecycle.host_canceled",
       inviteeId: inv.id,
@@ -550,12 +605,13 @@ export async function notifyMoved(db: DB, p: { scheduledEventId: string; fromSta
         template: "lifecycle.invitee_rescheduled",
         inviteeId: inv.id,
       });
+      const guestIcs = await guestIcsFor(db, b, inv, "REQUEST");
       for (const g of guestsOf(b, inv.id)) {
         await deliver(db, b, {
           to: g.email,
           email: bookingEmail("guest_rescheduled", { ...common, ctx: { ...ctx, invitee_first_name: "" }, former: { ctx: { ...formerCtx, invitee_first_name: "" }, reason: null }, questions: null, manageLinks: false }),
           sender,
-          ics,
+          ics: guestIcs,
           key: `lc:moved:${m.id}:${p.sequence}:${inv.id}:guest:${g.emailNormalized}`,
           template: "lifecycle.guest_rescheduled",
           inviteeId: inv.id,

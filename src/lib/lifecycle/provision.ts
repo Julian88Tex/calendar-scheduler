@@ -148,12 +148,12 @@ function conferenceStateOf(loc: ResolvedLocation | null | undefined): ProvisionO
   return "pending";
 }
 
-async function hostWrite(
+/** The provider event one host's calendar should hold now, and its fingerprint. */
+async function hostEventInput(
   b: MeetingBundle,
   hostUserId: string,
   mode: MeetingSettingsSnapshot["notificationMode"],
-  opts: ProvisionOptions,
-): Promise<{ input: CalendarEventInput; fingerprint: string; result: UpsertLinkedEventResult | null; previous: HostCalendarState | undefined }> {
+): Promise<{ input: CalendarEventInput; fingerprint: string }> {
   const one = singleInviteeOf(b);
   const ctx = await buildMeetingTemplateContext({
     scheduledEventId: b.meeting.id,
@@ -163,7 +163,16 @@ async function hostWrite(
     locale: "en",
   });
   const input = calendarEventInput(b, { hostUserId, mode, ctx });
-  const fingerprint = writeFingerprint(input, { mode, hostUserId });
+  return { input, fingerprint: writeFingerprint(input, { mode, hostUserId }) };
+}
+
+async function hostWrite(
+  b: MeetingBundle,
+  hostUserId: string,
+  mode: MeetingSettingsSnapshot["notificationMode"],
+  opts: ProvisionOptions,
+): Promise<{ input: CalendarEventInput; fingerprint: string; result: UpsertLinkedEventResult | null; previous: HostCalendarState | undefined }> {
+  const { input, fingerprint } = await hostEventInput(b, hostUserId, mode);
   const previous = meetingMetaOf(b.meeting.metadata).calendar?.[hostUserId];
   if (!opts.force && previous?.status === "synced" && previous.fingerprint === fingerprint) return { input, fingerprint, result: null, previous };
   const existing = hostUserId === b.meeting.organizerUserId ? (opts.existingLinkedEventId ?? previous?.linkedEventId ?? undefined) : (previous?.linkedEventId ?? undefined);
@@ -223,7 +232,17 @@ export async function provisionMeeting(db: DB, scheduledEventId: string, opts: P
   let fellBack = false;
   const writes: Record<string, HostCalendarState> = {};
   let organizerResult: UpsertLinkedEventResult | null = null;
-  if (!opts.skipProviderWrite) {
+  if (opts.skipProviderWrite) {
+    // CR-17: the organizer's provider event already shows the change. Record what it now stands for, so the next
+    // provisioning run (a buffer or location change, a retry) does not rewrite it with the same content (in calendar
+    // invitation mode Google would mail every attendee an "updated invitation" for nothing).
+    const previous = meetingMetaOf(b.meeting.metadata).calendar?.[b.meeting.organizerUserId];
+    const linkedEventId = opts.existingLinkedEventId ?? previous?.linkedEventId ?? null;
+    if (linkedEventId && (!previous || previous.status === "synced")) {
+      const { fingerprint } = await hostEventInput(b, b.meeting.organizerUserId, mode);
+      writes[b.meeting.organizerUserId] = { linkedEventId, fingerprint, status: "synced", at: at.toISOString() };
+    }
+  } else {
     try {
       const w = await hostWrite(b, b.meeting.organizerUserId, mode, opts);
       organizerResult = w.result;
@@ -251,9 +270,10 @@ export async function provisionMeeting(db: DB, scheduledEventId: string, opts: P
     location = applyLinkedEventConference(location, organizerResult);
   }
 
-  // 3. Copies for co-hosts (email confirmation mode, and group slots, which are always email mode).
+  // 3. Copies for co-hosts (email confirmation mode, and group slots, which are always email mode). They follow a
+  // change made in the organizer's connected calendar too (only the organizer's own event already shows it).
   for (const h of b.hosts) {
-    if (opts.skipProviderWrite || h.userId === b.meeting.organizerUserId || !h.isActive) continue;
+    if (h.userId === b.meeting.organizerUserId || !h.isActive) continue;
     if (mode === "calendar_invitation" && !b.meeting.isGroup) continue; // they are attendees of the organizer's event
     try {
       const w = await hostWrite({ ...b, meeting: { ...b.meeting, location } }, h.userId, "email_confirmation", opts);
@@ -277,21 +297,26 @@ export async function provisionMeeting(db: DB, scheduledEventId: string, opts: P
   if (exhausted && location?.kind && calendarConferenceFor(location.kind) && isConferencePending(location)) {
     location = { ...location, status: "failed", joinUrl: null, location: null, error: "calendar_write_failed" };
   }
-  const conference = conferenceStateOf(location);
-  const provisionStatus: (typeof scheduledEvents.$inferSelect)["provisionStatus"] =
-    exhausted ? "failed" : failed ? "pending" : conference === "failed" || cohostIssue ? "partial" : conference === "pending" ? "pending" : "done";
+  const statusFor = (c: ProvisionOutcome["conference"]): (typeof scheduledEvents.$inferSelect)["provisionStatus"] =>
+    exhausted ? "failed" : failed ? "pending" : c === "failed" || cohostIssue ? "partial" : c === "pending" ? "pending" : "done";
   const prevLocation = b.meeting.location;
+  let keptStored = false;
   const row = await updateMeetingRow(db, scheduledEventId, (r) => {
     if (r.status !== "active") return null;
-    // A reschedule or another write that changed the location meanwhile wins (same choice of location only).
+    // A reschedule or another write that changed the location meanwhile wins (same choice of location only), and so
+    // does a join link that a concurrent conference check stored while this run still saw the Meet pending.
     const sameChoice = r.location?.kind === prevLocation?.kind && r.location?.configId === prevLocation?.configId;
-    const nextLocation = sameChoice ? location : r.location;
+    const storedLink = r.location?.status === "pushed" && Boolean(r.location.joinUrl) && location?.status !== "pushed";
+    keptStored = !sameChoice || storedLink;
+    const nextLocation = keptStored ? r.location : location;
+    const c = conferenceStateOf(nextLocation);
+    const provisionStatus = statusFor(c);
     return {
       location: nextLocation,
       providerIcalUid: organizerResult?.status === "synced" && organizerResult.icalUid ? organizerResult.icalUid : r.providerIcalUid,
       invitationUrl: organizerResult?.status === "synced" && organizerResult.htmlLink ? organizerResult.htmlLink : r.invitationUrl,
       provisionStatus,
-      provisionError: provisionStatus === "done" ? null : (errorText ?? (conference === "failed" ? (nextLocation?.error ?? "conference_failed") : r.provisionError)),
+      provisionError: provisionStatus === "done" ? null : (errorText ?? (c === "failed" ? (nextLocation?.error ?? "conference_failed") : r.provisionError)),
       provisionedAt: provisionStatus === "done" || provisionStatus === "partial" ? at : r.provisionedAt,
       metadata: metaPatch(r, (m) => ({
         ...m,
@@ -300,16 +325,19 @@ export async function provisionMeeting(db: DB, scheduledEventId: string, opts: P
       })),
     };
   });
-  if (!row) return { active: false, calendar, conference, fellBack, ready: false };
+  if (!row) return { active: false, calendar, conference: conferenceStateOf(location), fellBack, ready: false };
   b = { ...b, meeting: row };
+  const conference = conferenceStateOf(row.location);
 
   // Timeline.
   const timeline: Parameters<typeof recordActivity>[1] = [];
   if (calendar === "synced" && organizerResult) timeline.push({ scheduledEventId, type: "calendar_synced", data: { linkedEventId: organizerResult.linkedEventId, mode } });
   if (exhausted) timeline.push({ scheduledEventId, type: "calendar_failed", data: { attempts, status: calendar } });
   const prevConference = conferenceStateOf(prevLocation);
-  if (conference === "pushed" && prevConference !== "pushed") timeline.push({ scheduledEventId, type: "conference_created", data: { kind: location?.kind } });
-  if (conference === "failed" && prevConference !== "failed") timeline.push({ scheduledEventId, type: "conference_failed", data: { kind: location?.kind, error: location?.error } });
+  // A location stored meanwhile by another run was recorded by that run.
+  const ownLocation = !keptStored as boolean;
+  if (ownLocation && conference === "pushed" && prevConference !== "pushed") timeline.push({ scheduledEventId, type: "conference_created", data: { kind: location?.kind } });
+  if (ownLocation && conference === "failed" && prevConference !== "failed") timeline.push({ scheduledEventId, type: "conference_failed", data: { kind: location?.kind, error: location?.error } });
   await recordActivity(db, timeline);
 
   // CAL-12 fallback and retries.

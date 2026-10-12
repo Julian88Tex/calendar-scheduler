@@ -1,7 +1,8 @@
 // Settings > My Link (SPEC BR-08, GEN-02; walkthrough 18 "My Link"): the warning, the URL input with the static
 // "{host}/" prefix, a live availability check while typing (green "Available", red "This URL is taken" or "This URL
 // is not available.") and "Save changes" / "Cancel". Input is normalized as it is typed (lowercase, spaces become
-// hyphens). After saving, the old link stops working at once; the new link can be copied.
+// hyphens). After saving, the old link stops working at once; the new link can be copied. Leaving with an unsaved URL
+// asks first.
 "use client";
 
 import { CheckCircle2, XCircle } from "lucide-react";
@@ -17,6 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { checkHandleAction, saveHandleAction } from "@/lib/settings/actions";
 import { HANDLE_MESSAGES, localHandleCheck, sanitizeHandleInput, type HandleCheck } from "@/lib/settings/schemas";
+import { useUnsavedChangesGuard } from "./use-unsaved-changes";
 
 export type LinkFormProps = {
   /** The current slug (null for an account without one). */
@@ -44,6 +46,7 @@ export function LinkForm({ slug: initialSlug, origin, host, appName }: LinkFormP
 
   const slug = sanitizeHandleInput(value);
   const dirty = slug !== current;
+  useUnsavedChangesGuard(dirty && !pending);
   const local = dirty ? localHandleCheck(slug) : null;
   const needsRemote = dirty && !local;
 

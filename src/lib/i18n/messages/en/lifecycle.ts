@@ -102,6 +102,8 @@ const messages = {
     overrideMultiHost: "Override available times works for events with a single host only.",
     retryNotNeeded: "This meeting doesn't need to be provisioned again.",
     requestPast: "You can only ask for a new time before the meeting starts.",
+    requestEventTypeOff: "Your invitee can't pick a new time while this event type is off or deleted. Cancel the meeting instead.",
+    reminderDays: "Choose a reminder after 1, 3 or 7 days.",
   },
 };
 

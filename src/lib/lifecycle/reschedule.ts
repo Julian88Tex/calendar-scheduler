@@ -12,18 +12,19 @@
 //   moveScheduledEvent  MP-21 in-place move: same row and UID, SEQUENCE + 1, the provider event and conference updated
 //                       and "Updated" emails, by the lifecycle.meeting_moved job.
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { isUniqueViolation } from "@/db/helpers";
-import { invitees, scheduledEventHosts, scheduledEvents } from "@/db/schema";
+import { eventTypes, invitees, scheduledEventHosts, scheduledEvents } from "@/db/schema";
 import { createBooking, lockHostsInTx, type CreateBookingInput, type CreateBookingResult } from "@/lib/booking";
 import { AppError } from "@/lib/errors";
+import { eventJobPattern, publishEvent } from "@/lib/events";
 import messages from "@/lib/i18n/messages/en/lifecycle";
 import { isUuid } from "@/lib/ids";
 import { cancelJobs, enqueueJob, runJobsAfterResponse } from "@/lib/jobs";
 import { now } from "@/lib/time/now";
 import { recordActivity } from "./activity";
-import { actorUser, assertCanManageMeeting } from "./authorize";
+import { actorUser, assertCanManageMeeting, domainActorOf } from "./authorize";
 import { cancelOne } from "./cancel";
 import { loadInvitee, loadMeeting, meetingHostIds } from "./load";
 import { inviteeRescheduleBlock, isRebookable } from "./policy";
@@ -33,6 +34,12 @@ type Failure = Extract<CreateBookingResult, { ok: false }>;
 const fail = (code: Failure["code"], message: string): Failure => ({ ok: false, code, message });
 
 export const requestReminderGroup = (inviteeId: string) => `lifecycle:rr:${inviteeId}`;
+
+/** Whether the event type still offers a meeting's duration (its default or one of its duration options). */
+export function durationStillOffered(eventType: { durationMinutes: number; durationOptions: number[] | null } | null, minutes: number): boolean {
+  if (!eventType) return true;
+  return eventType.durationMinutes === minutes || (eventType.durationOptions ?? []).includes(minutes);
+}
 
 export type RescheduleInput = {
   inviteeId: string;
@@ -70,6 +77,8 @@ export async function rescheduleInvitee(p: RescheduleInput, ctx: { ip?: string; 
     now: at,
   };
   const rebook = isRebookable(subject);
+  // CR-03 / BK-07: the original duration while the event type still offers it, else the event type's default.
+  const offeredDuration = durationStillOffered(b.eventType, m.durationMinutes);
   let actor: NonNullable<CreateBookingInput["actor"]>;
   if (p.actor.type === "invitee") {
     const block = inviteeRescheduleBlock(subject);
@@ -83,7 +92,11 @@ export async function rescheduleInvitee(p: RescheduleInput, ctx: { ip?: string; 
     if (override && b.hosts.length > 1) return fail("validation", messages.errors.overrideMultiHost);
     const user = actorUser(p.actor);
     if (p.actor.type === "api") actor = { type: "api", userId: user!.id };
-    else actor = { type: "host", userId: user?.id ?? m.organizerUserId, overrideAvailability: override };
+    else {
+      // A host moving a meeting keeps its length, even one the event type no longer offers (a custom duration).
+      const keepLength = p.durationMinutes === undefined && !offeredDuration;
+      actor = { type: "host", userId: user?.id ?? m.organizerUserId, overrideAvailability: override, ...(keepLength ? { customize: { durationMinutes: m.durationMinutes } } : {}) };
+    }
   }
 
   // CR-03: prefilled with the stored details (all editable); the original location choice when it is still offered.
@@ -93,7 +106,7 @@ export async function rescheduleInvitee(p: RescheduleInput, ctx: { ip?: string; 
   const input: CreateBookingInput = {
     target: { kind: "event_type", eventTypeId: inv.eventTypeId },
     start: p.start,
-    durationMinutes: p.durationMinutes ?? m.durationMinutes,
+    durationMinutes: p.durationMinutes ?? (offeredDuration ? m.durationMinutes : (b.eventType?.durationMinutes ?? m.durationMinutes)),
     invitee: {
       name: inv.name,
       firstName: inv.firstName ?? undefined,
@@ -162,7 +175,7 @@ export async function requestReschedule(p: {
   if (p.actor.type === "invitee") throw new AppError("forbidden", messages.errors.forbidden);
   const message = (p.message ?? "").trim();
   if (message.length > 2000) throw new AppError("validation", messages.changes.messageTooLong, { fieldErrors: { message: [messages.changes.messageTooLong] } });
-  if (p.reminderDays != null && ![1, 3, 7].includes(p.reminderDays)) throw new AppError("validation", "Choose a reminder after 1, 3 or 7 days.");
+  if (p.reminderDays != null && ![1, 3, 7].includes(p.reminderDays)) throw new AppError("validation", messages.errors.reminderDays, { fieldErrors: { reminderDays: [messages.errors.reminderDays] } });
   const db = await getDb();
   const inv = await loadInvitee(db, p.inviteeId);
   if (!inv) throw new AppError("not_found", messages.errors.notFound);
@@ -172,6 +185,13 @@ export async function requestReschedule(p: {
   const at = now();
   if (m.startAt.getTime() <= at.getTime()) throw new AppError("validation", messages.errors.requestPast);
   if (m.source === "one_off" || m.source === "poll") throw new AppError("validation", messages.changes.notReschedulable);
+  // The "Pick a new time" link opens this event type's booking page: refuse instead of canceling into a dead link.
+  const [et] = await db
+    .select({ active: eventTypes.active, deletedAt: eventTypes.deletedAt, type: eventTypes.type })
+    .from(eventTypes)
+    .where(eq(eventTypes.id, m.eventTypeId))
+    .limit(1);
+  if (!et || et.deletedAt || !et.active || et.type === "adhoc") throw new AppError("validation", messages.errors.requestEventTypeOff);
   const user = actorUser(p.actor);
   const days = p.reminderDays ?? null;
   await cancelOne({
@@ -233,6 +253,22 @@ export async function moveScheduledEvent(p: { scheduledEventId: string; start: D
       await recordActivity(tx, [
         { scheduledEventId: m.id, type: "rescheduled_to", actor: p.actor, data: { inPlace: true, from: { start: lastMove.fromStart, end: lastMove.fromEnd }, to: { start: start.toISOString(), end: end.toISOString() } } },
       ]);
+      // Other modules learn about the new time through booking.rescheduled with the same invitee and meeting on both
+      // sides (the in-place convention: workflows re-times the invitees' reminders). This module's own side effects
+      // run in the lifecycle.meeting_moved job below, so its subscriber ignores these events.
+      const active = await tx
+        .select({ id: invitees.id, name: invitees.name })
+        .from(invitees)
+        .where(and(eq(invitees.scheduledEventId, m.id), eq(invitees.status, "active")))
+        .orderBy(asc(invitees.createdAt), asc(invitees.id));
+      for (const inv of active) {
+        await publishEvent(
+          tx,
+          "booking.rescheduled",
+          { oldInviteeId: inv.id, newInviteeId: inv.id, oldScheduledEventId: m.id, newScheduledEventId: m.id, reason: null },
+          { organizationId: m.organizationId, actor: domainActorOf(p.actor) },
+        );
+      }
       await enqueueJob(tx, {
         type: JOB_TYPES.meetingMoved,
         payload: { scheduledEventId: m.id, fromStart: lastMove.fromStart, fromEnd: lastMove.fromEnd, sequence },
@@ -242,7 +278,7 @@ export async function moveScheduledEvent(p: { scheduledEventId: string; start: D
       });
       return true;
     });
-    if (moved) runJobsAfterResponse({ types: [JOB_TYPES.meetingMoved] });
+    if (moved) runJobsAfterResponse({ types: [JOB_TYPES.meetingMoved, eventJobPattern("booking.rescheduled")] });
   } catch (e) {
     if (isUniqueViolation(e, "sched_group_slot_uq")) throw new AppError("conflict", "That time is no longer available. Please choose another time.");
     throw e;

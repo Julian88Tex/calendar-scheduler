@@ -1,6 +1,7 @@
 // Branding "Logo" (SPEC BR-05): a wide preview of the current logo (object-contain, like the booking page panel), "Upload
 // image" (button or drag and drop) and "Remove" after a confirmation. The browser checks type and size, downsizes
-// logos wider or taller than 880px (animated GIFs that fit are uploaded untouched) and uploads at once.
+// logos wider or taller than 880px (animated GIFs that fit and stay under 4 MB are uploaded untouched) and uploads at
+// once.
 "use client";
 
 import { ImageUp, Trash2 } from "lucide-react";
@@ -10,7 +11,14 @@ import { ConfirmDialog } from "@/components/ui/alert-dialog";
 import { checkImageFile, outputDimensions, outputType, renamedFile } from "@/components/ui/file-upload-utils";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
-import { IMAGE_ACCEPT, IMAGE_MAX_BYTES, IMAGE_TOO_LARGE_MESSAGE, LOGO_HINT, LOGO_MAX_SIZE } from "@/lib/settings/schemas";
+import {
+  IMAGE_ACCEPT,
+  IMAGE_MAX_BYTES,
+  IMAGE_TOO_LARGE_MESSAGE,
+  LOGO_HINT,
+  LOGO_MAX_SIZE,
+  LOGO_PASSTHROUGH_MAX_BYTES,
+} from "@/lib/settings/schemas";
 import { uploadSettingsImage } from "./upload-image";
 
 export type LogoUploaderProps = {
@@ -36,13 +44,16 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-/** The file to upload: the original when it fits in 880px, else a canvas downsized copy (PNG keeps transparency). */
+/**
+ * The file to upload: the original when it fits in 880px and is small enough to pass the hosting body limit, else a
+ * canvas copy downsized to 880px (PNG keeps transparency; a large animated GIF becomes its first frame).
+ */
 async function prepareLogo(file: File): Promise<File> {
   const img = await loadImage(file);
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   if (!w || !h) throw new Error("This image could not be read.");
-  if (Math.max(w, h) <= LOGO_MAX_SIZE) return file;
+  if (Math.max(w, h) <= LOGO_MAX_SIZE && file.size <= LOGO_PASSTHROUGH_MAX_BYTES) return file;
   const out = outputDimensions(w, h, LOGO_MAX_SIZE);
   const canvas = document.createElement("canvas");
   canvas.width = out.width;

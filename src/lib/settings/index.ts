@@ -237,20 +237,27 @@ export async function changeHandle(db: DbOrTx, actor: ActorCtx, raw: string): Pr
 
 const MAX_LISTED_SESSIONS = 50;
 
-/** The user's live sessions (not revoked, not expired), the current one first, then by last activity. */
+/**
+ * The user's live sessions (not revoked, not expired), the current one first, then by last activity. At most 50 are
+ * listed; the current session is always among them.
+ */
 export async function listUserSessions(db: DbOrTx, userId: string, currentSessionId: string | null): Promise<SessionListItem[]> {
-  const rows = await db
-    .select({
-      id: sessions.id,
-      ip: sessions.ip,
-      userAgent: sessions.userAgent,
-      createdAt: sessions.createdAt,
-      lastSeenAt: sessions.lastSeenAt,
-    })
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), gt(sessions.expiresAt, now())))
-    .orderBy(desc(sessions.lastSeenAt))
-    .limit(MAX_LISTED_SESSIONS);
+  const columns = {
+    id: sessions.id,
+    ip: sessions.ip,
+    userAgent: sessions.userAgent,
+    createdAt: sessions.createdAt,
+    lastSeenAt: sessions.lastSeenAt,
+  };
+  const live = and(eq(sessions.userId, userId), isNull(sessions.revokedAt), gt(sessions.expiresAt, now()));
+  const rows = await db.select(columns).from(sessions).where(live).orderBy(desc(sessions.lastSeenAt)).limit(MAX_LISTED_SESSIONS);
+  if (currentSessionId && !rows.some((r) => r.id === currentSessionId)) {
+    const [current] = await db.select(columns).from(sessions).where(and(live, eq(sessions.id, currentSessionId))).limit(1);
+    if (current) {
+      if (rows.length >= MAX_LISTED_SESSIONS) rows.pop();
+      rows.push(current);
+    }
+  }
   const items = rows.map((r): SessionListItem => {
     const ua = parseUserAgent(r.userAgent);
     return {
@@ -297,13 +304,17 @@ export async function revokeUserSession(db: DbOrTx, actor: ActorCtx, sessionId: 
   });
 }
 
-/** "Log out of all other sessions" (AU-05, BR-10): every live session of the actor except the current one. */
+/**
+ * "Log out of all other sessions" (AU-05, BR-10): every live session of the actor except the current one. Returns how
+ * many were ended (expired sessions are already unusable and are neither touched nor counted).
+ */
 export async function revokeOtherUserSessions(db: DbOrTx, actor: ActorCtx, currentSessionId: string): Promise<number> {
   return withTx(db, async (tx) => {
+    const at = now();
     const rows = await tx
       .update(sessions)
-      .set({ revokedAt: now() })
-      .where(and(eq(sessions.userId, actor.user.id), ne(sessions.id, currentSessionId), isNull(sessions.revokedAt)))
+      .set({ revokedAt: at })
+      .where(and(eq(sessions.userId, actor.user.id), ne(sessions.id, currentSessionId), isNull(sessions.revokedAt), gt(sessions.expiresAt, at)))
       .returning({ id: sessions.id });
     if (rows.length > 0) {
       await audit({ action: "user.other_sessions_revoked", namespace: "auth", targetType: "user", targetId: actor.user.id, details: { count: rows.length }, actor }, tx);

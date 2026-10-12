@@ -2,11 +2,11 @@
 // Message (265 character counter, shown on the landing page), Date Format, Time Format and Time Zone, with "Save
 // changes" and "Cancel" (back to the saved values). Validation runs in the browser with the action's schema and again
 // on the server; field errors are linked to their inputs and the first invalid field gets focus. Leaving the page
-// with unsaved changes asks first.
+// with unsaved changes (a link in the app, a reload or closing the tab) asks first.
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -26,6 +26,7 @@ import {
   type ProfileFormValues,
   type TimeFormatSetting,
 } from "@/lib/settings/schemas";
+import { useUnsavedChangesGuard } from "./use-unsaved-changes";
 
 export type ProfileFormProps = { initial: ProfileFormValues };
 
@@ -63,14 +64,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
   const [pending, startTransition] = useTransition();
   const dirty = !sameValues(values, saved);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  useUnsavedChangesGuard(dirty && !pending);
 
   const set = <K extends keyof ProfileFormValues>(key: K, value: ProfileFormValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));

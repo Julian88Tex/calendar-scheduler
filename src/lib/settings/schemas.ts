@@ -32,13 +32,28 @@ export const NAME_REQUIRED_MESSAGE = "Enter your name.";
 export const NAME_TOO_LONG_MESSAGE = `Use ${NAME_MAX_LENGTH} characters or fewer.`;
 export const WELCOME_TOO_LONG_MESSAGE = `Use ${WELCOME_MESSAGE_MAX_LENGTH} characters or fewer.`;
 
-/** Line breaks as the textarea reports them ("\n"); surrounding whitespace dropped. */
+// C0 and C1 control characters (NUL among them, which Postgres text columns refuse) and, for names, the bidirectional
+// embedding, override and isolate characters that can disguise how a name reads in an email From header.
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]+/g;
+const CONTROL_CHARS_EXCEPT_NEWLINE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g;
+const BIDI_CONTROLS = /[‪-‮⁦-⁩]+/g;
+
+/** A display name on one line: control and bidirectional override characters become spaces, runs of spaces collapse. */
+export function normalizeDisplayName(value: string): string {
+  return value.replace(CONTROL_CHARS, " ").replace(BIDI_CONTROLS, "").replace(/\s{2,}/g, " ").trim();
+}
+
+/** Line breaks as the textarea reports them ("\n"), other control characters dropped, surrounding whitespace trimmed. */
 export function normalizeWelcomeMessage(value: string): string {
-  return value.replace(/\r\n?/g, "\n").trim();
+  return value.replace(/\r\n?/g, "\n").replace(CONTROL_CHARS_EXCEPT_NEWLINE, (m) => (m.includes("\t") ? " " : "")).trim();
 }
 
 export const ProfileInput = z.object({
-  name: z.string().trim().min(1, NAME_REQUIRED_MESSAGE).max(NAME_MAX_LENGTH, NAME_TOO_LONG_MESSAGE),
+  name: z
+    .string()
+    .max(NAME_MAX_LENGTH * 2)
+    .transform(normalizeDisplayName)
+    .pipe(z.string().min(1, NAME_REQUIRED_MESSAGE).max(NAME_MAX_LENGTH, NAME_TOO_LONG_MESSAGE)),
   welcomeMessage: z
     .string()
     .max(WELCOME_MESSAGE_MAX_LENGTH * 2)
@@ -78,6 +93,11 @@ export const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 export const AVATAR_HINT = "JPG, PNG, GIF or WebP. Max size of 5 MB.";
 export const LOGO_HINT = "JPG, PNG, GIF or WebP. Max size of 5 MB. Recommended size: at least 440 x 240 pixels.";
 export const IMAGE_TOO_LARGE_MESSAGE = "Images must be smaller than 5 MB.";
+/**
+ * Logos that already fit in 880px are uploaded untouched up to this size; bigger files (large animated GIFs) are
+ * re-encoded in the browser first, because Vercel refuses function request bodies above 4.5 MB before our 5 MB check.
+ */
+export const LOGO_PASSTHROUGH_MAX_BYTES = 4 * 1024 * 1024;
 
 export type ImageKind = "avatar" | "logo";
 

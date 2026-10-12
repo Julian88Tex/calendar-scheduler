@@ -18,7 +18,10 @@ What works:
 - Google Calendar settings (Availability > Calendar settings) work once a Google OAuth client is configured
   (docs/GOOGLE_SETUP.md); without it the app runs with no calendar conflicts.
 
-Not working yet (being built): editing event types, confirmation/cancel/reschedule emails and the cancel and
+- Event type editor: open http://localhost:3000/app/event-types/new or edit one from its URL
+  (/app/event-types/<id>); the Scheduling home list that links to it is being built.
+
+Not working yet (being built): confirmation/cancel/reschedule emails and the cancel and
 reschedule pages, the Meetings list, meeting polls, profile settings.
 
 ## Milestones (in build order)
@@ -39,8 +42,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 | Module | What it gives you | Status |
 |---|---|---|
 | availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | done |
-| event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | building |
-| event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | queued |
+| event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | done |
+| event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | building |
 
 ### Milestone 3: real calendars and video links
 | Module | What it gives you | Status |
@@ -58,7 +61,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 5: meeting polls (the Doodle replacement)
 | Module | What it gives you | Status |
 |---|---|---|
-| polls-core | Poll logic: proposing times, voting, booking the winner, emails | queued |
+| polls-core | Poll logic: proposing times, voting, booking the winner, emails | building |
 | polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | queued |
 
 ### Milestone 6: the rest of what you use today

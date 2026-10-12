@@ -90,7 +90,10 @@ export async function onBookingCanceled(event: DomainEvent<"booking.canceled">, 
 
 export async function onBookingRescheduled(event: DomainEvent<"booking.rescheduled">, ctx: JobContext): Promise<void> {
   const db = ctx.db;
-  const { oldScheduledEventId, newScheduledEventId, newInviteeId } = event.payload;
+  const { oldScheduledEventId, newScheduledEventId, newInviteeId, oldInviteeId } = event.payload;
+  // In-place moves (moveScheduledEvent: the same invitee and meeting on both sides) are handled by the
+  // lifecycle.meeting_moved job; the event exists for the other modules (workflows re-times reminders).
+  if (oldInviteeId === newInviteeId && oldScheduledEventId === newScheduledEventId) return;
   const [oldM] = await db.select().from(scheduledEvents).where(eq(scheduledEvents.id, oldScheduledEventId)).limit(1);
   const [newM] = await db.select().from(scheduledEvents).where(eq(scheduledEvents.id, newScheduledEventId)).limit(1);
   if (!newM) return;

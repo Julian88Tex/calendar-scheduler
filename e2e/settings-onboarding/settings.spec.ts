@@ -128,6 +128,21 @@ test.describe("account settings", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByLabel("Name")).toHaveValue("Julian J. Joseph");
 
+    // Leaving with unsaved changes through a link in the app asks first; dismissing stays on the page.
+    await page.getByLabel("Name").fill("Unsaved Name");
+    const prompts: string[] = [];
+    page.once("dialog", (d) => {
+      prompts.push(d.message());
+      void d.dismiss();
+    });
+    await subNav.getByRole("link", { name: "Branding" }).click();
+    await expect.poll(() => prompts).toEqual(["You have unsaved changes. Leave this page without saving them?"]);
+    await expect(page).toHaveURL(/\/app\/settings\/profile$/);
+    await expect(page.getByLabel("Name")).toHaveValue("Unsaved Name");
+    page.once("dialog", (d) => void d.accept());
+    await subNav.getByRole("link", { name: "Branding" }).click();
+    await expect(page).toHaveURL(/\/app\/settings\/branding$/);
+
     await open(page, `/${SLUG}`);
     await expect(page.getByRole("heading", { level: 1, name: "Julian J. Joseph" })).toBeVisible();
     await expect(page.getByText("Pick any open time below.")).toBeVisible();

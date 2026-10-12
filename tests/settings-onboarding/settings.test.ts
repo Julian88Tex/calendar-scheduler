@@ -418,3 +418,59 @@ describe("password (AU-10)", () => {
     expect((await getLoginMethods(user.id)).hasPassword).toBe(true);
   });
 });
+
+describe("review regressions", () => {
+  it("saves a profile whose text carries control characters instead of failing in Postgres", async () => {
+    const user = await createUser(t.db);
+    await signIn(user);
+    const res = await saveProfileAction({ ...PROFILE, name: "Julian\u0000 Joseph", welcomeMessage: "Hello\u0000 there" });
+    expect(res).toEqual({ ok: true, data: { ...PROFILE, name: "Julian Joseph", welcomeMessage: "Hello there" } });
+    expect((await freshUser(user)).name).toBe("Julian Joseph");
+  });
+
+  it("counts only the live sessions it ends when logging out of all other sessions", async () => {
+    const user = await createUser(t.db);
+    const live = await createSessionRecord(t.db, user.id, {});
+    const expired = await createSessionRecord(t.db, user.id, {});
+    await t.db.update(sessions).set({ expiresAt: new Date(Date.now() - 60_000) }).where(eq(sessions.id, expired.session.id));
+    const current = await createSessionRecord(t.db, user.id, {});
+    expect(await revokeOtherUserSessions(t.db, await actorOf(user), current.session.id)).toBe(1);
+    expect(await lookupSession(t.db, live.token)).toBeNull();
+    expect(await lookupSession(t.db, current.token)).not.toBeNull();
+  });
+
+  it("always lists the current session, even behind 50 more recently active ones", async () => {
+    const user = await createUser(t.db);
+    const current = await createSessionRecord(t.db, user.id, {});
+    await t.db.update(sessions).set({ lastSeenAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000) }).where(eq(sessions.id, current.session.id));
+    for (let i = 0; i < 51; i++) await createSessionRecord(t.db, user.id, {});
+    const list = await listUserSessions(t.db, user.id, current.session.id);
+    expect(list).toHaveLength(50);
+    expect(list[0]).toMatchObject({ id: current.session.id, current: true });
+  });
+
+  it("stops reading an upload body past the limit when no Content-Length is sent", async () => {
+    const user = await createUser(t.db);
+    await signIn(user);
+    let pulled = 0;
+    const chunk = new Uint8Array(512 * 1024);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        if (pulled > 64 * 1024 * 1024) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const request = new Request("http://localhost:3000/app/settings/branding/logo", {
+      method: "POST",
+      body: stream,
+      headers: { origin: "http://localhost:3000", "content-type": "multipart/form-data; boundary=x" },
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const error = await errorOf(handleImageUpload(request, "logo"));
+    expect(error.status).toBe(413);
+    expect(error.fieldErrors?.file).toEqual(["Images must be smaller than 5 MB."]);
+    expect(pulled).toBeLessThan(8 * 1024 * 1024);
+    expect((await freshUser(user)).logoFileId).toBeNull();
+  });
+});
