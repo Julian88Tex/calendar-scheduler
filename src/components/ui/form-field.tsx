@@ -1,9 +1,11 @@
-// OWNER: foundation-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: foundation-ui.
 //
-// FormField and FieldError (ARCHITECTURE 20.2): label, hint, error and required asterisk, wired with
-// aria-describedby. Children may be a render function receiving the ids to spread on the control.
+// FormField and FieldError (ARCHITECTURE 20.2, SPEC GEN-05): label, hint, error and required asterisk, wired with
+// aria-describedby; errors are announced (role="alert"). Children may be a render function receiving the ids to
+// spread on the control.
 "use client";
 
+import { AlertCircle } from "lucide-react";
 import { useId } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
@@ -32,14 +34,14 @@ function firstError(error: string | string[] | null | undefined): string | null 
 
 export function FormField({ label, htmlFor, hint, error, required, hideLabel, className, children }: FormFieldProps) {
   const generated = useId();
-  const id = htmlFor ?? `field-${generated}`;
+  const id = htmlFor ?? `field-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const message = firstError(error);
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = message ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
   const control: FieldControlProps = { id, "aria-describedby": describedBy, "aria-invalid": message ? true : undefined, required };
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <Label htmlFor={id} required={required} className={hideLabel ? "sr-only" : undefined}>
         {label}
       </Label>
@@ -60,8 +62,9 @@ export function FieldError({ id, error, children, className }: FieldErrorProps) 
   const message = children ?? firstError(error);
   if (!message) return null;
   return (
-    <p id={id} role="alert" className={cn("text-body-sm text-danger-text", className)}>
-      {message}
+    <p id={id} role="alert" className={cn("flex items-start gap-1 text-body-sm font-semibold text-danger-text", className)}>
+      <AlertCircle aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <span>{message}</span>
     </p>
   );
 }
