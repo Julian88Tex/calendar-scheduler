@@ -74,6 +74,18 @@ export type ProfileFormValues = {
   dateFormat: DateFormatSetting;
 };
 
+/**
+ * The Profile form values after the saved values changed outside the form (the time zone banner's "Update time zone",
+ * another tab): fields the user has not edited follow the new saved values, edited fields keep what the user typed.
+ */
+export function followExternalSave(values: ProfileFormValues, previous: ProfileFormValues, next: ProfileFormValues): ProfileFormValues {
+  const out: ProfileFormValues = { ...values };
+  for (const k of Object.keys(next) as (keyof ProfileFormValues)[]) {
+    if (values[k] === previous[k]) (out as Record<keyof ProfileFormValues, string>)[k] = next[k];
+  }
+  return out;
+}
+
 export function asTimeFormat(value: string | null | undefined): TimeFormatSetting {
   return value === "24h" ? "24h" : "12h";
 }
@@ -134,6 +146,15 @@ export function sanitizeHandleInput(raw: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+/, "")
     .slice(0, HANDLE_MAX_LENGTH);
+}
+
+/**
+ * Where the caret belongs after sanitizeHandleInput rewrote `raw` while the caret sat at `caret`: just after the
+ * sanitized form of the text before it (so typing "X" or a space in the middle of "julian" keeps the caret there).
+ */
+export function handleCaretAfterSanitize(raw: string, caret: number): number {
+  const full = sanitizeHandleInput(raw);
+  return Math.min(full.length, sanitizeHandleInput(raw.slice(0, Math.max(0, caret))).length);
 }
 
 /** The checks that need no database (empty, pattern, reserved word), or null when only availability remains. */

@@ -112,18 +112,18 @@ export function PasswordCard({ email, hasPassword, providers }: PasswordCardProp
       </h2>
       <p className="mt-1 text-body-md text-ink-2">How you log in to your account.</p>
       <dl className="mt-5 flex flex-col divide-y divide-line border-y border-line">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-          <dt className="flex w-40 shrink-0 items-center gap-2 text-label text-ink">
+        <div className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:gap-x-4">
+          <dt className="flex shrink-0 items-center gap-2 text-label text-ink sm:w-40">
             <Mail aria-hidden="true" className="size-4 text-ink-2" />
             Email address
           </dt>
-          <dd className="min-w-0 flex-1 text-body-md break-all text-ink">
+          <dd className="min-w-0 flex-1 text-body-md wrap-anywhere text-ink">
             {email}
             {providerNames.length > 0 && <span className="block text-body-sm text-ink-2">You can also log in with {providerNames.join(" or ")}.</span>}
           </dd>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-          <dt className="flex w-40 shrink-0 items-center gap-2 text-label text-ink">
+        <div className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:gap-x-4">
+          <dt className="flex shrink-0 items-center gap-2 text-label text-ink sm:w-40">
             <KeyRound aria-hidden="true" className="size-4 text-ink-2" />
             Password
           </dt>

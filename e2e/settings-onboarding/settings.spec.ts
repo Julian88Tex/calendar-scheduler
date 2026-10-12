@@ -174,6 +174,23 @@ test.describe("account settings", () => {
     expect(errors).toEqual([]);
   });
 
+  test("profile: a time zone updated from the banner is not reverted by a later save", async ({ page }) => {
+    test.setTimeout(120_000);
+    // The seeded owner is on Pacific Time; the browser runs on Eastern Time, so the mismatch banner offers the update.
+    await open(page, "/app/settings/profile");
+    const zone = page.getByLabel("Time Zone", { exact: true });
+    await expect(zone).toContainText("Pacific Time");
+    await page.getByRole("button", { name: "Update time zone" }).click();
+    await expect(page.getByText("Time zone updated").first()).toBeVisible();
+    await expect(zone).toContainText("Eastern Time");
+    await page.getByLabel("Name").fill("Julian Banner");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Changes saved").first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Time Zone", { exact: true })).toContainText("Eastern Time");
+    await expect(page.getByLabel("Name")).toHaveValue("Julian Banner");
+  });
+
   test("picture: crop and upload, landing page avatar, 6 MB refused, remove", async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, "/app/settings/profile");

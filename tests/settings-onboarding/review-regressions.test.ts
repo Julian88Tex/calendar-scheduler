@@ -1,11 +1,19 @@
 // Regression tests from the settings review (pure logic): control characters in the profile text (a NUL byte used to
 // reach Postgres and fail the save with an internal error), bidirectional override characters in names (email From
 // header spoofing), the "yesterday" label of the sessions list across a 23 hour DST day, zones unknown to the
-// runtime's Intl data, and which link clicks the unsaved changes guard asks about.
+// runtime's Intl data, which link clicks the unsaved changes guard asks about, the caret of the My Link input after
+// typing is normalized, and the Profile form following a time zone saved elsewhere (the banner) instead of reverting it.
 import { describe, expect, it } from "vitest";
 import { formatSessionDate, lastActiveLabel, previousDayKey, safeTimeZone } from "@/components/settings/session-dates";
 import { leavesPageInApp } from "@/components/settings/use-unsaved-changes";
-import { normalizeDisplayName, normalizeWelcomeMessage, ProfileInput } from "@/lib/settings/schemas";
+import {
+  followExternalSave,
+  handleCaretAfterSanitize,
+  normalizeDisplayName,
+  normalizeWelcomeMessage,
+  ProfileInput,
+  type ProfileFormValues,
+} from "@/lib/settings/schemas";
 
 const profile = { name: "Julian Joseph", welcomeMessage: "Hi", timezone: "UTC", timeFormat: "12h", dateFormat: "MM/DD/YYYY" };
 
@@ -74,5 +82,33 @@ describe("unsaved changes guard", () => {
     expect(leavesPageInApp({ ...click, defaultPrevented: true }, anchor("/app/scheduling"), here)).toBe(false);
     // A full navigation to another site: the browser's beforeunload prompt covers it.
     expect(leavesPageInApp(click, anchor("https://help.example.org/"), here)).toBe(false);
+  });
+});
+
+describe("My Link caret", () => {
+  it("stays where the user typed when the input is normalized", () => {
+    // "jul|ian" + "X" -> "julx|ian"; + " " -> "jul-|ian"; a removed character keeps the caret in place.
+    expect(handleCaretAfterSanitize("julXian", 4)).toBe(4);
+    expect(handleCaretAfterSanitize("jul ian", 4)).toBe(4);
+    expect(handleCaretAfterSanitize("jul!ian", 4)).toBe(3);
+    // A doubled hyphen collapses: the caret lands after the single hyphen.
+    expect(handleCaretAfterSanitize("jul--ian", 5)).toBe(4);
+    expect(handleCaretAfterSanitize("Julian", 6)).toBe(6);
+    expect(handleCaretAfterSanitize("", 0)).toBe(0);
+  });
+});
+
+describe("Profile form and changes saved elsewhere", () => {
+  const saved: ProfileFormValues = { name: "Julian", welcomeMessage: "Hi", timezone: "America/Los_Angeles", timeFormat: "12h", dateFormat: "MM/DD/YYYY" };
+
+  it("takes the new time zone when the user has not touched it and keeps the user's edits", () => {
+    const edited = { ...saved, name: "Julian Joseph" };
+    const external = { ...saved, timezone: "America/New_York" };
+    expect(followExternalSave(edited, saved, external)).toEqual({ ...saved, name: "Julian Joseph", timezone: "America/New_York" });
+  });
+
+  it("keeps a field the user changed even when it also changed elsewhere", () => {
+    const edited = { ...saved, timezone: "Europe/Berlin" };
+    expect(followExternalSave(edited, saved, { ...saved, timezone: "America/New_York" }).timezone).toBe("Europe/Berlin");
   });
 });

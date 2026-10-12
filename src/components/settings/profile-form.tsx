@@ -2,7 +2,8 @@
 // Message (265 character counter, shown on the landing page), Date Format, Time Format and Time Zone, with "Save
 // changes" and "Cancel" (back to the saved values). Validation runs in the browser with the action's schema and again
 // on the server; field errors are linked to their inputs and the first invalid field gets focus. Leaving the page
-// with unsaved changes (a link in the app, a reload or closing the tab) asks first.
+// with unsaved changes (a link in the app, a reload or closing the tab) asks first. Values saved elsewhere while the
+// page is open (the time zone banner) replace the fields the user has not edited, so a later save never reverts them.
 "use client";
 
 import { useRouter } from "next/navigation";
@@ -18,6 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { saveProfileAction } from "@/lib/settings/actions";
 import {
   DATE_FORMAT_OPTIONS,
+  followExternalSave,
   NAME_MAX_LENGTH,
   ProfileInput,
   TIME_FORMAT_OPTIONS,
@@ -62,6 +64,13 @@ export function ProfileForm({ initial }: ProfileFormProps) {
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
+  // A refresh after a change made elsewhere passes new initial values (adjusting state while rendering, React docs).
+  const [lastInitial, setLastInitial] = useState(initial);
+  if (!sameValues(lastInitial, initial)) {
+    setLastInitial(initial);
+    setSaved(initial);
+    setValues(followExternalSave(values, saved, initial));
+  }
   const dirty = !sameValues(values, saved);
 
   useUnsavedChangesGuard(dirty && !pending);

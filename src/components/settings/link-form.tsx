@@ -17,7 +17,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { checkHandleAction, saveHandleAction } from "@/lib/settings/actions";
-import { HANDLE_MESSAGES, localHandleCheck, sanitizeHandleInput, type HandleCheck } from "@/lib/settings/schemas";
+import { handleCaretAfterSanitize, HANDLE_MESSAGES, localHandleCheck, sanitizeHandleInput, type HandleCheck } from "@/lib/settings/schemas";
 import { useUnsavedChangesGuard } from "./use-unsaved-changes";
 
 export type LinkFormProps = {
@@ -131,7 +131,16 @@ export function LinkForm({ slug: initialSlug, origin, host, appName }: LinkFormP
           aria-describedby={statusId}
           onChange={(e) => {
             setSaveError(null);
-            setValue(sanitizeHandleInput(e.target.value));
+            const el = e.target;
+            const next = sanitizeHandleInput(el.value);
+            // Normalizing rewrites the value, which moves the caret to the end: keep it where the user is typing.
+            const caret = el.selectionStart === null ? null : handleCaretAfterSanitize(el.value, el.selectionStart);
+            setValue(next);
+            if (caret !== null && next !== el.value) {
+              requestAnimationFrame(() => {
+                if (document.activeElement === el) el.setSelectionRange(caret, caret);
+              });
+            }
           }}
           className="max-w-[560px]"
         />
