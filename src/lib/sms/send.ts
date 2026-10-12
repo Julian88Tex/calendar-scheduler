@@ -13,7 +13,7 @@ import { getDb, type DbOrTx } from "@/db";
 import { rateLimitBuckets, smsMessages, smsOptOuts } from "@/db/schema";
 import { sha256Hex } from "../crypto";
 import { getEnv } from "../env";
-import { enqueueJob } from "../jobs/queue";
+import { enqueueOrReviveJob } from "../jobs/queue";
 import { log } from "../logger";
 import { rateLimit } from "../rate-limit";
 import { now, nowMs } from "../time/now";
@@ -43,7 +43,8 @@ export const SMS_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const SMS_MAX_ATTEMPTS = 8;
 /** Twilio's hard body limit (bodies are composed shorter, NT-16). */
 const TWILIO_MAX_BODY = 1600;
-const STALE_QUEUED_MS = 10 * 60 * 1000;
+/** A text left in "queued" longer than this was interrupted mid-delivery and is re-sent by the sweep. */
+export const SMS_STALE_QUEUED_MS = 10 * 60 * 1000;
 const PERMANENT_PREFIX = "permanent: ";
 
 // Twilio error codes that will never succeed for this message.
@@ -157,7 +158,8 @@ function backoffMs(attempts: number): number {
 }
 
 async function scheduleRetry(db: DbOrTx, row: Pick<SmsRow, "id" | "attempts">): Promise<void> {
-  await enqueueJob(db, {
+  // One retry job per text, revived when an earlier one already finished.
+  await enqueueOrReviveJob(db, {
     type: "sms.retry",
     payload: { smsId: row.id },
     runAt: new Date(nowMs() + backoffMs(row.attempts)),
@@ -291,19 +293,35 @@ export async function sendSms(p: SendSmsInput): Promise<SendSmsResult> {
   return { id: row.id, status: outcome === "retry" ? "failed" : outcome };
 }
 
-/** Retries one failed (or interrupted) text: the sms.retry job. "retry" means try again later. */
-export async function retrySmsDelivery(smsId: string): Promise<"sent" | "stored" | "failed" | "retry" | "skipped"> {
+/**
+ * Retries one failed (or interrupted) text: the sms.retry job. "retry" means try again later; "in_flight" means
+ * another worker is sending it right now; "failed" means it is out of attempts.
+ */
+export async function retrySmsDelivery(smsId: string): Promise<"sent" | "stored" | "failed" | "retry" | "skipped" | "in_flight"> {
   const db = await getDb();
   const at = now();
-  const stale = new Date(at.getTime() - STALE_QUEUED_MS);
+  const stale = new Date(at.getTime() - SMS_STALE_QUEUED_MS);
   const [current] = await db.select().from(smsMessages).where(eq(smsMessages.id, smsId)).limit(1);
   if (!current || current.lastError?.startsWith(PERMANENT_PREFIX)) return "skipped";
+  if (current.status !== "failed" && current.status !== "queued") return "skipped";
+  if (current.status === "queued" && current.updatedAt.getTime() >= stale.getTime()) return "in_flight";
   if (await isSmsOptedOut(current.toNumber, db)) {
     await db
       .update(smsMessages)
       .set({ status: "skipped", lastError: "opted_out", updatedAt: at })
       .where(and(eq(smsMessages.id, smsId), inArray(smsMessages.status, ["failed", "queued"])));
     return "skipped";
+  }
+  if (current.attempts >= SMS_MAX_ATTEMPTS) {
+    await db
+      .update(smsMessages)
+      .set({
+        status: "failed",
+        lastError: `${PERMANENT_PREFIX}gave up after ${current.attempts} attempts${current.lastError ? `: ${current.lastError}` : ""}`.slice(0, 2000),
+        updatedAt: at,
+      })
+      .where(and(eq(smsMessages.id, smsId), inArray(smsMessages.status, ["failed", "queued"])));
+    return "failed";
   }
   const [claimed] = await db
     .update(smsMessages)
@@ -322,7 +340,7 @@ export async function retrySmsDelivery(smsId: string): Promise<"sent" | "stored"
 /** Re-sends texts interrupted mid-delivery (queued for more than 10 minutes). */
 export async function sweepStuckSms(limit = 20): Promise<number> {
   const db = await getDb();
-  const stale = new Date(nowMs() - STALE_QUEUED_MS);
+  const stale = new Date(nowMs() - SMS_STALE_QUEUED_MS);
   const rows = await db
     .select({ id: smsMessages.id })
     .from(smsMessages)
@@ -331,7 +349,7 @@ export async function sweepStuckSms(limit = 20): Promise<number> {
   let tried = 0;
   for (const r of rows) {
     const outcome = await retrySmsDelivery(r.id);
-    if (outcome === "skipped") continue;
+    if (outcome === "skipped" || outcome === "in_flight") continue;
     tried++;
     if (outcome === "retry") {
       const [row] = await db.select({ id: smsMessages.id, attempts: smsMessages.attempts }).from(smsMessages).where(eq(smsMessages.id, r.id));
@@ -361,8 +379,14 @@ export async function applySmsStatusCallback(p: { messageSid: string; messageSta
       .set({ status: "failed", lastError: `${PERMANENT_PREFIX}twilio ${status}${code ? ` ${code}` : ""}`, updatedAt: at })
       .where(eq(smsMessages.id, row.id));
     if (code === TWILIO_UNSUBSCRIBED) await recordSmsOptOut(row.toNumber, "stop", db);
-  } else if (status === "delivered" || status === "sent") {
-    await db.update(smsMessages).set({ status: "sent", updatedAt: at }).where(eq(smsMessages.id, row.id));
+  } else if (status === "delivered") {
+    await db.update(smsMessages).set({ status: "sent", lastError: null, updatedAt: at }).where(eq(smsMessages.id, row.id));
+  } else if (status === "sent") {
+    // Callbacks can arrive out of order: a late "sent" never undoes a "failed" or "undelivered" receipt.
+    await db
+      .update(smsMessages)
+      .set({ status: "sent", updatedAt: at })
+      .where(and(eq(smsMessages.id, row.id), inArray(smsMessages.status, ["queued", "stored", "sent"])));
   }
   return true;
 }

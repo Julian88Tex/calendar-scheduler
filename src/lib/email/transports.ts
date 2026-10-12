@@ -32,7 +32,8 @@ export type OutgoingEmail = {
 };
 
 export type DeliveryResult =
-  | { ok: true; providerMessageId: string | null }
+  /** alreadySent: the provider had already accepted this message (an earlier attempt with the same idempotency key). */
+  | { ok: true; providerMessageId: string | null; alreadySent?: boolean }
   | { ok: false; retryable: boolean; error: string };
 
 const RESEND_TIMEOUT_MS = 15_000;
@@ -44,7 +45,6 @@ const RESEND_PERMANENT = new Set([
   "invalid_parameter",
   "invalid_attachment",
   "invalid_idempotency_key",
-  "invalid_idempotent_request",
   "method_not_allowed",
   "not_found",
 ]);
@@ -84,6 +84,9 @@ export async function deliverWithResend(msg: OutgoingEmail, apiKey: string): Pro
     );
     if (res.error) {
       const status = res.error.statusCode ?? 0;
+      // The per-row key was already used with a different payload: only an earlier attempt of this same outbox row
+      // uses it, so Resend accepted that attempt (the function stopped before recording it). Not a failure.
+      if (res.error.name === "invalid_idempotent_request") return { ok: true, providerMessageId: null, alreadySent: true };
       const retryable = !RESEND_PERMANENT.has(res.error.name) || status === 429 || status >= 500;
       return { ok: false, retryable, error: `resend ${res.error.name}${status ? ` (${status})` : ""}: ${res.error.message}` };
     }

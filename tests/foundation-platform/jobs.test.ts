@@ -145,6 +145,37 @@ describe("enqueue and cancel", () => {
   });
 });
 
+describe("enqueueOrReviveJob", () => {
+  it("inserts, leaves a pending or running job alone, and revives a finished one with a fresh budget", async () => {
+    setFakeNow("2031-01-02T09:00:00Z");
+    const id = await jobsLib.enqueueOrReviveJob(t.db, { type: "booking.t_ok", idempotencyKey: "rev", payload: { n: 1 }, maxAttempts: 3 });
+    expect(id).toBeTruthy();
+    // Pending: untouched.
+    expect(await jobsLib.enqueueOrReviveJob(t.db, { type: "booking.t_ok", idempotencyKey: "rev", payload: { n: 2 } })).toBeNull();
+    expect((await job(id!)).payload).toEqual({ n: 1 });
+    // Running: untouched.
+    await t.db.update(jobs).set({ status: "running", lockedBy: "w" }).where(eq(jobs.id, id!));
+    expect(await jobsLib.enqueueOrReviveJob(t.db, { type: "booking.t_ok", idempotencyKey: "rev", payload: { n: 3 } })).toBeNull();
+    // Finished (dead): revived with the new payload, run time and attempt budget.
+    await t.db
+      .update(jobs)
+      .set({ status: "dead", attempts: 3, lockedBy: null, lastError: "boom", finishedAt: new Date("2031-01-02T09:01:00Z") })
+      .where(eq(jobs.id, id!));
+    const later = new Date("2031-01-02T10:00:00Z");
+    expect(await jobsLib.enqueueOrReviveJob(t.db, { type: "booking.t_ok", idempotencyKey: "rev", payload: { n: 4 }, runAt: later, maxAttempts: 5 })).toBe(id);
+    expect(await job(id!)).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      maxAttempts: 5,
+      payload: { n: 4 },
+      runAt: later,
+      lastError: null,
+      finishedAt: null,
+    });
+    await expect(jobsLib.enqueueOrReviveJob(t.db, { type: "booking.t_ok", idempotencyKey: "" })).rejects.toThrow(/idempotencyKey/);
+  });
+});
+
 describe("runDueJobs", () => {
   it("a handler killed mid-way is retried with backoff and completes (GEN-16)", async () => {
     setFakeNow("2031-02-01T10:00:00Z");

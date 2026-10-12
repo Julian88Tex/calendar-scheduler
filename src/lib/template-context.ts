@@ -71,7 +71,8 @@ function splitName(full: string): { first: string; last: string } {
 
 /**
  * Builds the NT-07 variables for one meeting ({} when the meeting is missing). Invitee variables (names, answers,
- * guests, UTM values, manage links) are present only when an invitee is given; absent variables render as empty text.
+ * guests, UTM values, manage links, and invitee_time_zone: the invitee's own zone label in the recipient's locale) are
+ * present only when an invitee is given; absent variables render as empty text.
  */
 export async function buildMeetingTemplateContext(input: BuildMeetingTemplateContextInput): Promise<TemplateContext> {
   const db = input.db ?? (await getDb());
@@ -192,6 +193,8 @@ export async function buildMeetingTemplateContext(input: BuildMeetingTemplateCon
       invitee_email: invitee.email,
       invitee_phone_number: invitee.textReminderNumber ?? "",
       invitee_uuid: invitee.id,
+      // Not an NT-07 menu variable: the invitee's own zone label for host emails ("Invitee Time Zone", NT-02).
+      invitee_time_zone: zoneLabel(zoneOrUtc(invitee.timezone), locale),
       questions_and_answers: answers
         .filter((a) => a.answer?.trim())
         .map((a) => `${a.question}\n${a.answer}`)

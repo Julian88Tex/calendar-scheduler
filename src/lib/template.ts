@@ -119,6 +119,8 @@ export const TEMPLATE_PREVIEW_CONTEXT: Readonly<TemplateContext> = {
   invitee_email: "sam@example.com",
   invitee_phone_number: "+1 415 555 0100",
   invitee_uuid: "00000000-0000-4000-8000-000000000000",
+  // Context key for host email previews (the invitee's own zone, NT-02), not a menu variable.
+  invitee_time_zone: "Eastern Time - US & Canada",
   guests: "alex@example.com",
   location: "https://meet.example.com/abc-defg-hij",
   join_url: "https://example.com/events/00000000-0000-4000-8000-000000000000/join",

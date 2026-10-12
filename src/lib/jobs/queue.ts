@@ -50,6 +50,45 @@ export async function enqueueJob(dbOrTx: DbOrTx, job: EnqueueJobInput): Promise<
 }
 
 /**
+ * Enqueues a keyed job, or revives the job that already holds the key when it has finished (succeeded, dead,
+ * canceled or failed): back to pending at `runAt` with a fresh attempt budget and the new payload. A pending or
+ * running job with the key is left alone (it will do the work). Returns the id of the new or revived job, or null when
+ * a pending or running job already holds the key. Delivery retries (email.retry, sms.retry) use it so a retry job that
+ * finished earlier never blocks the next retry of the same message.
+ */
+export async function enqueueOrReviveJob(dbOrTx: DbOrTx, job: EnqueueJobInput & { idempotencyKey: string }): Promise<string | null> {
+  const values = jobValues(job);
+  if (!values.idempotencyKey) throw new Error("enqueueOrReviveJob: idempotencyKey is required");
+  const at = now();
+  const rows = await dbOrTx
+    .insert(jobs)
+    .values(values)
+    .onConflictDoUpdate({
+      target: jobs.idempotencyKey,
+      targetWhere: sql`idempotency_key is not null`,
+      set: {
+        type: values.type,
+        payload: values.payload,
+        runAt: values.runAt,
+        priority: values.priority,
+        maxAttempts: values.maxAttempts,
+        groupKey: values.groupKey,
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        result: null,
+        finishedAt: null,
+        lockedBy: null,
+        lockedUntil: null,
+        updatedAt: at,
+      },
+      setWhere: inArray(jobs.status, ["succeeded", "dead", "canceled", "failed"]),
+    })
+    .returning({ id: jobs.id });
+  return rows[0]?.id ?? null;
+}
+
+/**
  * Inserts several jobs in one statement. Returns one entry per input, in order: the new id, or null when that job's
  * idempotency key already existed. Jobs without an idempotency key are always inserted.
  */

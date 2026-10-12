@@ -8,8 +8,9 @@
 // - buildMeetingIcs: the ICS of a meeting with the NT-06 rules read from the schema: UID (the provider iCal UID in
 //   calendar invitation mode, `{inviteeId}@{host}` for group invitees, else scheduled_events.ics_uid), SEQUENCE
 //   (scheduled_events.ics_sequence), ORGANIZER the organizer host, ATTENDEE the invitee, guests and co-hosts (RSVP),
-//   SUMMARY the invitee-facing title (template, else "{event} with {host}"), DESCRIPTION and LOCATION as NT-01, URL the
-//   confirmation page, METHOD REQUEST, CANCEL or PUBLISH with STATUS CONFIRMED or CANCELLED.
+//   SUMMARY the invitee-facing title (template, else "{event} with {host}"; host copies: the host calendar title of
+//   CAL-11), DESCRIPTION and LOCATION as NT-01 (calendar invitation mode: the host's invitation description template),
+//   URL the confirmation page, METHOD REQUEST, CANCEL or PUBLISH with STATUS CONFIRMED or CANCELLED.
 import "server-only";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
@@ -20,6 +21,7 @@ import { getT, resolveLocale } from "../i18n";
 import { renderTemplate } from "../template";
 import { buildMeetingTemplateContext, isConferenceKind, locationText } from "../template-context";
 import { appHost, fileAbsoluteUrl, inviteeUrls, joinUrl } from "../url";
+import { htmlToText } from "./html";
 import { buildIcs, icsUid } from "./ical";
 import type { EmailBrand } from "./types";
 
@@ -76,7 +78,13 @@ export type BuildMeetingIcsInput = {
   sequence?: number;
   /** Overrides the NT-06 UID choice (hidden poll invites use `{inviteeId}@{host}`). */
   uid?: string;
-  /** Overrides the invitee-facing title. */
+  /**
+   * Whose calendar the file is for (default "invitee"). "host": the host calendar title (the event type's host title
+   * template, else CAL-11: "{{invitee_full_name}} and {{my_name}}" one-on-one, "{{event_name}}" group,
+   * "{{event_name}} with {{invitee_full_name}}" with several hosts), for hosts without a writable calendar (NT-02).
+   */
+  audience?: "invitee" | "host";
+  /** Overrides the title. */
   summary?: string;
   /** Overrides the generated description. */
   description?: string;
@@ -87,6 +95,12 @@ export type BuildMeetingIcsInput = {
   locale?: string | null;
   db?: DbOrTx;
 };
+
+/** A template body (plain text, or rich text HTML from the editor) rendered to plain text for an ICS description. */
+function templateToPlainText(template: string, ctx: Record<string, string | number | null | undefined>): string {
+  if (/<[a-z][^>]*>/i.test(template)) return htmlToText(renderTemplate(template, ctx, { escape: "html" }));
+  return renderTemplate(template, ctx).replace(/\r\n?/g, "\n").trim();
+}
 
 export type MeetingIcs = { content: string; uid: string; sequence: number; method: "REQUEST" | "CANCEL" | "PUBLISH"; filename: string };
 
@@ -144,17 +158,34 @@ export async function buildMeetingIcs(p: BuildMeetingIcsInput): Promise<MeetingI
     .where(and(eq(scheduledEventHosts.scheduledEventId, event.id), ne(scheduledEventHosts.userId, event.organizerUserId)))
     .orderBy(asc(scheduledEventHosts.createdAt));
 
+  const forHost = p.audience === "host";
+  // Host copies of a one-on-one name the invitee even when the file is not built for one invitee.
+  const ctxInvitee = invitee ?? (forHost && !event.isGroup ? (attendeeRows[0] ?? null) : null);
   const ctx = await buildMeetingTemplateContext({
     scheduledEventId: event.id,
-    inviteeId: invitee?.id ?? null,
-    recipient: invitee ? "invitee" : "other",
+    inviteeId: ctxInvitee?.id ?? null,
+    recipient: forHost ? "host" : invitee ? "invitee" : "other",
     locale,
     db,
   });
-  const titleTemplate = snapshot?.templates?.inviteeEventTitle?.trim();
-  const summary =
+  const titleTemplate = (forHost ? snapshot?.templates?.hostEventTitle : snapshot?.templates?.inviteeEventTitle)?.trim();
+  const summary = (
     p.summary ??
-    (titleTemplate ? renderTemplate(titleTemplate, ctx) : t("meeting.titleWith", { eventName: event.name, hostName: organizer?.name ?? "" }));
+    (titleTemplate
+      ? renderTemplate(titleTemplate, ctx)
+      : forHost
+        ? renderTemplate(
+            event.isGroup
+              ? "{{event_name}}"
+              : cohosts.length
+                ? "{{event_name}} with {{invitee_full_name}}"
+                : ctxInvitee
+                  ? "{{invitee_full_name}} and {{my_name}}"
+                  : "{{event_name}}",
+            ctx,
+          )
+        : t("meeting.titleWith", { eventName: event.name, hostName: organizer?.name ?? "" }))
+  ).trim() || event.name;
 
   const loc = locationText(event.location, locale);
   const conference = isConferenceKind(event.location?.kind);
@@ -162,15 +193,25 @@ export async function buildMeetingIcs(p: BuildMeetingIcsInput): Promise<MeetingI
   const canceled = p.method === "CANCEL" || event.status === "canceled";
   let description = p.description;
   if (description === undefined) {
-    const parts: string[] = [`${t("meeting.eventName")}: ${event.name}`];
-    if (loc) parts.push(`${t("meeting.location")}: ${loc}`);
-    if (stableJoin) parts.push(`${t("meeting.joinLink")}: ${stableJoin}`);
-    if (snapshot?.includeAnswersInNotifications !== false && ctx.questions_and_answers) {
-      parts.push(`${t("meeting.questions")}:\n${ctx.questions_and_answers}`);
+    const parts: string[] = [];
+    // Calendar invitation mode: the host's custom invitation description replaces the generated details (NT-08), so
+    // the downloaded file matches the provider invitation the invitee already holds (CAL-12).
+    const customTemplate =
+      snapshot?.notificationMode === "calendar_invitation" ? snapshot.templates?.invitationDescription?.trim() : undefined;
+    const custom = customTemplate ? templateToPlainText(customTemplate, ctx) : "";
+    if (custom) {
+      parts.push(custom);
+    } else {
+      parts.push(`${t("meeting.eventName")}: ${event.name}`);
+      if (loc) parts.push(`${t("meeting.location")}: ${loc}`);
+      if (stableJoin) parts.push(`${t("meeting.joinLink")}: ${stableJoin}`);
+      if (snapshot?.includeAnswersInNotifications !== false && ctx.questions_and_answers) {
+        parts.push(`${t("meeting.questions")}:\n${ctx.questions_and_answers}`);
+      }
     }
     const links = p.manageLinks ?? snapshot?.includeCancelRescheduleLinks !== false;
-    if (invitee && links && !canceled) {
-      const urls = inviteeUrls(invitee.id);
+    if (ctxInvitee && links && !canceled) {
+      const urls = inviteeUrls(ctxInvitee.id);
       parts.push(`${t("meeting.needChanges")}\n${t("meeting.cancel")}: ${urls.cancel}\n${t("meeting.reschedule")}: ${urls.reschedule}`);
     }
     if (organizer?.showBranding !== false) parts.push(t("meeting.poweredBy", { appName: appName() }));

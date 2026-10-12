@@ -9,7 +9,9 @@ import {
   normalizePhone,
   recordSmsOptOut,
   removeSmsOptOut,
+  retrySmsDelivery,
   sendSms,
+  SMS_MAX_ATTEMPTS,
   smsKeyword,
   smsSegments,
   smsTransportName,
@@ -180,6 +182,44 @@ describe("Twilio transport", () => {
     expect(row).toMatchObject({ status: "failed" });
     expect(row!.lastError).toContain("30006");
     expect(await applySmsStatusCallback({ messageSid: "SMunknown", messageStatus: "delivered" })).toBe(false);
+  });
+});
+
+describe("SMS delivery robustness (review regressions)", () => {
+  it("delivery receipts arriving out of order never undo a failure", async () => {
+    twilioOn();
+    const sent: FakeSms[] = [];
+    mockFetch(...twilioRoutes(sent));
+    const res = await sendSms({ to: "+14155550120", body: "Hi", idempotencyKey: key() });
+    const sid = sent[0]!.sid;
+    expect(await applySmsStatusCallback({ messageSid: sid, messageStatus: "undelivered", errorCode: 30003 })).toBe(true);
+    expect(await applySmsStatusCallback({ messageSid: sid, messageStatus: "sent" })).toBe(true);
+    const [row] = await t.db.select().from(smsMessages).where(eq(smsMessages.id, res.id));
+    expect(row).toMatchObject({ status: "failed" });
+  });
+
+  it("a failed text whose earlier retry job finished gets its retry job revived, and texts stop after 8 attempts", async () => {
+    twilioOn();
+    setFakeNow("2030-04-02T10:00:00Z");
+    mockFetch({
+      method: "POST",
+      url: "https://api.twilio.com/",
+      handler: () => mockResponse({ code: 20500, message: "Internal error", status: 500 }, { status: 500 }),
+    });
+    const first = await sendSms({ to: "+14155550121", body: "One", idempotencyKey: key() });
+    const [job] = await t.db.select().from(jobs).where(eq(jobs.type, "sms.retry"));
+    await t.db.update(jobs).set({ status: "succeeded", finishedAt: new Date("2030-04-02T10:00:01Z") }).where(eq(jobs.id, job!.id));
+    // The text left in "queued" by a killed function is swept and fails again: the finished job comes back.
+    await t.db.update(smsMessages).set({ status: "queued", updatedAt: new Date("2030-04-02T09:00:00Z") }).where(eq(smsMessages.id, first.id));
+    const { sweepStuckSms } = await import("@/lib/sms");
+    expect(await sweepStuckSms()).toBe(1);
+    const [revived] = await t.db.select().from(jobs).where(eq(jobs.id, job!.id));
+    expect(revived).toMatchObject({ status: "pending", attempts: 0 });
+    // Out of attempts: no ninth try.
+    await t.db.update(smsMessages).set({ attempts: SMS_MAX_ATTEMPTS }).where(eq(smsMessages.id, first.id));
+    expect(await retrySmsDelivery(first.id)).toBe("failed");
+    const [row] = await t.db.select().from(smsMessages).where(eq(smsMessages.id, first.id));
+    expect(row!.lastError).toMatch(/^permanent: gave up after 8 attempts/);
   });
 });
 

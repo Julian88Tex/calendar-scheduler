@@ -8,22 +8,23 @@
 //   Resend or SMTP        -> "sending" -> "sent" (provider message id) | "failed" (+ email.retry job with backoff)
 // Delivery of an existing row is claimed atomically (failed/queued -> sending), so concurrent retries never send twice;
 // providers also receive a per-row idempotency key. A periodic email.retry sweep re-sends rows interrupted mid-delivery
-// (serverless function killed). Permanent provider rejections are marked failed without retries.
+// (serverless function killed) and failed rows whose retry job was lost. Permanent provider rejections are marked failed
+// without retries. Each row gets at most EMAIL_MAX_ATTEMPTS delivery attempts in total.
 import "server-only";
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, notLike, or, sql } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
-import { emailOutbox } from "@/db/schema";
+import { emailOutbox, jobs } from "@/db/schema";
 import { appName } from "../brand";
 import { AppError } from "../errors";
 import { getEnv } from "../env";
-import { enqueueJob } from "../jobs/queue";
+import { enqueueOrReviveJob } from "../jobs/queue";
 import { log } from "../logger";
 import { now, nowMs } from "../time/now";
 import { absoluteUrl, appHost } from "../url";
 import { formatAddress, isValidEmailAddress, normalizeRecipients, parseAddress, sanitizeHeaderValue } from "./address";
 import { isAbsoluteHttpUrl } from "./html";
 import { deliverWithResend, deliverWithSmtp, type DeliveryResult, type OutgoingEmail } from "./transports";
-import type { EmailMessage, EmailTransportName, SendEmailResult } from "./types";
+import type { EmailMessage, EmailTransportName, IcsMethod, SendEmailResult } from "./types";
 
 export type OutboxRow = typeof emailOutbox.$inferSelect;
 
@@ -141,9 +142,16 @@ async function finishDelivery(db: DbOrTx, row: OutboxRow, headers: Record<string
   if (result.ok) {
     await db
       .update(emailOutbox)
-      .set({ status: "sent", providerMessageId: result.providerMessageId, sentAt: at, updatedAt: at, lastError: null })
+      .set({
+        status: "sent",
+        providerMessageId: result.providerMessageId ?? row.providerMessageId,
+        sentAt: row.sentAt ?? at,
+        updatedAt: at,
+        lastError: null,
+      })
       .where(and(eq(emailOutbox.id, row.id), eq(emailOutbox.status, "sending")));
-    log.info("email.sent", { id: row.id, template: row.template, provider: emailTransportName() });
+    if (result.alreadySent) log.warn("email.already_sent", { id: row.id, template: row.template, provider: emailTransportName() });
+    else log.info("email.sent", { id: row.id, template: row.template, provider: emailTransportName() });
     return "sent";
   }
   const retry = result.retryable && row.attempts < EMAIL_MAX_ATTEMPTS;
@@ -157,14 +165,40 @@ async function finishDelivery(db: DbOrTx, row: OutboxRow, headers: Record<string
 }
 
 async function scheduleRetry(db: DbOrTx, row: OutboxRow, headers: Record<string, string>): Promise<void> {
-  await enqueueJob(db, {
+  // One retry job per row: revived when an earlier one already finished, so a later failure always gets its retry.
+  await enqueueOrReviveJob(db, {
     type: "email.retry",
     payload: { outboxId: row.id, headers },
     runAt: new Date(nowMs() + backoffMs(row.attempts)),
-    idempotencyKey: `email.retry:${row.id}`,
+    idempotencyKey: retryJobKey(row.id),
     maxAttempts: Math.max(1, EMAIL_MAX_ATTEMPTS - row.attempts),
     priority: 5,
   });
+}
+
+const retryJobKey = (outboxId: string) => `email.retry:${outboxId}`;
+
+const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
+
+/** Header map from untrusted input (job payloads): valid names, sanitized string values. */
+export function cleanHeaders(input: unknown): Record<string, string> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof v !== "string" || !HEADER_NAME.test(k)) continue;
+    const value = sanitizeHeaderValue(v, 998);
+    if (value) out[k] = value;
+  }
+  return out;
+}
+
+/**
+ * The headers of a row's first delivery, carried by its email.retry job (List-Unsubscribe is not stored on the
+ * outbox row), so a re-send carries the same headers and the provider sees the same request.
+ */
+async function storedRetryHeaders(db: DbOrTx, outboxId: string): Promise<Record<string, string>> {
+  const [job] = await db.select({ payload: jobs.payload }).from(jobs).where(eq(jobs.idempotencyKey, retryJobKey(outboxId))).limit(1);
+  return cleanHeaders((job?.payload as { headers?: unknown } | undefined)?.headers);
 }
 
 /** Claims an existing row for delivery (failed or queued, or interrupted "sending"), counting the attempt. */
@@ -180,6 +214,25 @@ async function claimRow(db: DbOrTx, id: string, opts: { includeStale?: boolean }
     .where(and(eq(emailOutbox.id, id), statusCond, isNull(emailOutbox.bodyPurgedAt)))
     .returning();
   return row ?? null;
+}
+
+/** The METHOD line of an iCalendar document ("REQUEST", "CANCEL", "PUBLISH"), or null. */
+export function icsMethodOf(content: string): IcsMethod | null {
+  const m = /^METHOD:([A-Z]+)\s*$/m.exec(content);
+  const v = m?.[1];
+  return v === "REQUEST" || v === "CANCEL" || v === "PUBLISH" ? v : null;
+}
+
+/**
+ * The ICS to store and send: dropped when empty; the method follows the document's own METHOD line so the
+ * text/calendar content type always matches what calendar clients read (a mismatch would turn a cancellation into
+ * an invitation).
+ */
+function normalizeIcs(ics: EmailMessage["ics"], template: string): { method: IcsMethod; content: string } | null {
+  if (!ics?.content?.trim()) return null;
+  const declared = icsMethodOf(ics.content);
+  if (declared && declared !== ics.method) log.warn("email.ics_method_mismatch", { template, given: ics.method, ics: declared });
+  return { method: declared ?? ics.method, content: ics.content };
 }
 
 const isPermanent = (row: Pick<OutboxRow, "lastError">) => Boolean(row.lastError?.startsWith(PERMANENT_PREFIX));
@@ -207,6 +260,7 @@ export async function sendEmail(msg: EmailMessage): Promise<SendEmailResult> {
   const noRecipients = to.valid.length === 0;
   const at = now();
   const stored = transport === "outbox" && !noRecipients;
+  const ics = normalizeIcs(msg.ics, msg.template);
 
   const inserted = await db
     .insert(emailOutbox)
@@ -226,8 +280,8 @@ export async function sendEmail(msg: EmailMessage): Promise<SendEmailResult> {
         contentType: sanitizeHeaderValue(a.contentType, 200) || "application/octet-stream",
         contentBase64: toBase64(a.content),
       })),
-      icsMethod: msg.ics?.method ?? null,
-      ics: msg.ics?.content ?? null,
+      icsMethod: ics?.method ?? null,
+      ics: ics?.content ?? null,
       template: msg.template,
       category: msg.category,
       status: noRecipients ? "failed" : stored ? "stored" : "sending",
@@ -281,41 +335,84 @@ export async function sendEmail(msg: EmailMessage): Promise<SendEmailResult> {
   return { id: existing.id, status: publicStatus(existing.status), deduplicated: true };
 }
 
-export type RetryEmailOutcome = "sent" | "stored" | "failed" | "retry" | "skipped";
+export type RetryEmailOutcome = "sent" | "stored" | "failed" | "retry" | "skipped" | "in_flight";
 
 /**
  * Retries delivery of one outbox row (the email.retry job). "retry" means the attempt failed with a retryable error
- * (the job throws so the runner backs off); "skipped" means there was nothing to do (already sent, being sent,
- * permanently failed, or purged).
+ * (the job throws so the runner backs off); "in_flight" means another worker is delivering it right now (the job
+ * retries later, after the interrupted-delivery window); "failed" means the row is out of attempts; "skipped" means
+ * there was nothing to do (already sent or stored, permanently failed, or purged). `headers` defaults to the headers
+ * of the first delivery (carried by the row's retry job).
  */
-export async function retryEmailDelivery(outboxId: string, headers: Record<string, string> = {}): Promise<RetryEmailOutcome> {
+export async function retryEmailDelivery(outboxId: string, headers?: Record<string, string>): Promise<RetryEmailOutcome> {
   const db = await getDb();
   const [current] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId)).limit(1);
   if (!current || isPermanent(current) || current.bodyPurgedAt) return "skipped";
+  if (current.status === "sent" || current.status === "stored") return "skipped";
+  const staleBefore = nowMs() - EMAIL_STALE_SENDING_MS;
+  if (current.status === "sending" && current.updatedAt.getTime() >= staleBefore) return "in_flight";
+  if (current.attempts >= EMAIL_MAX_ATTEMPTS) {
+    // Out of attempts (a stale "sending" row means the last attempt was interrupted): give up for good.
+    const at = now();
+    await db
+      .update(emailOutbox)
+      .set({
+        status: "failed",
+        lastError: `${PERMANENT_PREFIX}gave up after ${current.attempts} attempts${current.lastError ? `: ${current.lastError}` : ""}`.slice(0, 2000),
+        updatedAt: at,
+      })
+      .where(and(eq(emailOutbox.id, outboxId), inArray(emailOutbox.status, ["failed", "queued", "sending"])));
+    log.warn("email.gave_up", { id: outboxId, template: current.template, attempts: current.attempts });
+    return "failed";
+  }
   const claimed = await claimRow(db, outboxId, { includeStale: true });
-  if (!claimed) return "skipped";
-  const merged = { "Auto-Submitted": "auto-generated", "X-Auto-Response-Suppress": "OOF, AutoReply", ...headers };
+  if (!claimed) {
+    const [fresh] = await db.select({ status: emailOutbox.status }).from(emailOutbox).where(eq(emailOutbox.id, outboxId));
+    return fresh?.status === "sending" ? "in_flight" : "skipped";
+  }
+  const merged = { ...emailHeaders({ listUnsubscribe: null }), ...(headers ?? (await storedRetryHeaders(db, outboxId))) };
   return finishDelivery(db, claimed, merged);
 }
 
-/** Re-sends rows interrupted mid-delivery ("sending" or "queued" for more than 10 minutes). Returns how many were tried. */
+/**
+ * Re-sends rows interrupted mid-delivery ("sending" or "queued" for more than 10 minutes) and failed rows with a
+ * retryable error whose retry job is gone (lost between two statements, or exhausted by runner errors). Returns how
+ * many were tried.
+ */
 export async function sweepStuckEmails(limit = 20): Promise<number> {
   const db = await getDb();
   const stale = new Date(nowMs() - EMAIL_STALE_SENDING_MS);
+  const activeRetry = sql`exists (select 1 from ${jobs} where ${jobs.idempotencyKey} = 'email.retry:' || ${emailOutbox.id}::text
+    and ${jobs.status} in ('pending', 'running'))`;
   const rows = await db
     .select({ id: emailOutbox.id })
     .from(emailOutbox)
-    .where(and(inArray(emailOutbox.status, ["sending", "queued"]), lt(emailOutbox.updatedAt, stale), isNull(emailOutbox.bodyPurgedAt)))
+    .where(
+      and(
+        lt(emailOutbox.updatedAt, stale),
+        isNull(emailOutbox.bodyPurgedAt),
+        or(
+          inArray(emailOutbox.status, ["sending", "queued"]),
+          and(
+            eq(emailOutbox.status, "failed"),
+            lt(emailOutbox.attempts, EMAIL_MAX_ATTEMPTS),
+            or(isNull(emailOutbox.lastError), notLike(emailOutbox.lastError, `${PERMANENT_PREFIX}%`)),
+            sql`not ${activeRetry}`,
+          ),
+        ),
+      ),
+    )
     .orderBy(emailOutbox.updatedAt)
     .limit(limit);
   let tried = 0;
   for (const r of rows) {
-    const outcome = await retryEmailDelivery(r.id);
-    if (outcome === "skipped") continue;
+    const headers = await storedRetryHeaders(db, r.id);
+    const outcome = await retryEmailDelivery(r.id, headers);
+    if (outcome === "skipped" || outcome === "in_flight") continue;
     tried++;
     if (outcome === "retry") {
       const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, r.id));
-      if (row) await scheduleRetry(db, row, {});
+      if (row) await scheduleRetry(db, row, { ...emailHeaders({ listUnsubscribe: null }), ...headers });
     }
   }
   return tried;

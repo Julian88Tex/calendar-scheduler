@@ -3,17 +3,18 @@
 // Foundation job handlers (ARCHITECTURE section 12.2): email.retry, sms.retry and system.cleanup.
 //
 // - email.retry { outboxId, headers? }: one more delivery attempt of an outbox row; throws on a retryable failure so
-//   the runner backs off (30s doubling, 8 attempts in total with the inline one). Without an outboxId (the periodic
-//   run every 15 minutes) it sweeps rows interrupted mid-delivery.
+//   the runner backs off (30s doubling, 8 attempts in total with the inline one); while another worker is still
+//   delivering the row it retries later without counting an attempt. Without an outboxId (the periodic run every 15
+//   minutes) it sweeps rows interrupted mid-delivery and failed rows whose retry job was lost.
 // - sms.retry { smsId }: the same for the SMS log.
 // - system.cleanup (daily): the GEN-16 retention rules (src/lib/jobs/cleanup.ts); continues in a follow-up job when
 //   one run is not enough.
 import "server-only";
-import { retryEmailDelivery, sweepStuckEmails } from "../email/send";
-import { retrySmsDelivery, sweepStuckSms } from "../sms/send";
+import { EMAIL_STALE_SENDING_MS, cleanHeaders, retryEmailDelivery, sweepStuckEmails } from "../email/send";
+import { SMS_STALE_QUEUED_MS, retrySmsDelivery, sweepStuckSms } from "../sms/send";
 import { runRetentionCleanup } from "./cleanup";
 import { enqueueJob } from "./queue";
-import type { JobHandlers, PeriodicJob } from "./types";
+import { RetryLaterError, type JobHandlers, type PeriodicJob } from "./types";
 
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 64;
 
@@ -23,16 +24,10 @@ export const builtinHandlers: JobHandlers = {
       const swept = await sweepStuckEmails();
       return { result: { swept } };
     }
-    const headers =
-      payload.headers && typeof payload.headers === "object" && !Array.isArray(payload.headers)
-        ? Object.fromEntries(
-            Object.entries(payload.headers as Record<string, unknown>).filter(
-              (e): e is [string, string] => typeof e[1] === "string" && /^[A-Za-z0-9-]+$/.test(e[0]),
-            ),
-          )
-        : {};
-    const outcome = await retryEmailDelivery(payload.outboxId, headers);
+    const outcome = await retryEmailDelivery(payload.outboxId, cleanHeaders(payload.headers));
     if (outcome === "retry") throw new Error("Email delivery failed; retrying with backoff");
+    // Another worker is delivering it (or was killed doing so): look again once that delivery counts as interrupted.
+    if (outcome === "in_flight") throw new RetryLaterError(EMAIL_STALE_SENDING_MS + 60_000, "Email delivery in progress elsewhere");
     return { result: { outcome } };
   },
   "sms.retry": async (payload: { smsId?: unknown }) => {
@@ -42,6 +37,7 @@ export const builtinHandlers: JobHandlers = {
     }
     const outcome = await retrySmsDelivery(payload.smsId);
     if (outcome === "retry") throw new Error("SMS delivery failed; retrying with backoff");
+    if (outcome === "in_flight") throw new RetryLaterError(SMS_STALE_QUEUED_MS + 60_000, "SMS delivery in progress elsewhere");
     return { result: { outcome } };
   },
   "system.cleanup": async (_payload, ctx) => {

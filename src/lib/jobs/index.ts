@@ -27,7 +27,17 @@ export {
   type RunDueJobsOptions,
   type RunDueJobsResult,
 } from "./types";
-export { cancelJobs, enqueueJob, enqueueJobs, jobQueueStats, retryJobs, runJobsNow, type JobRow, type JobStatus } from "./queue";
+export {
+  cancelJobs,
+  enqueueJob,
+  enqueueJobs,
+  enqueueOrReviveJob,
+  jobQueueStats,
+  retryJobs,
+  runJobsNow,
+  type JobRow,
+  type JobStatus,
+} from "./queue";
 export { JOB_LOCK_MS, JOB_TIMEOUT_MS, NO_HANDLER_DELAY_MS, runDueJobs } from "./runner";
 export { AFTER_RESPONSE_BUDGET_MS, runJobsAfterResponse, runJobsNowInBackground, type RunAfterResponseOptions } from "./after";
 export { retryDelayMs } from "./backoff";

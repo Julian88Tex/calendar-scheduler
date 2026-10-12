@@ -123,6 +123,57 @@ describe("buildMeetingIcs (NT-06)", () => {
     expect(ics.content).not.toContain("ATTENDEE");
   });
 
+  it("host copies use the CAL-11 host calendar title (or the host title template) and keep the invitee as attendee", async () => {
+    const solo = await meeting();
+    // Several hosts: "{{event_name}} with {{invitee_full_name}}".
+    const multi = (await buildMeetingIcs({ scheduledEventId: solo.scheduledEvent.id, method: "REQUEST", audience: "host" }))!;
+    expect(parse(multi.content).summary).toBe("Strategy Session with Sam Rivera");
+    expect(String(parse(multi.content).description)).toContain(`Cancel: http://localhost:3000/cancellations/${solo.invitee.id}`);
+    const attendees = ([] as { val: string }[]).concat(parse(multi.content).attendee as never).map((a) => a.val.toLowerCase());
+    expect(attendees).toContain(`mailto:${solo.invitee.email}`);
+    // A custom host title template wins.
+    await t.db
+      .update(scheduledEvents)
+      .set({ settingsSnapshot: { ...solo.scheduledEvent.settingsSnapshot, templates: { hostEventTitle: "{{invitee_full_name}} / {{event_name}}" } } })
+      .where(eq(scheduledEvents.id, solo.scheduledEvent.id));
+    const custom = (await buildMeetingIcs({ scheduledEventId: solo.scheduledEvent.id, inviteeId: solo.invitee.id, method: "REQUEST", audience: "host" }))!;
+    expect(parse(custom.content).summary).toBe("Sam Rivera / Strategy Session");
+    // One host, one-on-one: "{{invitee_full_name}} and {{my_name}}".
+    seq++;
+    const host = await createUser(t.db, { name: "Riley Host", email: `solo${seq}@example.com` });
+    const { eventType } = await createEventType(t.db, { owner: host, name: "Intro" });
+    const b = await createBooking(t.db, { eventType, start: "2026-11-03T15:00:00Z", invitee: { name: "Ana Diaz", email: `ana${seq}@example.com` } });
+    const one = (await buildMeetingIcs({ scheduledEventId: b.scheduledEvent.id, method: "REQUEST", audience: "host" }))!;
+    expect(parse(one.content).summary).toBe("Ana Diaz and Riley Host");
+    // Group slots: the event name.
+    const g = await meeting({ group: true });
+    const group = (await buildMeetingIcs({ scheduledEventId: g.scheduledEvent.id, method: "REQUEST", audience: "host" }))!;
+    expect(parse(group.content).summary).toBe("Strategy Session");
+  });
+
+  it("calendar invitation mode: the host's invitation description template replaces the generated details", async () => {
+    const m = await meeting();
+    await t.db
+      .update(scheduledEvents)
+      .set({
+        settingsSnapshot: {
+          ...m.scheduledEvent.settingsSnapshot,
+          notificationMode: "calendar_invitation",
+          templates: { invitationDescription: "<p>Hi {{invitee_first_name}} &amp; team,</p><p>Agenda: <strong>{{event_name}}</strong></p>" },
+        },
+      })
+      .where(eq(scheduledEvents.id, m.scheduledEvent.id));
+    const ics = (await buildMeetingIcs({ scheduledEventId: m.scheduledEvent.id, inviteeId: m.invitee.id, method: "PUBLISH" }))!;
+    const desc = String(parse(ics.content).description);
+    expect(desc).toContain("Hi Sam & team,");
+    expect(desc).toContain("Agenda: Strategy Session");
+    expect(desc).not.toContain("Event Name:");
+    expect(desc).not.toContain("<p>");
+    // The manage links and the footer still follow the meeting settings.
+    expect(desc).toContain("Need to make changes to this event?");
+    expect(desc).toContain("Powered by Kairos");
+  });
+
   it("returns null for a missing meeting", async () => {
     expect(await buildMeetingIcs({ scheduledEventId: "00000000-0000-4000-8000-000000000999", method: "REQUEST" })).toBeNull();
   });

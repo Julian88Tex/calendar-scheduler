@@ -9,6 +9,7 @@ export {
   SMS_DAILY_CAP_PER_NUMBER,
   SMS_FAILURE_PAUSE_COUNT,
   SMS_MAX_ATTEMPTS,
+  SMS_STALE_QUEUED_MS,
   applySmsStatusCallback,
   isSmsOptedOut,
   recordSmsOptOut,

@@ -134,6 +134,8 @@ describe("buildMeetingTemplateContext", () => {
       event_time_zone: "Pacific Time - US & Canada",
       invitee_full_name: "Sam Rivera",
     });
+    // The invitee's own zone for the host email's "Invitee Time Zone" block (NT-02).
+    expect(ctx.invitee_time_zone).toBe("Central European Time");
     const cohost = await createUser(t.db, { timezone: "Asia/Tokyo", overrides: { timeFormat: "24h" } });
     const other = await buildMeetingTemplateContext({ scheduledEventId: scheduledEvent.id, recipient: "host", hostUserId: cohost.id });
     expect(other).toMatchObject({ event_time: "21:00", event_date: "Tuesday, October 20, 2026", event_time_zone: "Japan, Korea Time" });

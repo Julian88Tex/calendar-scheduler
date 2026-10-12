@@ -5,8 +5,10 @@
 **Why**: `sendEmail` adds message headers that are not derivable from the other columns: `List-Unsubscribe` and
 `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (GEN-08, poll emails), plus `Auto-Submitted` and
 `X-Auto-Response-Suppress`. Today they reach the provider on the first attempt and on `email.retry` jobs (carried in
-the job payload), but they are lost when a row is re-sent by the interrupted-delivery sweep or by the ADM-04 "Resend"
-action, and the outbox viewer cannot show them ("headers" in the ADM-04 detail view).
+the job payload; the interrupted-delivery sweep recovers them from that payload when the row has a retry job), but
+they are lost when a row is re-sent by the sweep before it ever had a retry job (the function was killed during the
+first attempt) or by the ADM-04 "Resend" action, and the outbox viewer cannot show them ("headers" in the ADM-04 detail
+view). Storing them also keeps every retry byte-identical for the Resend idempotency key.
 
 **Change**:
 

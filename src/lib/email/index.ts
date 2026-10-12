@@ -7,15 +7,20 @@
 // - buildIcs: invitations and cancellations in UTC (ical.ts); buildMeetingIcs applies the NT-06 rules from the schema
 // - meetingSender (NT-20 From name and Reply-To), emailBrandForUser (NT-05 header and footer) (meeting.ts)
 // - addToCalendarLinks: Google, Outlook.com, Office 365 and ICS links (BK-22, calendar-links.ts)
+// - renderMeetingEmail: Calendly-style confirmation, new event, cancellation, reschedule and reminder emails from a
+//   template context (meeting-templates.ts), for lifecycle-core, workflows and polls-core
 // - htmlToText, escapeHtml and address helpers
 import "server-only";
 
 export type { EmailBrand, EmailCategory, EmailMessage, EmailTransportName, IcsMethod, RenderedEmail, SendEmailResult } from "./types";
 export {
   EMAIL_MAX_ATTEMPTS,
+  EMAIL_STALE_SENDING_MS,
+  cleanHeaders,
   defaultFromAddress,
   emailHeaders,
   emailTransportName,
+  icsMethodOf,
   listUnsubscribeHeaders,
   resendOutboxEmail,
   retryEmailDelivery,
@@ -55,6 +60,14 @@ export {
   type AddToCalendarLink,
   type CalendarLinkInput,
 } from "./calendar-links";
+export {
+  meetingDateTimeLine,
+  meetingEmailFields,
+  meetingLocationLines,
+  renderMeetingEmail,
+  type MeetingEmailInput,
+  type MeetingEmailKind,
+} from "./meeting-templates";
 export {
   buildMeetingIcs,
   emailBrandForUser,

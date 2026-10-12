@@ -80,8 +80,9 @@ function lineHtml(line: EmailFieldLine, linkColor: string): string {
 function lineText(line: EmailFieldLine): string {
   if (typeof line === "string") return line;
   const href = safeHref(line.href);
-  const base = href && href !== line.text ? `${line.text} (${href.replace(/^mailto:/i, "")})` : line.text;
-  return base;
+  const target = href.replace(/^(mailto|tel):/i, "");
+  // "Join now (https://...)", but a link whose text is its own address stays as written ("sam@example.com").
+  return href && target !== line.text.trim() && href !== line.text.trim() ? `${line.text} (${target})` : line.text;
 }
 
 function fieldLines(f: EmailField): EmailFieldLine[] {

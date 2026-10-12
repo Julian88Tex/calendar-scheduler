@@ -372,3 +372,159 @@ describe("List-Unsubscribe headers", () => {
     expect(email.listUnsubscribeHeaders(null)).toEqual({});
   });
 });
+
+describe("delivery robustness under serverless (review regressions)", () => {
+  const insertRow = async (over: Partial<typeof emailOutbox.$inferInsert> = {}) =>
+    (
+      await t.db
+        .insert(emailOutbox)
+        .values({
+          toAddresses: ["x@example.com"],
+          fromAddress: "notifications@localhost",
+          subject: "Row",
+          html: "<p>x</p>",
+          text: "x",
+          template: "t",
+          category: "poll",
+          status: "failed",
+          provider: "resend",
+          attempts: 2,
+          lastError: "resend application_error (500): Down",
+          idempotencyKey: `row-${Math.random().toString(36).slice(2)}`,
+          updatedAt: new Date("2030-03-01T09:00:00Z"),
+          ...over,
+        })
+        .returning()
+    )[0]!;
+
+  it("a failed row whose earlier retry job already finished still gets a retry (the job is revived)", async () => {
+    env.RESEND_API_KEY = "re_test_key";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setFakeNow("2030-03-01T10:00:00Z");
+    mockFetch({
+      method: "POST",
+      url: "https://api.resend.com/emails",
+      handler: () => mockResponse({ name: "application_error", message: "Down", statusCode: 500 }, { status: 500 }),
+    });
+    const r = await insertRow();
+    // The row's retry job finished earlier (for example it ran while another worker held the row and was killed).
+    const [old] = await t.db
+      .insert(jobs)
+      .values({
+        type: "email.retry",
+        payload: { outboxId: r.id, headers: { "List-Unsubscribe": "<https://x.test/u>" } },
+        runAt: new Date("2030-03-01T08:00:00Z"),
+        status: "succeeded",
+        attempts: 1,
+        idempotencyKey: `email.retry:${r.id}`,
+        finishedAt: new Date("2030-03-01T08:00:01Z"),
+      })
+      .returning();
+    expect(await email.sweepStuckEmails()).toBe(1);
+    expect(await row(r.id)).toMatchObject({ status: "failed", attempts: 3 });
+    const [revived] = await t.db.select().from(jobs).where(eq(jobs.id, old!.id));
+    expect(revived).toMatchObject({ status: "pending", attempts: 0, maxAttempts: 5, finishedAt: null });
+    expect(revived!.runAt.getTime()).toBeGreaterThan(Date.parse("2030-03-01T10:00:00Z"));
+    // The revived job keeps the first delivery's headers.
+    expect((revived!.payload as { headers: Record<string, string> }).headers["List-Unsubscribe"]).toBe("<https://x.test/u>");
+    // A pending retry job means the sweep leaves the row to it.
+    expect(await email.sweepStuckEmails()).toBe(0);
+  });
+
+  it("re-sends carry the first delivery's List-Unsubscribe headers (recovered from the retry job)", async () => {
+    env.RESEND_API_KEY = "re_test_key";
+    setFakeNow("2030-03-01T10:00:00Z");
+    const f = mockFetch({ method: "POST", url: "https://api.resend.com/emails", handler: () => ({ id: "re_lu" }) });
+    const r = await insertRow({ status: "sending", attempts: 1, lastError: null });
+    await t.db.insert(jobs).values({
+      type: "email.retry",
+      payload: { outboxId: r.id, headers: { "List-Unsubscribe": "<https://x.test/u>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } },
+      runAt: new Date("2030-03-01T08:00:00Z"),
+      status: "dead",
+      idempotencyKey: `email.retry:${r.id}`,
+    });
+    expect(await email.sweepStuckEmails()).toBe(1);
+    expect(await row(r.id)).toMatchObject({ status: "sent", providerMessageId: "re_lu" });
+    const headers = (f.calls[0]!.body as { headers: Record<string, string> }).headers;
+    expect(headers).toMatchObject({
+      "Auto-Submitted": "auto-generated",
+      "List-Unsubscribe": "<https://x.test/u>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
+  it("a retry job that finds the row mid-delivery elsewhere backs off without spending an attempt", async () => {
+    env.RESEND_API_KEY = "re_test_key";
+    setFakeNow("2030-03-01T10:00:00Z");
+    const f = mockFetch({ method: "POST", url: "https://api.resend.com/emails", handler: () => ({ id: "re_x" }) });
+    const r = await insertRow({ status: "sending", attempts: 2, updatedAt: new Date("2030-03-01T09:58:00Z") });
+    const jobId = (await (await import("@/lib/jobs")).enqueueJob(t.db, {
+      type: "email.retry",
+      payload: { outboxId: r.id },
+      idempotencyKey: `email.retry:${r.id}`,
+    }))!;
+    await runDueJobs({ budgetMs: 10_000, types: ["email.retry"] });
+    const [job] = await t.db.select().from(jobs).where(eq(jobs.id, jobId));
+    expect(job).toMatchObject({ status: "pending", attempts: 0 });
+    expect(job!.runAt.getTime()).toBeGreaterThanOrEqual(Date.parse("2030-03-01T10:10:00Z"));
+    expect(f.calls).toHaveLength(0);
+    // Once the delivery counts as interrupted, the job takes the row over and sends it.
+    setFakeNow("2030-03-01T10:12:00Z");
+    await runDueJobs({ budgetMs: 10_000, types: ["email.retry"] });
+    expect(await row(r.id)).toMatchObject({ status: "sent", attempts: 3 });
+    expect((await t.db.select().from(jobs).where(eq(jobs.id, jobId)))[0]?.status).toBe("succeeded");
+  });
+
+  it("never exceeds 8 delivery attempts per email", async () => {
+    env.RESEND_API_KEY = "re_test_key";
+    setFakeNow("2030-03-01T10:00:00Z");
+    const f = mockFetch({ method: "POST", url: "https://api.resend.com/emails", handler: () => ({ id: "re_never" }) });
+    const exhausted = await insertRow({ attempts: email.EMAIL_MAX_ATTEMPTS });
+    const interrupted = await insertRow({ status: "sending", attempts: email.EMAIL_MAX_ATTEMPTS, lastError: null });
+    expect(await email.retryEmailDelivery(exhausted.id)).toBe("failed");
+    expect((await row(exhausted.id)).lastError).toMatch(/^permanent: gave up after 8 attempts/);
+    // The sweep gives up on the interrupted last attempt instead of trying a ninth time.
+    await email.sweepStuckEmails();
+    expect(await row(interrupted.id)).toMatchObject({ status: "failed", attempts: 8 });
+    expect((await row(interrupted.id)).lastError).toMatch(/^permanent: gave up/);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("Resend's idempotent payload mismatch means an earlier attempt was accepted: the row is sent, not failed", async () => {
+    env.RESEND_API_KEY = "re_test_key";
+    setFakeNow("2030-03-01T10:00:00Z");
+    mockFetch({
+      method: "POST",
+      url: "https://api.resend.com/emails",
+      handler: () =>
+        mockResponse(
+          { name: "invalid_idempotent_request", message: "Same idempotency key used with a different request payload", statusCode: 409 },
+          { status: 409 },
+        ),
+    });
+    const r = await insertRow({ status: "sending", attempts: 1, lastError: null });
+    expect(await email.sweepStuckEmails()).toBe(1);
+    expect(await row(r.id)).toMatchObject({ status: "sent", lastError: null });
+    expect(await t.db.select().from(jobs).where(eq(jobs.type, "email.retry"))).toHaveLength(0);
+  });
+
+  it("stores the ICS method of the document itself (a mismatched method never turns a cancel into an invite)", async () => {
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:CANCEL", "BEGIN:VEVENT", "UID:x@localhost", "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+    const res = await email.sendEmail(base({ ics: { method: "REQUEST", content: ics } }));
+    expect(await row(res.id)).toMatchObject({ icsMethod: "CANCEL", ics });
+    expect(email.icsMethodOf(ics)).toBe("CANCEL");
+    expect(email.icsMethodOf("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")).toBeNull();
+    // An empty ICS is dropped.
+    const none = await email.sendEmail(base({ ics: { method: "REQUEST", content: "  " } }));
+    expect(await row(none.id)).toMatchObject({ icsMethod: null, ics: null });
+  });
+
+  it("cleans header maps from job payloads", () => {
+    expect(email.cleanHeaders({ "X-Ok": "a\r\nBcc: evil@x.test", "Bad Name": "x", Num: 1, "List-Unsubscribe": "<https://x.test/u>" })).toEqual({
+      "X-Ok": "a Bcc: evil@x.test",
+      "List-Unsubscribe": "<https://x.test/u>",
+    });
+    expect(email.cleanHeaders(null)).toEqual({});
+    expect(email.cleanHeaders(["x"])).toEqual({});
+  });
+});

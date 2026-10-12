@@ -95,7 +95,8 @@ describe.runIf(process.env.TEST_DATABASE_URL)("jobs runner on real Postgres", ()
         .returning();
       const outcomes = await Promise.all(Array.from({ length: 6 }, () => retryEmailDelivery(row!.id)));
       expect(outcomes.filter((o) => o === "sent")).toHaveLength(1);
-      expect(outcomes.filter((o) => o === "skipped")).toHaveLength(5);
+      // The losers see the row mid-delivery ("in_flight": their jobs look again later) or already sent ("skipped").
+      expect(outcomes.filter((o) => o === "skipped" || o === "in_flight")).toHaveLength(5);
       expect(f.calls).toHaveLength(1);
       expect((await t.db.select().from(emailOutbox).where(eq(emailOutbox.id, row!.id)))[0]).toMatchObject({ status: "sent", attempts: 2 });
     } finally {

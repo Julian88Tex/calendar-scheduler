@@ -56,6 +56,7 @@ export const RETENTION = {
   authTokenDays: 30,
 } as const;
 
+/** Deleted or purged rows per rule (key names avoid words the logger redacts, such as "code" and "token"). */
 export type CleanupCounts = Record<string, number>;
 
 export type CleanupResult = { counts: CleanupCounts; complete: boolean };
@@ -168,11 +169,11 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
     return { deleted: purged, done: false };
   });
   await step("sms_rows", () => chunkedDelete(db, smsMessages, smsMessages.id, lt(smsMessages.createdAt, ago(RETENTION.smsRowDays)), deadline));
-  await step("verification_codes", () =>
+  await step("expired_verifications", () =>
     chunkedDelete(db, verificationCodes, verificationCodes.id, lt(verificationCodes.expiresAt, ago(RETENTION.verificationCodeDays)), deadline),
   );
   await step("trusted_devices", () => chunkedDelete(db, trustedDevices, trustedDevices.id, lt(trustedDevices.expiresAt, at), deadline));
-  await step("auth_tokens", () =>
+  await step("expired_auth_links", () =>
     chunkedDelete(db, authTokens, authTokens.id, lt(authTokens.expiresAt, ago(RETENTION.authTokenDays)), deadline),
   );
   return { counts, complete };
