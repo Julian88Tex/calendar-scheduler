@@ -17,7 +17,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 |---|---|---|
 | foundation-ui | Calendly look and feel: app shell, sidebar, buttons, calendar grid, time slots, time zone picker | building |
 | foundation-auth | Sign up, log in, password reset, 2FA, Sign in with Google/Microsoft (also connects the calendar) | building |
-| foundation-platform | Emails (confirmation, reminders) with calendar invites, SMS, background jobs, cron | building |
+| foundation-platform | Email sending with Calendly-style layout and calendar invites, background jobs, cron | done |
 | slot-engine | The scheduling brain: hours, buffers, minimum notice, increments, limits, DST, why-blocked diagnostics | done |
 | booking-core | Taking a booking safely (no double booking), daily/weekly and account-wide limits, slot API | building |
 | booking-pages | Your profile page, the month calendar and time slots, details form, confirmation page | next |
@@ -25,7 +25,7 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 2: set up your own availability and event types
 | Module | What it gives you | Status |
 |---|---|---|
-| availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | next |
+| availability | Schedules, weekly hours, date-specific hours, max meetings per day/week across all event types, Troubleshoot view (why a time is blocked) | building |
 | event-types-editor | Create and edit one-on-one event types: duration, locations, questions, buffers, limits, notice, increments | queued |
 | event-types-list | Scheduling home: event type cards, copy link, duplicate, on/off, search | queued |
 
