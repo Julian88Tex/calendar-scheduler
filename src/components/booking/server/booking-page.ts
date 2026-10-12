@@ -10,12 +10,15 @@ import { getDb } from "@/db";
 import { teams, users } from "@/db/schema";
 import type { PublicBranding } from "@/components/public/public-page-shell";
 import { getOperatorEmail } from "@/components/public/operator";
+import type { LocationConfig } from "@/db/types";
 import { getCurrentUser } from "@/lib/auth/session";
 import { eventTypeAccess, loadActorCtx } from "@/lib/authz";
+import { getDestinationCalendar } from "@/lib/calendars";
 import { allowedDurationsOf, defaultDurationOf, getAvailability, HONEYPOT_FIELD, issueBookingFormToken, TRUSTED_DEVICE_COOKIE, type BookingTarget } from "@/lib/booking";
 import { parsePrefill } from "@/lib/booking/prefill";
 import { APP_NAME } from "@/lib/brand";
 import { embedDisplayParams } from "@/lib/embed-events";
+import { getEnv } from "@/lib/env";
 import { fileUrl } from "@/lib/files";
 import { richTextToPlain, sanitizeRichText } from "@/lib/html";
 import { log } from "@/lib/logger";
@@ -110,7 +113,28 @@ function questionsOf(target: BookingTarget): PublicQuestion[] {
     }));
 }
 
-function eventViewOf(target: BookingTarget): EventView {
+/**
+ * The location options invitees may pick (VID-07): Google Meet needs a Google destination calendar, so when the host
+ * has none, booking pages hide the Meet option of an event type that offers other locations too (Meet as the only
+ * option stays: the meeting is booked with "Web conferencing details to follow.").
+ */
+async function offeredLocations(target: BookingTarget): Promise<LocationConfig[]> {
+  const et = target.eventType;
+  const list = target.overrides?.locations ?? et.locations;
+  const organizer = et.ownerUserId ?? et.hosts[0]?.userId ?? null;
+  if (!organizer || list.length < 2 || !list.some((l) => l.kind === "google_conference")) return list;
+  try {
+    const dest = await getDestinationCalendar(organizer, et.id);
+    if (dest?.supports.googleMeet) return list;
+  } catch (e) {
+    log.warn("booking.destination_lookup_failed", { error: e });
+    return list;
+  }
+  const rest = list.filter((l) => l.kind !== "google_conference");
+  return rest.length > 0 ? rest : list;
+}
+
+function eventViewOf(target: BookingTarget, locations: readonly LocationConfig[]): EventView {
   const et = target.eventType;
   const durations = allowedDurationsOf(target);
   const html = sanitizeRichText(et.descriptionHtml);
@@ -123,7 +147,7 @@ function eventViewOf(target: BookingTarget): EventView {
     defaultDuration: defaultDurationOf(target),
     descriptionHtml: html || null,
     descriptionText: html ? null : et.descriptionPlain?.trim() || null,
-    locations: toPublicLocations(target.overrides?.locations ?? et.locations),
+    locations: toPublicLocations(locations),
     questions: questionsOf(target),
     nameFormat: et.nameFormat,
     allowGuests: et.allowGuests && et.kind !== "group",
@@ -150,6 +174,12 @@ function brandHeaderOf(profile: HostProfile | null, header: HostHeader): BrandHe
   if (header.variant === "single") return { kind: "avatar", src: header.person.avatarUrl, name: header.person.name };
   if (header.variant === "team") return { kind: "avatar", src: header.avatarUrl, name: header.name };
   return null;
+}
+
+/** The Turnstile site key when both keys are set (the server then requires a token on every booking, BK-18). */
+function turnstileSiteKey(): string | null {
+  const env = getEnv();
+  return env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY ? env.TURNSTILE_SITE_KEY : null;
 }
 
 /** True when the start is a bookable slot right now (deep link check, BK-08). Errors count as bookable (submit rechecks). */
@@ -186,14 +216,15 @@ export async function loadBookingPage(input: LoadBookingPageInput): Promise<Book
   const et = target.eventType;
   const embed = embedDisplayParams(sp);
   const ownerId = et.ownerUserId ?? et.hosts[0]?.userId ?? null;
-  const [profile, viewer, legal, operatorEmail] = await Promise.all([
+  const [profile, viewer, legal, operatorEmail, locations] = await Promise.all([
     ownerId ? loadHostProfile(ownerId) : Promise.resolve(null),
     viewerOf(target),
     getLegalLinks(),
     getOperatorEmail(),
+    offeredLocations(target),
   ]);
   const header = await headerOf(target, profile);
-  const event = eventViewOf(target);
+  const event = eventViewOf(target, locations);
   const hostName = headerName(header) ?? profile?.name ?? "";
   // Team pages carry the team's identity, never the first host's personal branding.
   const brandProfile = et.scope === "team" ? null : profile;
@@ -267,7 +298,8 @@ export async function loadBookingPage(input: LoadBookingPageInput): Promise<Book
     trustedDeviceCookie: TRUSTED_DEVICE_COOKIE,
     viewer: viewerView,
     preview,
-    troubleshootUrl: viewer.isHost ? `/app/availability/troubleshoot?eventType=${encodeURIComponent(et.id)}` : null,
+    troubleshootEventTypeId: viewer.isHost ? et.id : null,
+    turnstileSiteKey: turnstileSiteKey(),
     serverNow: now().getTime(),
     hostZone: profile?.timezone ?? "UTC",
     weekStart: profile?.weekStart ?? 0,
@@ -338,7 +370,8 @@ export async function loadNewTypePreview(handle: string, sp: SearchParamsInput):
     trustedDeviceCookie: TRUSTED_DEVICE_COOKIE,
     viewer: { signedIn: true, isHost: false, email: null, editUrl: null, mutual: false },
     preview: true,
-    troubleshootUrl: null,
+    troubleshootEventTypeId: null,
+    turnstileSiteKey: null,
     serverNow: now().getTime(),
     hostZone: profile.timezone,
     weekStart: profile.weekStart,

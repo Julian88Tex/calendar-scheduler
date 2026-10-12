@@ -13,6 +13,7 @@
 "use client";
 
 import type { Route } from "next";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
@@ -24,9 +25,11 @@ import { Button } from "@/components/ui/button";
 import { MonthCalendar } from "@/components/ui/month-calendar";
 import { dayLabel, monthName } from "@/components/ui/month-calendar-utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { TimeZoneButton } from "@/components/ui/time-zone-select";
 import { useMinuteClock } from "@/components/ui/use-minute-clock";
+import { troubleshootHref } from "@/lib/availability/links";
 import { fallbackCookieHeaders } from "@/lib/client/embed-cookie";
 import { cn } from "@/lib/cn";
 import { postEmbedEvent, postPageHeight } from "@/lib/embed-events";
@@ -48,9 +51,9 @@ import {
 } from "./lib/form";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
 import { bt } from "./lib/t";
+import { createTurnstileRunner } from "./lib/turnstile";
 import { calendarHref, detailsHref, landingForwardParams, parseDate, parseMonth, startFromPath, withCarried } from "./lib/url-state";
 import { OwnerBanner, PreviewBanner } from "./owner-banner";
-import { TroubleshootList } from "./troubleshoot-list";
 import type { BookingPageProps, BookingPrefillView, EventView } from "./types";
 import {
   forgetAutofill,
@@ -66,9 +69,27 @@ import {
 } from "./use-browser-env";
 import { useMonthSlots } from "./use-month-slots";
 import { applyDraft, usePreviewDraft } from "./use-preview-draft";
-import { VerificationPanel, type VerifiedBooking } from "./verification-panel";
+import type { VerifiedBooking } from "./verification-panel";
+
+// Owner troubleshoot mode and the email verification step are rare: they load on demand to keep the public page's
+// JavaScript under the GEN-07 budget.
+function StepSpinner() {
+  return (
+    <div className="flex h-40 items-center justify-center">
+      <Spinner />
+    </div>
+  );
+}
+const TroubleshootList = dynamic(() => import("./troubleshoot-list").then((m) => m.TroubleshootList), { ssr: false, loading: StepSpinner });
+const VerificationPanel = dynamic(() => import("./verification-panel").then((m) => m.VerificationPanel), { ssr: false, loading: StepSpinner });
 
 const LOCALE = "en-US";
+/**
+ * BK-18: the server refuses bookings sent within 2 seconds of the page render (signed timestamp). Autofill or prefill
+ * links make that possible for people too, so a quick submit waits out the rest (plus a margin) behind the spinner
+ * instead of failing.
+ */
+const MIN_FORM_WAIT_MS = 2_300;
 const MAX_JUMP_MONTHS = 12;
 const MAX_MONTHS_AHEAD = 24;
 /**
@@ -77,6 +98,13 @@ const MAX_MONTHS_AHEAD = 24;
  */
 const FLOW_STYLE = { "--slot-selected": "rgba(10, 37, 64, 0.65)" } as React.CSSProperties;
 const EMBED_KEYS = ["embed_type", "embed_domain", "hide_gdpr_banner", "background_color", "text_color", "primary_color"];
+/**
+ * On tall desktop screens the card is 700px high (BookingCard); the times list then runs down to the card's bottom
+ * edge like Calendly's instead of stopping at the 450px default.
+ */
+const SLOT_LIST_TALL = "min-[1000px]:[@media(min-height:860px)]:[&_ul]:max-h-[596px]";
+/** Only web pages: the server already refuses other schemes; this keeps a bad value from ever reaching location. */
+const WEB_URL = /^https?:\/\//i;
 
 function initialValues(prefill: BookingPrefillView, event: EventView): FormValues {
   const v = emptyValues();
@@ -198,9 +226,15 @@ export function BookingFlow(p: BookingPageProps) {
   const data: MonthSlots | null = slots.status === "ready" ? slots.data : null;
   const dataZone = data?.timeZone ?? zone;
   const troubleshootDays = troubleshoot ? data?.troubleshoot?.days : undefined;
+  // Troubleshoot mode opens every day of the month from today on (past days have nothing to fix).
   const availableDates = useMemo(
-    () => (troubleshootDays ? Object.keys(troubleshootDays).filter((d) => d.startsWith(`${month}-`)).sort() : availableDatesOf(data, month)),
-    [troubleshootDays, data, month],
+    () =>
+      troubleshootDays
+        ? Object.keys(troubleshootDays)
+            .filter((d) => d.startsWith(`${month}-`) && d >= todayDate)
+            .sort()
+        : availableDatesOf(data, month),
+    [troubleshootDays, data, month, todayDate],
   );
   const dateInMonth = date && date.slice(0, 7) === month ? date : null;
   const effectiveDate = dateInMonth && data && !availableDates.includes(dateInMonth) ? null : dateInMonth;
@@ -251,8 +285,19 @@ export function BookingFlow(p: BookingPageProps) {
   const [verification, setVerification] = useState<{ reservationId: string; email: string } | null>(null);
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const requestRef = useRef<{ key: string; id: string } | null>(null);
+  const mountedAt = useRef<number | null>(null);
+  useEffect(() => {
+    mountedAt.current = Date.now();
+  }, []);
   const honeypotRef = useRef<HTMLInputElement>(null);
   const detailsHeadingRef = useRef<HTMLHeadingElement>(null);
+  // BK-18: Cloudflare Turnstile when the instance configures it (the script loads with the details step only).
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const turnstile = useMemo(() => (p.turnstileSiteKey && !p.preview ? createTurnstileRunner(p.turnstileSiteKey) : null), [p.turnstileSiteKey, p.preview]);
+  useEffect(() => {
+    if (turnstile && step === "details") turnstile.preload();
+  }, [turnstile, step]);
+  useEffect(() => () => turnstile?.dispose(), [turnstile]);
 
   const changeValues = (update: (v: FormValues) => FormValues) => {
     const wasMaterialized = materialized;
@@ -401,7 +446,7 @@ export function BookingFlow(p: BookingPageProps) {
       event: { uri: `${origin}/api/v1/scheduled_events/${b.scheduledEventId ?? ""}` },
       invitee: { uri: `${origin}/api/v1/scheduled_events/${b.scheduledEventId ?? ""}/invitees/${b.inviteeId}` },
     });
-    if (b.redirectUrl) {
+    if (b.redirectUrl && WEB_URL.test(b.redirectUrl)) {
       setRedirecting(b.redirectUrl);
       try {
         (window.top ?? window).location.href = b.redirectUrl;
@@ -467,6 +512,18 @@ export function BookingFlow(p: BookingPageProps) {
     setSubmitting(true);
     const key = `${p.slotsTarget}|${start}|${duration}|${v.email.trim().toLowerCase()}`;
     if (requestRef.current?.key !== key) requestRef.current = { key, id: newRequestId() };
+    const early = MIN_FORM_WAIT_MS - (Date.now() - (mountedAt.current ?? 0));
+    if (early > 0) await new Promise((resolve) => window.setTimeout(resolve, early));
+    let turnstileToken: string | null = null;
+    if (turnstile) {
+      try {
+        turnstileToken = await turnstile.token(turnstileRef.current);
+      } catch {
+        setFormError(bt("errors.botCheck"));
+        setSubmitting(false);
+        return;
+      }
+    }
     const body = buildBookingBody({
       target: p.target,
       start,
@@ -483,6 +540,7 @@ export function BookingFlow(p: BookingPageProps) {
       clientRequestId: requestRef.current.id,
       formToken: p.formToken,
       honeypot: honeypotRef.current?.value ?? "",
+      turnstileToken,
       embed,
     });
     let outcome: SubmitOutcome;
@@ -606,6 +664,7 @@ export function BookingFlow(p: BookingPageProps) {
                   collectMarketing={event.collectMarketingConsent}
                   honeypotName={p.honeypotName}
                   honeypotRef={honeypotRef}
+                  turnstileRef={turnstile ? turnstileRef : undefined}
                   appName={p.appName}
                   termsUrl={p.termsUrl}
                   privacyUrl={p.privacyUrl}
@@ -642,7 +701,10 @@ export function BookingFlow(p: BookingPageProps) {
     const d = new Date(Date.UTC(y, m - 1 + MAX_MONTHS_AHEAD, 1));
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   })();
-  const troubleshootDayUrl = p.troubleshootUrl ? `${p.troubleshootUrl}&date=${effectiveDate ?? todayDate}` : null;
+  // The availability module's Troubleshoot view for the day on screen (host only, BK-24, SCOPE priority 4).
+  const troubleshootDayUrl = p.troubleshootEventTypeId
+    ? troubleshootHref({ eventTypeId: p.troubleshootEventTypeId, date: effectiveDate ?? todayDate, durationMinutes: duration !== event.defaultDuration ? duration : null })
+    : null;
 
   const times = effectiveDate ? (
     <div className="flex min-w-0 flex-col">
@@ -669,6 +731,7 @@ export function BookingFlow(p: BookingPageProps) {
           onNext={goDetails}
           loading={!data}
           stickyHeader
+          className={SLOT_LIST_TALL}
           emptyText={bt("page.noTimes")}
           aria-label={bt("page.selectTime")}
         />

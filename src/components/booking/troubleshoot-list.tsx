@@ -25,8 +25,13 @@ export type TroubleshootListProps = {
   fullUrl: string | null;
 };
 
+function isOutsideHours(c: TroubleshootCandidateView): boolean {
+  return c.status === "outside_hours" || (c.outsideHours && c.reasons.length === 0);
+}
+
+/** The short chip label ("CALENDAR", "DAILY MAX", "OUTSIDE HOURS"): it must fit next to the time without truncating. */
 function chipLabel(c: TroubleshootCandidateView): string {
-  if (c.status === "outside_hours" || (c.outsideHours && c.reasons.length === 0)) return bt("troubleshoot.outsideHours");
+  if (isOutsideHours(c)) return bt("troubleshoot.outsideHoursChip");
   return reasonLabel(c.status as ReasonCode);
 }
 
@@ -49,6 +54,16 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
     }
   }, [selected]);
   const shown = [...candidates].sort((a, b) => a.start - b.start);
+  // A day starts with hours of "Outside hours" starts from midnight: open the list on the first start that matters
+  // (available or blocked by something the owner can fix) so the answer is on screen without scrolling.
+  const listRef = useRef<HTMLUListElement>(null);
+  const firstRelevant = shown.find((c) => !isOutsideHours(c))?.start ?? null;
+  useEffect(() => {
+    const ul = listRef.current;
+    if (!ul) return;
+    const li = firstRelevant === null ? null : ul.querySelector<HTMLElement>(`[data-start="${firstRelevant}"]`);
+    ul.scrollTop = li ? Math.max(0, li.offsetTop - 2) : 0;
+  }, [dateLabel, firstRelevant]);
   return (
     <div className="flex min-w-0 flex-col pt-7 pb-6 min-[1000px]:pr-6 max-[999px]:px-5 min-[600px]:max-[999px]:px-8" data-testid="troubleshoot-list">
       <h3 className="mb-1 flex h-[38px] shrink-0 items-center text-[16px] leading-6 text-public-text">{dateLabel}</h3>
@@ -56,14 +71,14 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
       {shown.length === 0 ? (
         <p className="py-8 text-center text-[14px] text-ink-2">{bt("troubleshoot.none")}</p>
       ) : (
-        <ul aria-label={bt("troubleshoot.title")} className="scrollbar-thin -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:max-h-[450px]">
+        <ul ref={listRef} aria-label={bt("troubleshoot.title")} className="scrollbar-thin relative -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:max-h-[450px] min-[1000px]:[@media(min-height:860px)]:max-h-[540px]">
           {shown.map((c) => {
             const iso = new Date(c.start).toISOString();
             const time = formatTime(c.start);
             if (c.available) {
               if (iso === selected) {
                 return (
-                  <li key={c.start} className="flex min-w-0 items-stretch justify-between">
+                  <li key={c.start} data-start={c.start} className="flex min-w-0 items-stretch justify-between">
                     <div className="flex h-[52px] w-[48.5%] items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] text-[16px] font-bold text-white">{time}</div>
                     <button
                       ref={nextRef}
@@ -77,7 +92,7 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
                 );
               }
               return (
-                <li key={c.start} className="flex min-w-0">
+                <li key={c.start} data-start={c.start} className="flex min-w-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -93,7 +108,7 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
             }
             const label = chipLabel(c);
             return (
-              <li key={c.start} className="flex min-w-0" data-testid="troubleshoot-unavailable">
+              <li key={c.start} data-start={c.start} className="flex min-w-0" data-testid="troubleshoot-unavailable">
                 <div className="flex h-[52px] w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-slot)] border border-dashed border-ink-3 bg-public-bg px-3">
                   <span className="text-[15px] font-semibold text-ink-2 tabular-nums">{time}</span>
                   <button
@@ -119,9 +134,9 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
       >
         {open && (
           <div className="flex flex-col gap-5" data-testid="troubleshoot-sheet">
-            {open.status === "outside_hours" && (
+            {isOutsideHours(open) && (
               <section className="flex flex-col gap-1.5">
-                <span className="self-start rounded-full bg-pebble px-2.5 py-1 text-[11px] font-bold tracking-[0.4px] uppercase">{bt("troubleshoot.outsideHours")}</span>
+                <span className="self-start rounded-full bg-pebble px-2.5 py-1 text-[11px] font-bold tracking-[0.4px] uppercase">{bt("troubleshoot.outsideHoursChip")}</span>
                 <p className="text-[14px] text-ink">{bt("troubleshoot.outsideHoursHint")}</p>
               </section>
             )}

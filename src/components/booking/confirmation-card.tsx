@@ -95,6 +95,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
             {bt("confirmation.guests")}: {v.guests.join(", ")}
           </p>
         )}
+        {canceled && v.canceled?.by && <p className="text-[14px] text-ink">{bt("confirmation.canceledBy", { name: v.canceled.by })}</p>}
         {canceled && v.canceled?.reason && <p className="text-[14px] text-ink">{bt("confirmation.reason", { reason: v.canceled.reason })}</p>}
       </section>
 

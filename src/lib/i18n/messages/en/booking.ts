@@ -135,6 +135,7 @@ const messages = {
     intro: "Every possible start time for this day, with the reason when it isn't available.",
     available: "Available",
     outsideHours: "Outside working hours",
+    outsideHoursChip: "Outside hours",
     outsideHoursHint: "This time is outside the schedule's working hours.",
     fix: "How to fix it",
     blockedBy: "Blocked by",
@@ -209,6 +210,7 @@ const messages = {
     blocked: "We couldn't schedule this event. Please refresh the page and try again.",
     payment: "This event requires a payment, which can't be collected right now. Please contact the host.",
     linkUsed: "Someone has already used this link to book a meeting.",
+    botCheck: "We couldn't verify this browser. Please refresh the page and try again.",
   },
 };
 

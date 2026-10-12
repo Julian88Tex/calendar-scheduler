@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { EventTypePreviewDraft } from "@/db/types";
+import { isValidTimeZone } from "@/lib/time/zones";
 import { toPublicLocations } from "./lib/locations";
 import type { EventView } from "./types";
 
@@ -36,7 +37,7 @@ export function usePreviewDraft(enabled: boolean): EventTypePreviewDraft | null 
 
 /** Plain text of draft HTML (previews never inject unsanitized markup). */
 export function draftText(html: string | null): string | null {
-  if (!html) return null;
+  if (!html || typeof html !== "string") return null;
   const text = html
     .replace(/<(br|\/p|\/div|\/li|\/h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]*>/g, "")
@@ -57,7 +58,7 @@ const clampDuration = (n: unknown): number | null => (typeof n === "number" && N
 export function applyDraft(event: EventView, draft: EventTypePreviewDraft | null): EventView {
   if (!draft) return event;
   const def = clampDuration(draft.durationMinutes) ?? event.defaultDuration;
-  const options = (draft.durationOptions ?? []).map(clampDuration).filter((d): d is number => d !== null);
+  const options = (Array.isArray(draft.durationOptions) ? draft.durationOptions : []).map(clampDuration).filter((d): d is number => d !== null);
   const durations = [def, ...options.filter((d) => d !== def)].filter((d, i, a) => a.indexOf(d) === i);
   return {
     ...event,
@@ -70,6 +71,7 @@ export function applyDraft(event: EventView, draft: EventTypePreviewDraft | null
     descriptionText: draftText(draft.descriptionHtml),
     locations: toPublicLocations(draft.locations),
     showRemainingSpots: draft.kind === "group" && draft.showRemainingSpots,
-    lockedTimeZone: draft.timeZoneDisplay === "locked" && draft.lockedTimeZone ? draft.lockedTimeZone : null,
+    // A zone typed halfway in the editor is not valid yet: keep the invitee's zone until it is (Intl throws otherwise).
+    lockedTimeZone: draft.timeZoneDisplay === "locked" && draft.lockedTimeZone && isValidTimeZone(draft.lockedTimeZone) ? draft.lockedTimeZone : null,
   };
 }

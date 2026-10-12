@@ -218,7 +218,28 @@ describe("details form", () => {
     expect(body.invitee).toMatchObject({ name: "Ana Lima", email: "Ana@Example.com", timezone: "Asia/Kolkata", detectedTimezone: "Asia/Kolkata", timeFormat: "24h", marketingConsent: false });
     expect(body.locationAnswer).toEqual({ configId: "l2", value: "+14155550123" });
     expect(body.website).toBe("");
+    expect("turnstileToken" in body).toBe(false);
     expect(toE164("0044 20 7946 0958")).toBe("+442079460958");
+    // BK-18: the Turnstile token rides along when the instance requires one.
+    const withToken = buildBookingBody({
+      target: { kind: "event_type", eventTypeId: "et" },
+      start: "2026-10-13T18:00:00.000Z",
+      durationMinutes: 30,
+      values,
+      ctx,
+      collectMarketing: false,
+      timezone: "UTC",
+      detectedTimezone: null,
+      timeFormat: "12h",
+      locale: "en-US",
+      tracking: {},
+      clientRequestId: "req-12345678",
+      formToken: "tok",
+      honeypot: "",
+      turnstileToken: "cf-token",
+      embed: false,
+    });
+    expect(withToken).toMatchObject({ turnstileToken: "cf-token", formToken: "tok" });
   });
 
   it("maps the endpoint's answers", () => {
@@ -294,5 +315,29 @@ describe("preview drafts (ET-29)", () => {
     expect(out.locations[0]!.text).toBe("Office");
     expect(draftText("<p>a</p><p>b</p>")).toBe("a\nb");
     expect(applyDraft(event, null)).toBe(event);
+  });
+
+  it("survives drafts the editor sends mid-edit: a half typed zone, odd values (regression)", () => {
+    const out = applyDraft(event, {
+      name: "Draft",
+      color: "#17e885",
+      durationMinutes: 30,
+      durationOptions: { 0: 45 } as unknown as number[],
+      locations: [{ id: "x", kind: "physical", position: 0, location: 42 } as unknown as LocationConfig, null as unknown as LocationConfig],
+      descriptionHtml: 7 as unknown as string,
+      priceMinor: null,
+      currency: null,
+      kind: "solo",
+      maxInvitees: 1,
+      showRemainingSpots: false,
+      timeZoneDisplay: "locked",
+      lockedTimeZone: "Europe/Ber",
+    });
+    // An invalid zone would make every Intl call throw: the invitee's zone stays in use until the zone is valid.
+    expect(out.lockedTimeZone).toBeNull();
+    expect(out.durations).toEqual([30]);
+    expect(out.descriptionText).toBeNull();
+    expect(out.locations).toHaveLength(1);
+    expect(out.locations[0]!.text).toBeNull();
   });
 });

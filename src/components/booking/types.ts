@@ -95,8 +95,10 @@ export type BookingPageProps = {
   trustedDeviceCookie: string;
   viewer: ViewerView;
   preview: boolean;
-  /** Troubleshoot route of the availability module (owners only). */
-  troubleshootUrl: string | null;
+  /** Hosts only: the event type the availability module's Troubleshoot view opens on (link built with troubleshootHref). */
+  troubleshootEventTypeId: string | null;
+  /** Cloudflare Turnstile site key when bot protection is configured (BK-18); null otherwise. */
+  turnstileSiteKey: string | null;
   /** Business clock of the server (fake time in E2E, SPEC 24.2). */
   serverNow: number;
   /** Zone used before the browser zone is known. */

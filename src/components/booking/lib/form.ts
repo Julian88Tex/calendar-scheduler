@@ -196,6 +196,8 @@ export type BuildBodyInput = {
   clientRequestId: string;
   formToken: string;
   honeypot: string;
+  /** Cloudflare Turnstile token when the instance requires one (BK-18). */
+  turnstileToken?: string | null;
   embed: boolean;
 };
 
@@ -229,6 +231,7 @@ export function buildBookingBody(p: BuildBodyInput) {
     clientRequestId: p.clientRequestId,
     website: p.honeypot,
     formToken: p.formToken,
+    ...(p.turnstileToken ? { turnstileToken: p.turnstileToken } : {}),
     embed: p.embed,
   };
 }

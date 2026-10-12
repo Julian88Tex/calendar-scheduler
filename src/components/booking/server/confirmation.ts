@@ -179,15 +179,21 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
   return { state: "ok", view };
 }
 
-/** Invitee row for the ICS route (status and meeting). */
+/**
+ * Invitee row for the ICS route (status and meeting). An old invitee id of a rescheduled booking follows the chain to
+ * the current booking (CR-04), like the confirmation page: a reschedule keeps the calendar UID (SEQUENCE + 1), so a
+ * CANCEL file for the old id would remove the rescheduled meeting from the invitee's calendar.
+ */
 export async function loadInviteeForIcs(inviteeId: string): Promise<{ id: string; scheduledEventId: string; status: "active" | "canceled"; eventStatus: "active" | "canceled" } | null> {
   if (!isUuid(inviteeId)) return null;
   const db = await getDb();
+  const current = await resolveActiveInviteeChain(inviteeId, db);
+  if (!current) return null;
   const [row] = await db
     .select({ id: invitees.id, scheduledEventId: invitees.scheduledEventId, status: invitees.status, eventStatus: scheduledEvents.status })
     .from(invitees)
     .innerJoin(scheduledEvents, eq(scheduledEvents.id, invitees.scheduledEventId))
-    .where(eq(invitees.id, inviteeId))
+    .where(eq(invitees.id, current.id))
     .limit(1);
   return row ?? null;
 }

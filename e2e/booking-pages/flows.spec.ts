@@ -165,7 +165,7 @@ test.describe("booking flows", () => {
     await expect(times.getByRole("button", { name: "2:00pm" })).toHaveCount(0);
   });
 
-  test("email verification step and error answers (mocked endpoint)", async ({ page }) => {
+  test("email verification step and error answers (mocked endpoint)", async ({ page, axe }) => {
     await page.route("**/api/public/bookings", (route) =>
       route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ok: false, code: "verification_required", message: "Verify", reservationId: "11111111-1111-4111-8111-111111111111" }) }),
     );
@@ -184,6 +184,7 @@ test.describe("booking flows", () => {
     const step = page.getByTestId("verification-step");
     await expect(step.getByRole("heading", { name: "Verify your email" })).toBeVisible();
     await expect(step.getByText("To complete your booking, enter the 6-digit code sent to ana@example.com")).toBeVisible();
+    await axe(page);
     await step.getByLabel("Verification code").fill("000000");
     await step.getByRole("button", { name: "Continue" }).click();
     await expect(step.getByText("That code isn't correct. Try again.")).toBeVisible();
@@ -273,6 +274,19 @@ test.describe("booking flows", () => {
     await expect(page.getByTestId("preview-banner")).toHaveCount(0);
   });
 
+  test("guests: Add Guests moves focus into the chips and an 11th guest is refused (BK-10)", async ({ page }) => {
+    await page.goto("/julianjoseph/30min/2030-10-08T18:00:00Z", SLOW);
+    await page.getByRole("button", { name: "Add Guests" }).click();
+    const guests = page.getByRole("textbox", { name: "Guest Email(s)" });
+    await expect(guests).toBeFocused();
+    await expect(page.getByText("Notify up to 10 additional guests of the scheduled event.")).toBeVisible();
+    for (let i = 1; i <= 11; i++) await guests.fill(`g${i}@example.com,`);
+    await expect(page.locator('[data-field="guests"]').getByRole("alert")).toHaveText("You can add up to 10 guests.");
+    await expect(page.getByRole("button", { name: /^Remove g\d+@example\.com$/ })).toHaveCount(10);
+    await page.getByRole("button", { name: "Remove g10@example.com" }).click();
+    await expect(page.getByText("You can add up to 10 guests.")).toHaveCount(0);
+  });
+
   test("the meal event offers its 9 locations and requires a choice", async ({ page, axe }) => {
     // Block Off Work on Tuesdays is 17:00 to 20:00 Pacific: 20:00 in New York.
     const times = await openDay(page, "/julianjoseph/meal", "Tuesday, October 8 - Times available");
@@ -303,14 +317,25 @@ test.describe("booking flows", () => {
     await page.goto("/julianjoseph/30min", SLOW);
     const banner = page.getByTestId("owner-banner");
     await expect(banner).toContainText(`You are logged in as ${seeded.owner.email}. This message is only visible to you.`);
-    await expect(page.getByTestId("troubleshoot-link")).toHaveAttribute("href", new RegExp(`/app/availability/troubleshoot\\?eventType=${seeded.owner.eventTypeIds["30min"]}&date=2030-10-07`));
+    // The host-only link into the availability module's Troubleshoot view, on the day shown (BK-24, SCOPE priority 4).
+    await expect(page.getByTestId("troubleshoot-link")).toHaveAttribute("href", `/app/availability/advanced/troubleshoot?eventType=${seeded.owner.eventTypeIds["30min"]}&date=2030-10-07`);
     await banner.getByRole("button", { name: "Troubleshoot Availability" }).click();
+    // Every day from today on opens in troubleshoot mode; past days stay closed.
+    await expect(page.getByRole("button", { name: /Tuesday, October 8/ })).toBeEnabled(SLOW);
+    await expect(page.getByRole("button", { name: /Sunday, October 6/ })).toBeDisabled();
     await page.getByRole("button", { name: /Tuesday, October 8/ }).click();
+    await expect(page.getByTestId("troubleshoot-link")).toHaveAttribute("href", /date=2030-10-08$/);
     const list = page.getByTestId("troubleshoot-list");
     await expect(list).toBeVisible(SLOW);
+    // The list opens on the first start that matters, not on hours of "Outside hours" from midnight.
+    await expect(list.getByRole("button", { name: "2:00pm", exact: true })).toBeInViewport();
+    expect(await list.locator("ul").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
     const calendarChip = list.getByRole("button", { name: /CALENDAR/ }).first();
     await expect(calendarChip).toBeVisible();
-    await expect(list.getByRole("button", { name: /Outside working hours/ }).first()).toBeVisible();
+    // Short chips that fit next to the time ("OUTSIDE HOURS", not a truncated "OUTSIDE WORKIN...").
+    const outside = list.getByRole("button", { name: /Outside hours/ }).first();
+    await expect(outside).toBeVisible();
+    expect(await outside.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await axe(page);
     await calendarChip.click();
     const sheet = page.getByTestId("troubleshoot-sheet");

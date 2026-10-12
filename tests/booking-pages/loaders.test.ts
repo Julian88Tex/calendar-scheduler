@@ -11,11 +11,12 @@ import type { CreateEventTypeOptions, TestUser } from "../factories";
 const state = vi.hoisted(() => ({
   viewer: null as unknown,
   code: null as ResolvedBookingCode | null,
+  destination: null as unknown,
 }));
 
 vi.mock("@/lib/calendars", () => ({
   getExternalBusy: async (p: { userIds: string[] }) => Object.fromEntries(p.userIds.map((id) => [id, { ok: true, stale: false, nocal: false, busy: [] }])),
-  getDestinationCalendar: async () => null,
+  getDestinationCalendar: async () => state.destination,
 }));
 vi.mock("@/lib/links", () => ({
   resolveBookingCode: async () => state.code,
@@ -55,6 +56,7 @@ beforeEach(async () => {
   await t.db.delete(instanceSettings).where(inArray(instanceSettings.key, ["privacy_policy_url", "terms_url"]));
   state.viewer = null;
   state.code = null;
+  state.destination = null;
 });
 afterEach(() => resetFakeTime());
 
@@ -129,6 +131,7 @@ describe("loadLanding (BK-01, BK-02)", () => {
 describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
   it("builds the calendar props of a personal event type for an anonymous invitee", async () => {
     const owner = await host();
+    state.destination = { calendarId: "c", connectionId: "k", provider: "google", name: "Work", supports: { invitations: true, googleMeet: true, teams: false } };
     const et = await eventType(owner, {
       locations: [
         MEET,
@@ -166,7 +169,8 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
       ["name", "Ben"],
     ]);
     expect(p.viewer).toEqual({ signedIn: false, isHost: false, email: null, editUrl: null, mutual: false });
-    expect(p.troubleshootUrl).toBeNull();
+    expect(p.troubleshootEventTypeId).toBeNull();
+    expect(p.turnstileSiteKey).toBeNull();
     expect(p.preview).toBe(false);
     expect(p.formToken.length).toBeGreaterThan(10);
     expect(p.honeypotName).toBe("website");
@@ -214,7 +218,7 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
     state.viewer = owner;
     const page = await ok(owner.slug!, "intro", "preview=1");
     expect(page.props.viewer).toEqual({ signedIn: true, isHost: true, email: owner.email, editUrl: `/app/event-types/${et.id}`, mutual: false });
-    expect(page.props.troubleshootUrl).toBe(`/app/availability/troubleshoot?eventType=${et.id}`);
+    expect(page.props.troubleshootEventTypeId).toBe(et.id);
     expect(page.props.preview).toBe(true);
     expect(page.props.carry).toEqual([["preview", "1"]]);
 
@@ -225,7 +229,7 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
     expect(visitor.props.preview).toBe(false);
     expect(visitor.props.carry).toEqual([]);
     expect(visitor.props.viewer).toEqual({ signedIn: true, isHost: false, email: null, editUrl: null, mutual: true });
-    expect(visitor.props.troubleshootUrl).toBeNull();
+    expect(visitor.props.troubleshootEventTypeId).toBeNull();
     const embedded = await ok(owner.slug!, "intro", "embed_domain=example.com&embed_type=Inline");
     expect(embedded.props.viewer.mutual).toBe(false);
   });
@@ -263,6 +267,42 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
     const rrPage = await ok("sales", "rr");
     expect(rrPage.props.host).toEqual({ variant: "team", name: "Sales", avatarUrl: null });
     expect(rrPage.props.brandHeader).toEqual({ kind: "avatar", src: null, name: "Sales" });
+  });
+});
+
+describe("location options and bot protection (VID-07, BK-18)", () => {
+  const CAFE = { id: "5eed0000-0000-4000-8000-000000000202", kind: "physical" as const, position: 1, location: "Cafe", additionalInfo: "1 Main St", displayBeforeBooking: true };
+
+  it("hides Google Meet without a Google destination calendar when other locations exist", async () => {
+    const owner = await host();
+    await eventType(owner, { locations: [MEET, CAFE] });
+    expect((await ok(owner.slug!, "intro")).props.event.locations.map((l) => l.kind)).toEqual(["physical"]);
+    state.destination = { calendarId: "c", connectionId: "k", provider: "google", name: "Work", supports: { invitations: true, googleMeet: true, teams: false } };
+    expect((await ok(owner.slug!, "intro", "x=1")).props.event.locations.map((l) => l.kind)).toEqual(["google_conference", "physical"]);
+  });
+
+  it("keeps Google Meet when it is the only option (booked with details to follow)", async () => {
+    const owner = await host();
+    await eventType(owner, { locations: [MEET] });
+    expect((await ok(owner.slug!, "intro")).props.event.locations.map((l) => l.kind)).toEqual(["google_conference"]);
+  });
+
+  it("passes the Turnstile site key only when both keys are configured", async () => {
+    const owner = await host();
+    await eventType(owner);
+    const saved = { site: process.env.TURNSTILE_SITE_KEY, secret: process.env.TURNSTILE_SECRET_KEY };
+    try {
+      process.env.TURNSTILE_SITE_KEY = "0x4AAAAAAA-site";
+      delete process.env.TURNSTILE_SECRET_KEY;
+      expect((await ok(owner.slug!, "intro")).props.turnstileSiteKey).toBeNull();
+      process.env.TURNSTILE_SECRET_KEY = "0x4AAAAAAA-secret";
+      expect((await ok(owner.slug!, "intro", "y=1")).props.turnstileSiteKey).toBe("0x4AAAAAAA-site");
+    } finally {
+      if (saved.site === undefined) delete process.env.TURNSTILE_SITE_KEY;
+      else process.env.TURNSTILE_SITE_KEY = saved.site;
+      if (saved.secret === undefined) delete process.env.TURNSTILE_SECRET_KEY;
+      else process.env.TURNSTILE_SECRET_KEY = saved.secret;
+    }
   });
 });
 
@@ -414,5 +454,24 @@ describe("GET /booking/{inviteeId}/event.ics (BK-22)", () => {
     expect(body).toContain(`UID:${scheduledEvent.icsUid}`);
     expect((await get("00000000-0000-4000-8000-000000000000")).status).toBe(404);
     expect((await get("nope")).status).toBe(404);
+  });
+
+  it("follows a rescheduled chain: an old invitee id answers the current meeting, never a CANCEL of the shared UID (regression)", async () => {
+    const owner = await host();
+    const et = await eventType(owner, { overrides: { notificationType: "email_confirmation" } });
+    const row = (await t.db.select().from(eventTypes).where(eq(eventTypes.id, et.id)))[0]!;
+    const first = await f.createBooking(t.db, { eventType: row, start: "2030-10-08T17:00:00Z", status: "canceled" });
+    const second = await f.createBooking(t.db, {
+      eventType: row,
+      start: "2030-10-09T17:00:00Z",
+      invitee: { overrides: { oldInviteeId: first.invitee!.id } },
+      overrides: { icsUid: first.scheduledEvent.icsUid, icsSequence: 1 },
+    });
+    await t.db.update(invitees).set({ status: "canceled", newInviteeId: second.invitee!.id }).where(eq(invitees.id, first.invitee!.id));
+    const body = await (await get(first.invitee!.id)).text();
+    expect(body).toContain("METHOD:REQUEST");
+    expect(body).not.toContain("METHOD:CANCEL");
+    expect(body).toContain(`UID:${first.scheduledEvent.icsUid}`);
+    expect(body).toContain("DTSTART:20301009T170000Z");
   });
 });

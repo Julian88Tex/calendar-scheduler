@@ -5,7 +5,7 @@
 "use client";
 
 import type * as React from "react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -31,6 +31,8 @@ export type DetailsFormProps = {
   collectMarketing: boolean;
   honeypotName: string;
   honeypotRef: React.RefObject<HTMLInputElement | null>;
+  /** BK-18: container of the Cloudflare Turnstile widget (only when the instance requires it). */
+  turnstileRef?: React.RefObject<HTMLDivElement | null>;
   appName: string;
   termsUrl: string | null;
   privacyUrl: string | null;
@@ -101,7 +103,7 @@ function LegalLink({ href, children }: { href: string | null; children: React.Re
   );
 }
 
-export function DetailsForm({ honeypotRef, ...p }: DetailsFormProps) {
+export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProps) {
   const base = `bf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const { ctx, values, errors, onChange } = p;
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => onChange((v) => ({ ...v, [key]: value }));
@@ -110,6 +112,13 @@ export function DetailsForm({ honeypotRef, ...p }: DetailsFormProps) {
   const multiple = ctx.locations.length > 1;
   const locationErrorId = errors.location ? `${base}-location-error` : undefined;
   const termsParts = bt("details.terms", { appName: p.appName, terms: TERMS, privacy: PRIVACY }).split(/(%%terms%%|%%privacy%%)/);
+  // BK-10: an 11th guest is refused with "You can add up to 10 guests." (the chips keep the first 10).
+  const [guestLimit, setGuestLimit] = useState(false);
+  const changeGuests = (g: string[]) => {
+    const over = g.length > MAX_GUESTS;
+    setGuestLimit(over);
+    onChange((v) => ({ ...v, guests: over ? g.slice(0, MAX_GUESTS) : g }));
+  };
 
   const locationValueField =
     input === "phone" ? (
@@ -204,17 +213,22 @@ export function DetailsForm({ honeypotRef, ...p }: DetailsFormProps) {
 
       {ctx.allowGuests &&
         (values.showGuests ? (
-          <TextField id={`${base}-guests`} label={bt("details.guestEmails")} error={errors.guests} hint={bt("details.guestsHint")} field="guests">
+          <TextField
+            id={`${base}-guests`}
+            label={bt("details.guestEmails")}
+            error={errors.guests ?? (guestLimit ? bt("validation.tooManyGuests") : undefined)}
+            hint={bt("details.guestsHint")}
+            field="guests"
+          >
             {(a) => (
               <ChipsInput
                 id={a.id}
                 size="lg"
                 lowercase
-                max={MAX_GUESTS}
                 value={values.guests}
-                onChange={(g) => onChange((v) => ({ ...v, guests: g }))}
+                onChange={changeGuests}
                 validate={(g) => (isEmail(g) ? (g === values.email.trim().toLowerCase() ? bt("validation.guestIsInvitee") : null) : bt("validation.email"))}
-                invalid={Boolean(errors.guests)}
+                invalid={Boolean(errors.guests) || guestLimit}
                 aria-describedby={a["aria-describedby"]}
                 placeholder={bt("details.guestsPlaceholder")}
               />
@@ -222,7 +236,15 @@ export function DetailsForm({ honeypotRef, ...p }: DetailsFormProps) {
           </TextField>
         ) : (
           <div data-field="guests">
-            <Button type="button" variant="secondary" onClick={() => set("showGuests", true)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                set("showGuests", true);
+                // The button goes away: keep keyboard focus in the form, on the new guests input (GEN-05).
+                window.setTimeout(() => document.getElementById(`${base}-guests`)?.focus(), 0);
+              }}
+            >
               {bt("details.addGuests")}
             </Button>
           </div>
@@ -287,6 +309,9 @@ export function DetailsForm({ honeypotRef, ...p }: DetailsFormProps) {
           ),
         )}
       </p>
+
+      {/* Empty unless Cloudflare asks for a click ("interaction-only"). */}
+      {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}
 
       <div className={cn("max-[599px]:sticky max-[599px]:bottom-0 max-[599px]:-mx-5 max-[599px]:border-t max-[599px]:border-line max-[599px]:bg-public-bg max-[599px]:px-5 max-[599px]:py-3")}>
         <Button type="submit" size="lg" loading={p.submitting} disabled={Boolean(p.disabledNote)} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>

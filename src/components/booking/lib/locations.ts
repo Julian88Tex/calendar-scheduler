@@ -43,7 +43,8 @@ export function isConferenceKind(kind: LocationKind | null | undefined): boolean
 }
 
 const clean = (s: string | null | undefined): string | null => {
-  const v = (s ?? "").replace(/\r\n?/g, "\n").trim();
+  // Previews pass editor drafts straight from postMessage: anything but a string counts as empty.
+  const v = (typeof s === "string" ? s : "").replace(/\r\n?/g, "\n").trim();
   return v ? v : null;
 };
 
