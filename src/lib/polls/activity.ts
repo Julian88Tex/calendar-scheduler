@@ -18,6 +18,14 @@ import { now as clockNow } from "@/lib/time/now";
 
 export type PollActivityType = (typeof meetingPollActivity.$inferInsert)["type"];
 
+/** Internal bookkeeping keys of activity data (double click replay keys, domain event ids), never shown to hosts. */
+const INTERNAL_KEYS = new Set(["requestKey", "requestId", "eventId"]);
+
+/** Activity data as the results page receives it (internal keys removed). */
+export function activityDataView(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data ?? {}).filter(([k]) => !INTERNAL_KEYS.has(k)));
+}
+
 export async function recordActivity(
   tx: DbOrTx,
   a: { pollId: string; type: PollActivityType; participantId?: string | null; actorUserId?: string | null; data?: Record<string, unknown>; at?: Date },

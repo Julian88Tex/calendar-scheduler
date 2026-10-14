@@ -63,9 +63,12 @@ describe("redactForVoter (MP-12)", () => {
     const before = redactForVoter(input("after_vote", { participantId: null, submitted: false }));
     expect(before.participants).toBeNull();
     expect(before.options.o1!.counts).toBeNull();
-    expect(json({ ...before, comments: [] })).not.toContain("Ana Lima");
+    // Other voters' comments wait for the viewer's own response too; the host's public comment stays.
+    expect(before.comments.map((c) => c.id)).toEqual(["c4"]);
+    expect(json(before)).not.toContain("Ana Lima");
     const after = redactForVoter(input("after_vote"));
     expect(after.participants?.map((p) => p.name)).toEqual(["Me Myself", "Ana Lima", "Bob Stone"]);
+    expect(after.comments.map((c) => c.id)).toEqual(["c1", "c3", "c4"]);
   });
 
   it("everyone: names, votes and the grid; invited non-respondents and emails never appear", () => {

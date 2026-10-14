@@ -11,14 +11,16 @@ import { reservedIntervalsByUser } from "./holds";
 
 /**
  * Holds of open or closed polls with reserve times, as reserved busy per user (SCH-19): the options' times (date-only
- * options: the whole local day in the poll's zone), titled "Reserved: {poll title}".
+ * options: the whole local day in the poll's zone), titled "Reserved: {poll title}". Additive `opts.db`: callers inside
+ * a transaction (the booking recheck) pass their transaction handle so the read runs in it.
  */
 export async function getPollReservedIntervals(
   userIds: string[],
   start: Date,
   end: Date,
+  opts: { db?: DbOrTx } = {},
 ): Promise<Record<string, BusyInterval[]>> {
-  return reservedIntervalsByUser(userIds, start, end);
+  return reservedIntervalsByUser(userIds, start, end, opts);
 }
 
 /**

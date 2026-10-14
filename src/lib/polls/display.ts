@@ -96,3 +96,18 @@ export function optionRangeLabel(first: OptionLike | null, last: OptionLike | nu
   const b = short(last);
   return a === b ? a : `${a} to ${b}`;
 }
+
+/**
+ * "Copy times as text" (MP-05): the options grouped by date in `zone` (the host's), one time range per line, the zone
+ * and the poll link, ready to paste into an email or a chat.
+ */
+export function timesAsText<T extends OptionLike>(
+  options: readonly T[],
+  p: { zone: string; pollZone: string; zoneLabel: string; link: string; locale?: string; hour12?: boolean },
+): string {
+  const locale = p.locale ?? "en";
+  const blocks = groupOptionsByLocalDate(options, p.zone, p.pollZone, locale).map((g) =>
+    [g.label, ...g.options.map((o) => optionTimeLabel(o, p.zone, { locale, hour12: p.hour12 }))].join("\n"),
+  );
+  return [...blocks, `Times are shown in ${p.zoneLabel}.\nVote on times: ${p.link}`].join("\n\n");
+}

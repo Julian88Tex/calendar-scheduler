@@ -16,8 +16,10 @@ import {
   scheduledEvents,
   users,
 } from "@/db/schema";
+import { oauthStartPath } from "@/lib/auth/oauth/links";
 import { isOrgAdmin, type ActorCtx } from "@/lib/authz";
 import { conferenceJoinUrl } from "@/lib/conferencing/kinds";
+import { getFeatures } from "@/lib/env";
 import { sanitizeRichText } from "@/lib/html";
 import { decodeCursor, encodeCursor } from "@/lib/pagination";
 import { now as clockNow } from "@/lib/time/now";
@@ -25,6 +27,7 @@ import { absoluteUrl, appUrl, joinUrl, pollUrl } from "@/lib/url";
 import { addToCalendarLinks } from "@/lib/email/calendar-links";
 import { buildIcs, icsUid } from "@/lib/email/ical";
 import { requirePollAccess } from "./access";
+import { activityDataView } from "./activity";
 import { DEADLINE_SOON_MS, POLL_COLOR } from "./constants";
 import { hostBusyForPoll, optionStatuses } from "./conflicts";
 import { buildPollCsv, csvFileName } from "./csv";
@@ -163,6 +166,12 @@ async function liveComments(pollId: string): Promise<(typeof meetingPollComments
     .orderBy(meetingPollComments.createdAt);
 }
 
+/** "Check my calendar" with Google (MP-13), only when Google sign-in is configured. */
+function voterCalendarStartPath(slug: string): string | null {
+  if (!getFeatures().googleOAuth) return null;
+  return oauthStartPath("google", { intent: "poll_freebusy", next: `/p/${slug}`, data: { poll: slug } });
+}
+
 /**
  * The voter page data (MP-07 to MP-15). 404 for an unknown slug, 410 for a deleted poll (no details), 301 with the
  * canonical slug for an old link ending. `viewer` is the signed-in app user, if any (prefill and matching).
@@ -251,6 +260,8 @@ export async function getVoterView(
     comments: poll.allowComments ? red.comments : null,
     canVote: status === "open",
     booked: await bookedView(poll, options),
+    viewerIsHost: Boolean(identity.viewer && hosts.some((h) => h.userId === identity.viewer!.userId)),
+    calendarCheck: { googleStartPath: voterCalendarStartPath(poll.slug), account: Boolean(identity.viewer) },
   };
   return { status: 200, view, canonicalSlug: poll.slug, pollId: poll.id };
 }
@@ -333,7 +344,7 @@ export async function getHostPoll(actor: ActorCtx, pollId: string, opts: { markV
     type: a.type,
     participantName: a.participantId ? (nameById.get(a.participantId) ?? (typeof a.data.name === "string" ? a.data.name : null)) : null,
     actorName: a.actorUserId ? (actorNames.get(a.actorUserId) ?? null) : null,
-    data: a.data,
+    data: activityDataView(a.data),
     createdAt: a.createdAt.toISOString(),
   }));
   const commentViews: PollCommentView[] = comments.map((c) => ({
@@ -433,7 +444,7 @@ export async function getPollActivity(actor: ActorCtx, pollId: string, since: Da
     type: a.type,
     participantName: participantName ?? (typeof a.data.name === "string" ? a.data.name : null),
     actorName: null,
-    data: a.data,
+    data: activityDataView(a.data),
     createdAt: a.createdAt.toISOString(),
   }));
 }

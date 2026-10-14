@@ -146,6 +146,17 @@ export type VoterPollView = {
   comments: PollCommentView[] | null;
   canVote: boolean;
   booked: BookedMeetingView | null;
+  /**
+   * The signed-in viewer hosts this poll ("View live page"): the page shows "Preview, your votes will not be saved"
+   * and does not submit.
+   */
+  viewerIsHost: boolean;
+  /**
+   * "Check my calendar" (MP-13): the Google start link (OAuth intent poll_freebusy, back to /p/{slug}?calendar=checked)
+   * when Google sign-in is configured, else null (the ICS link check is always offered; signed-in app users can use
+   * their own connected calendars).
+   */
+  calendarCheck: { googleStartPath: string | null; account: boolean };
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -343,7 +354,7 @@ export type SubmitVoteOutcome =
   | { ok: true; participantId: string; editToken: string; status: ParticipantStatus; created: boolean }
   | {
       ok: false;
-      code: "duplicate_email" | "verification_required" | "validation" | "closed" | "full" | "max_choices" | "bot";
+      code: "duplicate_email" | "verification_required" | "validation" | "closed" | "full" | "max_choices" | "bot" | "preview";
       message: string;
       fieldErrors?: Record<string, string[]>;
     };

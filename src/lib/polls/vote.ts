@@ -4,18 +4,20 @@
 //
 // The vote transaction (lock order of load.ts): the poll row FOR SHARE (a concurrent close, delete or booking waits),
 // re-check of the effective status and the deadline with the app clock, then the option rows the voter newly selects
-// as Yes or If need be FOR UPDATE in ascending id order before counting the other participants' Yes and If need be,
-// so "Max votes per option" holds under concurrency (two votes for the last place accept exactly one). Every count
-// joins live options and live participants (votes on removed options never count). A voter's own existing selection
-// on a full option can be removed, not re-added. Votes on started options are frozen.
+// as Yes or If need be FOR NO KEY UPDATE in ascending id order before counting the other participants' Yes and If need
+// be, so "Max votes per option" holds under concurrency (two votes for the last place accept exactly one). NO KEY
+// UPDATE, not UPDATE: every vote also inserts a row per future option, whose foreign key check takes a KEY SHARE lock
+// on each option row, and FOR UPDATE would conflict with those (voters newly picking different times deadlocked).
+// Every count joins live options and live participants (votes on removed options never count). A voter's own existing
+// selection on a full option can be removed, not re-added. Votes on started options are frozen.
 import "server-only";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { isUniqueViolation } from "@/db/helpers";
-import { meetingPollActivity, meetingPollComments, meetingPollOptions, meetingPollParticipants, meetingPolls, meetingPollVotes } from "@/db/schema";
+import { eventTypeHosts, meetingPollActivity, meetingPollComments, meetingPollOptions, meetingPollParticipants, meetingPolls, meetingPollVotes } from "@/db/schema";
 import type { ActorCtx } from "@/lib/authz";
 import { checkBookingBot } from "@/lib/booking";
-import { hashIp } from "@/lib/crypto";
+import { hashIp, hashToken } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { publishEvent } from "@/lib/events";
 import { newId } from "@/lib/ids";
@@ -26,7 +28,7 @@ import { now as clockNow } from "@/lib/time/now";
 import { normalizeEmail } from "@/lib/validation";
 import { requirePollAccess } from "./access";
 import { recordActivity, type PollActivityType } from "./activity";
-import { MAX_POLL_COMMENTS, MAX_POLL_PARTICIPANTS, POLL_ERRORS, POLL_JOBS, VOTE_SUBMITS_PER_IP_PER_HOUR, pollJobGroup } from "./constants";
+import { MAX_POLL_COMMENTS, MAX_POLL_PARTICIPANTS, POLL_COPY, POLL_ERRORS, POLL_JOBS, VOTE_SUBMITS_PER_IP_PER_HOUR, pollJobGroup } from "./constants";
 import { loadOptions, loadPollBySlug, lockPoll, participantCount, startOf, statusOf, type OptionRow, type ParticipantRow, type PollRow } from "./load";
 import { enqueueNotify, enqueuePollEmail, enqueueSubscriberBatch } from "./schedule";
 import { editTokenFor, presentedTokenHash, tokenHashesFor, warmPollKeys } from "./tokens";
@@ -100,7 +102,9 @@ async function writeVotes(tx: Tx, w: VoteWrite): Promise<Record<string, VoteChoi
   // Capacity: newly selected options, locked in a stable order, then counted (other participants only).
   const newlySelected = future.filter((id) => attending(final[id]) && !attending(w.previous[id])).sort();
   if (w.poll.maxVotesPerOption && newlySelected.length) {
-    await tx.select({ id: meetingPollOptions.id }).from(meetingPollOptions).where(inArray(meetingPollOptions.id, newlySelected)).orderBy(asc(meetingPollOptions.id)).for("update");
+    // NO KEY UPDATE serializes voters on the same option but leaves the key share locks of the vote rows' foreign key
+    // checks free (see the file header).
+    await tx.select({ id: meetingPollOptions.id }).from(meetingPollOptions).where(inArray(meetingPollOptions.id, newlySelected)).orderBy(asc(meetingPollOptions.id)).for("no key update");
     const counts = await tx
       .select({ optionId: meetingPollVotes.optionId, n: sql<number>`count(*)::int` })
       .from(meetingPollVotes)
@@ -184,6 +188,19 @@ async function afterVoteJobs(tx: Tx, p: { poll: PollRow; participant: { id: stri
 
 export type SubmitVoteContext = VoterIdentity & { ip?: string | null; now?: Date; skipBotCheck?: boolean };
 
+/** Double click replays answer within this window only. */
+const REPLAY_WINDOW_MS = 10 * 60_000;
+
+/**
+ * The stored replay key of a client generated request id: bound to the client (IP hash) and only for ids long enough
+ * to be unguessable (shorter ones are ignored, the vote is simply saved again).
+ */
+function replayKey(requestId: string | null | undefined, ipHash: string): string | null {
+  const id = requestId?.trim();
+  if (!id || id.length < 16) return null;
+  return hashToken(`poll-vote-request:${ipHash}:${id}`);
+}
+
 /**
  * "Share times" / "None of these work for me" (MP-08 to MP-10). Answers duplicate_email without writing when the email
  * belongs to another participant and the request holds no valid edit token for it (MP-09: typing someone else's email
@@ -206,8 +223,10 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
   const found = await loadPollBySlug(db, slug, at);
   if (!found || found.poll.deletedAt || found.poll.status === "canceled") throw new AppError("not_found", POLL_ERRORS.notFound);
   const pollId = found.poll.id;
-  const limit = await rateLimit(`poll-vote:ip:${await hashIp(ctx.ip)}:${pollId}`, VOTE_SUBMITS_PER_IP_PER_HOUR, 3600, { nowMs: at.getTime() });
+  const ipHash = await hashIp(ctx.ip);
+  const limit = await rateLimit(`poll-vote:ip:${ipHash}:${pollId}`, VOTE_SUBMITS_PER_IP_PER_HOUR, 3600, { nowMs: at.getTime() });
   if (!limit.ok) throw rateLimitedError(limit);
+  const requestKey = replayKey(input.requestId, ipHash);
 
   const duplicate: { participant: ParticipantRow | null } = { participant: null };
   await warmPollKeys();
@@ -220,12 +239,19 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       if (status !== "open" || (poll.deadlineAt && poll.deadlineAt.getTime() <= at.getTime())) {
         throw new VoteAbort(fail("closed", status === "booked" ? POLL_ERRORS.pollBooked : status === "expired" ? POLL_ERRORS.pollEnded : POLL_ERRORS.votingClosed));
       }
-      // Double click: the first result again.
-      if (input.requestId) {
+      // Double click: the first result again (same request id from the same client within a few minutes; the replay
+      // answers with that participant's edit token, so the key binds the request id to the client and expires).
+      if (requestKey) {
         const [prev] = await tx
           .select({ participantId: meetingPollActivity.participantId })
           .from(meetingPollActivity)
-          .where(and(eq(meetingPollActivity.pollId, poll.id), sql`${meetingPollActivity.data}->>'requestId' = ${input.requestId}`))
+          .where(
+            and(
+              eq(meetingPollActivity.pollId, poll.id),
+              gte(meetingPollActivity.createdAt, new Date(at.getTime() - REPLAY_WINDOW_MS)),
+              sql`${meetingPollActivity.data}->>'requestKey' = ${requestKey}`,
+            ),
+          )
           .limit(1);
         if (prev?.participantId) {
           const [p] = await tx.select().from(meetingPollParticipants).where(eq(meetingPollParticipants.id, prev.participantId)).limit(1);
@@ -234,6 +260,16 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       }
 
       const identified = await identifyParticipant(tx, poll.id, ctx);
+      // A host signed in on their own poll's page sees a preview ("Preview, your votes will not be saved"); hosts
+      // answer through "Your preference" on the results page instead.
+      if (ctx.userId && (!identified || identified.via === "user")) {
+        const [hostRow] = await tx
+          .select({ userId: eventTypeHosts.userId })
+          .from(eventTypeHosts)
+          .where(and(eq(eventTypeHosts.eventTypeId, poll.eventTypeId), eq(eventTypeHosts.userId, ctx.userId)))
+          .limit(1);
+        if (hostRow) throw new VoteAbort(fail("preview", POLL_COPY.previewBanner));
+      }
       let participant = identified?.participant ?? null;
       const email = participant?.email ?? input.email ?? null;
       if (!participant && email) {
@@ -284,7 +320,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
             emailVerifiedAt: verifiedNow ? at : null,
             respondedAt: at,
             lastSubmittedAt: at,
-            ipHash: await hashIp(ctx.ip),
+            ipHash,
             createdAt: at,
             updatedAt: at,
           })
@@ -332,7 +368,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       }
 
       const type: PollActivityType = input.declined ? "declined" : created || !identifiedResponded(identified?.participant) ? "voted" : "vote_changed";
-      const activityId = await recordActivity(tx, { pollId: poll.id, type, participantId: participant.id, data: { name: participant.name, ...(input.requestId ? { requestId: input.requestId } : {}) }, at });
+      const activityId = await recordActivity(tx, { pollId: poll.id, type, participantId: participant.id, data: { name: participant.name, ...(requestKey ? { requestKey } : {}) }, at });
       await publishEvent(tx, type === "vote_changed" ? "poll.vote_updated" : "poll.vote_created", { pollId: poll.id, participantId: participant.id }, { organizationId: poll.organizationId, actor: { type: "invitee", name: participant.name } });
       await afterVoteJobs(tx, { poll, participant, activityId, at, confirm: true });
       return { participant, created, replay: false as const };

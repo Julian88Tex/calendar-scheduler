@@ -11,8 +11,8 @@
 // same scheduled event in place through lifecycle moveScheduledEvent (same row and UID, SEQUENCE + 1, "Updated"
 // emails, calendar and conference updated). Removed invitees are canceled first (CANCEL at the old time); added ones
 // are inserted after the lifecycle move job ran (polls.rebook_invitees), so they get a plain confirmation at the new
-// time. When nobody of the old meeting stays, or the new time is longer than a movable meeting, the old meeting is
-// canceled and a new one booked.
+// time. When nobody of the old meeting stays (also at the same time), or the new time is longer than a movable
+// meeting, the old meeting is canceled and a new one booked.
 import "server-only";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -260,8 +260,9 @@ async function rebook(
   const kept = current.length - removed.length;
   const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
 
-  // Nobody stays, or the new time can't be moved to: cancel the old meeting and book a new one.
-  if (!sameTime && (kept === 0 || minutes > MAX_MOVE_MINUTES)) {
+  // Nobody stays (whatever the time: canceling the last invitee would cancel the meeting itself, so the new people
+  // could never be added to it), or the new time can't be moved to: cancel the old meeting and book a new one.
+  if (kept === 0 || (!sameTime && minutes > MAX_MOVE_MINUTES)) {
     await cancelScheduledEvent({ scheduledEventId: meeting.id, actor: { type: "user", ctx: actor }, reason: null, notify: true });
     const fresh = await loadPoll(db, poll0.id);
     if (!fresh) throw new AppError("not_found", POLL_ERRORS.notFound);

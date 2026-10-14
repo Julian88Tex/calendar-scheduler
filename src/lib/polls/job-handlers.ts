@@ -16,7 +16,7 @@
 //   polls.purge             daily: personal data of polls deleted 30 days ago (MP-22)
 //   polls.sweep             hourly backstop: deadlines and expiries whose jobs were lost
 import "server-only";
-import { and, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
 import {
@@ -202,14 +202,27 @@ export async function addRebookInvitees(db: DB, p: z.output<typeof RebookPayload
 // ---------------------------------------------------------------------------------------------------------------
 // Purge and sweep
 
-/** Hard-deletes the personal data of polls deleted more than 30 days ago (activity kept without names). */
-export async function purgeDeletedPolls(db: DB, now: Date): Promise<number> {
+/**
+ * Hard-deletes the personal data of polls deleted more than 30 days ago (activity kept without names). Only polls that
+ * still hold personal data are picked, so a batch never re-selects already purged polls and every poll gets its turn.
+ */
+export async function purgeDeletedPolls(db: DB, now: Date, opts: { batch?: number } = {}): Promise<number> {
   const cutoff = new Date(now.getTime() - PURGE_AFTER_DAYS * DAY);
+  const hasPersonalData = sql`(
+    exists (select 1 from ${meetingPollParticipants} where ${meetingPollParticipants.pollId} = ${meetingPolls.id})
+    or exists (select 1 from ${meetingPollComments} where ${meetingPollComments.pollId} = ${meetingPolls.id})
+    or exists (
+      select 1 from ${meetingPollActivity}
+      where ${meetingPollActivity.pollId} = ${meetingPolls.id}
+        and (${meetingPollActivity.participantId} is not null or (${meetingPollActivity.data} -> 'name') is not null or (${meetingPollActivity.data} -> 'participantIds') is not null)
+    )
+  )`;
   const rows = await db
     .select({ id: meetingPolls.id })
     .from(meetingPolls)
-    .where(and(isNotNull(meetingPolls.deletedAt), lt(meetingPolls.deletedAt, cutoff)))
-    .limit(200);
+    .where(and(isNotNull(meetingPolls.deletedAt), lt(meetingPolls.deletedAt, cutoff), hasPersonalData))
+    .orderBy(meetingPolls.deletedAt)
+    .limit(Math.max(1, opts.batch ?? 200));
   let purged = 0;
   for (const { id } of rows) {
     const had = await db.transaction(async (tx) => {
@@ -225,7 +238,7 @@ export async function purgeDeletedPolls(db: DB, now: Date): Promise<number> {
         await tx.update(meetingPollActivity).set({ data: rest, participantId: null }).where(eq(meetingPollActivity.id, a.id));
       }
       await tx.update(meetingPollActivity).set({ participantId: null }).where(eq(meetingPollActivity.pollId, id));
-      return parts.length + comments.length;
+      return parts.length + comments.length + acts.length;
     });
     if (had) purged++;
   }

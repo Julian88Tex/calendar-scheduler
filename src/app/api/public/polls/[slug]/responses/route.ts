@@ -3,9 +3,9 @@
 // POST /api/public/polls/{slug}/responses   "Share times" / "None of these work for me" (SPEC MP-08 to MP-11): a
 // SubmitVoteInput body. Answers { ok: true, participantId, status, created, editToken? } and sets the edit cookies
 // (the token is in the body only for embeds, embed: true), or { ok: false, code, message, fieldErrors? } with code
-// validation (400) | max_choices (400) | bot (400) | verification_required (403) | duplicate_email (409: the existing
-// participant gets a magic link by email instead) | closed (409) | full (409). Same origin only; bot checks and 10
-// submits per IP per hour per poll.
+// validation (400) | max_choices (400) | bot (400) | verification_required (403) | preview (403: a signed-in host on
+// their own poll) | duplicate_email (409: the existing participant gets a magic link by email instead) | closed (409) |
+// full (409). Same origin only; bot checks and 10 submits per IP per hour per poll.
 import { getCurrentUser } from "@/lib/auth/session";
 import { assertSameOrigin, getClientIp, json, readJsonBody, route } from "@/lib/http";
 import { slugParam, type PublicPollRouteCtx } from "@/lib/polls/route-helpers";
@@ -15,7 +15,7 @@ import { SubmitVoteSchema } from "@/lib/polls/validation";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const STATUS: Record<string, number> = { validation: 400, max_choices: 400, bot: 400, verification_required: 403, duplicate_email: 409, closed: 409, full: 409 };
+const STATUS: Record<string, number> = { validation: 400, max_choices: 400, bot: 400, verification_required: 403, preview: 403, duplicate_email: 409, closed: 409, full: 409 };
 
 export const POST = route<PublicPollRouteCtx>(async (request, ctx) => {
   assertSameOrigin(request);

@@ -159,7 +159,8 @@ test.describe("public components", () => {
     const chipBox = (await timeChip.boundingBox())!;
     const rowBox = (await row.boundingBox())!;
     expect(Math.abs(chipBox.width / rowBox.width - 0.485)).toBeLessThan(0.01);
-    expectColorNear(await renderedColor(timeChip, "background-color"), "#84929f", "selected time chip (navy at 50%)", 3);
+    // GEN-05: navy at 65% (white text 5:1) instead of Calendly's 50% (3.2:1).
+    expectColorNear(await renderedColor(timeChip, "background-color"), "#607183", "selected time chip (navy at 65%)", 3);
     expectColorNear(await renderedColor(next, "background-color"), "#006bff", "Next button");
 
     // Branding: primary_color=ff0000 recolors every blue.

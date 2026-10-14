@@ -1,8 +1,9 @@
 // Poll data access shared by the services (ARCHITECTURE 26 rule 13: a few indexed queries, no N+1). Server only.
 //
 // Lock order inside poll transactions (never take host advisory locks after these): the poll row (FOR UPDATE for host
-// changes and state transitions, FOR SHARE for votes), then option rows FOR UPDATE in ascending id order (vote
-// capacity). Booking-core takes the hosts' advisory locks first and then the poll row (markPollBookedInTx).
+// changes and state transitions, FOR SHARE for votes), then option rows FOR NO KEY UPDATE in ascending id order (vote
+// capacity; NO KEY UPDATE so the vote rows' foreign key checks, which take KEY SHARE on every option row, never wait on
+// it). Booking-core takes the hosts' advisory locks first and then the poll row (markPollBookedInTx).
 import "server-only";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/db";

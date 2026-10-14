@@ -84,10 +84,34 @@ export async function pollHoldIntervals(
   return out;
 }
 
-/** Contract implementation (index.ts): reserved busy per user. */
-export async function reservedIntervalsByUser(userIds: string[], start: Date, end: Date): Promise<Record<string, BusyInterval[]>> {
+/**
+ * True when `db` is an embedded PGlite database with an open transaction block. PGlite runs one transaction at a time
+ * on its single backend, so a query through the global handle would wait for that transaction forever: callers inside a
+ * transaction must pass their transaction handle.
+ */
+function pgliteBusyInTransaction(db: DbOrTx): boolean {
+  const client = (db as { $client?: { isInTransaction?: () => boolean } }).$client;
+  try {
+    return typeof client?.isInTransaction === "function" && client.isInTransaction();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Contract implementation (index.ts): reserved busy per user. Callers inside a transaction pass it as `opts.db` (the
+ * booking recheck runs inside booking-core's transaction). Without it, on embedded PGlite while a transaction is open,
+ * the holds are left out of that one check instead of waiting on the single backend forever (local development only;
+ * Postgres reads them through another pooled connection).
+ */
+export async function reservedIntervalsByUser(userIds: string[], start: Date, end: Date, opts: { db?: DbOrTx } = {}): Promise<Record<string, BusyInterval[]>> {
   const out: Record<string, BusyInterval[]> = {};
-  for (const h of await pollHoldIntervals(userIds, start, end)) {
+  const db = opts.db ?? (await getDb());
+  if (!opts.db && pgliteBusyInTransaction(db)) {
+    log.debug("polls.reserved_intervals_skipped_in_pglite_transaction", { users: userIds.length });
+    return out;
+  }
+  for (const h of await pollHoldIntervals(userIds, start, end, { db })) {
     const list = (out[h.userId] ??= []);
     list.push({ start: h.start, end: h.end, source: "reserved", reservedKind: "poll", title: h.title });
   }

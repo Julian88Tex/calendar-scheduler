@@ -7,8 +7,9 @@
 //   everyone     counts, names and every response (the Doodle grid).
 //
 // Emails of other participants never appear in any mode (the viewer's own email is returned separately, read-only).
-// Comments: public comments are shown unless the poll is host_only now; host_only comments (written while the poll was
-// host_only) are shown to their author only. Hosts read comments through the host view instead.
+// Comments: public comments are shown unless the poll is host_only now (after_vote: other voters' comments only once the
+// viewer submitted); host_only comments (written while the poll was host_only) are shown to their author only. Hosts
+// read comments through the host view instead.
 import type { ParticipantStatus, PollCommentView, PollVisibility, VoteChoice, VoterParticipantView } from "./types";
 
 export type VisParticipant = {
@@ -126,10 +127,14 @@ export function redactForVoter(input: VisInput): VisOutput {
     : null;
 
   const hostOnlyNow = input.visibility === "host_only";
+  // after_vote shows nothing about others before the viewer submits: other voters' comments wait too (they often say
+  // which times suit them); the hosts' public comments stay visible.
+  const hideVoterComments = input.visibility === "after_vote" && !input.viewer.submitted;
   const comments: PollCommentView[] = input.comments
     .filter((c) => {
       const mine = Boolean(input.viewer.participantId && c.participantId === input.viewer.participantId);
       if (mine) return true;
+      if (hideVoterComments && !c.authorUserId) return false;
       return c.visibility === "public" && !hostOnlyNow;
     })
     .map((c) => ({

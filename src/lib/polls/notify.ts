@@ -107,6 +107,14 @@ function topLines(poll: PollRow, options: OptionRow[], participants: Participant
     .map((x) => line(byId.get(x.id)!, r, { counts: { yes: x.yes, ifNeedBe: x.ifNeedBe } }));
 }
 
+/**
+ * The "{x} of {y} responded" total: every participant (respondents plus invited people who haven't answered) once
+ * anyone was invited by email, else null ("{x} responses").
+ */
+function responseTotal(participants: readonly Pick<ParticipantRow, "source">[]): number | null {
+  return participants.some((p) => p.source === "invite") ? participants.length : null;
+}
+
 function futureOptions(poll: PollRow, options: OptionRow[], now: Date): OptionRow[] {
   return options.filter((o) => startOf(o, poll.timezone) > now.getTime()).sort((a, b) => startOf(a, poll.timezone) - startOf(b, poll.timezone));
 }
@@ -284,7 +292,7 @@ export async function notifyActivity(db: DB, pollId: string, activityId: string)
     if (!voter) return 0;
     const mine = votes.get(voter.id) ?? {};
     const respondents = participants.filter(isRespondent).length;
-    const invited = participants.filter((p) => p.source === "invite").length;
+    const total = responseTotal(participants);
     for (const h of instantHosts(poll, hosts)) {
       // A host's own vote on behalf does not notify that host.
       if (a.actorUserId && a.actorUserId === h.userId) continue;
@@ -304,7 +312,7 @@ export async function notifyActivity(db: DB, pollId: string, activityId: string)
         answers,
         top,
         respondents,
-        invited: invited || null,
+        invited: total,
         resultsUrl: resultsUrl(poll.id),
         bookUrl: topId && statusOf(poll, options, now) !== "booked" ? bookUrl(poll.id, topId) : null,
       });
@@ -365,7 +373,7 @@ export async function notifySubscribers(db: DB, pollId: string, from: Date, to: 
   const brand = await emailBrandForUser(poll.ownerUserId, db);
   const hostName = await ownerName(db, poll);
   const respondents = participants.filter(isRespondent).length;
-  const invited = participants.filter((p) => p.source === "invite").length;
+  const total = responseTotal(participants);
   let sent = 0;
   for (const p of participants) {
     if (!p.subscribedToUpdates || p.unsubscribedAt || !p.email) continue;
@@ -378,7 +386,7 @@ export async function notifySubscribers(db: DB, pollId: string, from: Date, to: 
       title: poll.title,
       hostName,
       respondents,
-      invited: invited || null,
+      invited: total,
       top: topLines(poll, options, participants, votes, r, now),
       pollUrl: await editLink(poll.slug, p.id),
       unsubscribeUrl: await unsubscribePageUrl(poll.slug, p.id),
@@ -414,7 +422,7 @@ export async function sendHostStatus(db: DB, poll: PollRow, kind: "votingClosed"
     kind,
     when: poll.deadlineAt ? whenLabel(poll.deadlineAt, r) : null,
     respondents: participants.filter(isRespondent).length,
-    invited: participants.filter((p) => p.source === "invite").length || null,
+    invited: responseTotal(participants),
     top,
     url,
   });

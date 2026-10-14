@@ -107,13 +107,13 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
         set("allowIfNeedBe", input.allowIfNeedBe);
       }
       if (input.hideInvitees !== undefined) set("hideInvitees", input.hideInvitees);
-      if (input.verifyEmail !== undefined) {
-        set("verifyEmail", input.verifyEmail);
-        if (input.verifyEmail) set("requireEmail", true);
-      }
-      if (input.requireEmail !== undefined) {
-        set("requireEmail", input.requireEmail || Boolean(input.verifyEmail ?? poll.verifyEmail));
-        if (!input.requireEmail && !(input.verifyEmail ?? false)) set("verifyEmail", false);
+      if (input.verifyEmail !== undefined || input.requireEmail !== undefined) {
+        // Verify email implies Require email (MP-04): turning Require email off also turns verification off, turning
+        // verification on requires the email.
+        const verify = input.verifyEmail ?? (input.requireEmail === false ? false : poll.verifyEmail);
+        const require = verify ? true : (input.requireEmail ?? poll.requireEmail);
+        set("verifyEmail", verify);
+        set("requireEmail", require);
       }
       if (input.allowComments !== undefined) set("allowComments", input.allowComments);
       if (input.maxVotesPerOption !== undefined) {

@@ -117,6 +117,31 @@ describe("voting (MP-08 to MP-11)", () => {
     expect(await verifyEditLink(slug, "x".repeat(43))).toEqual({ slug, valid: false });
   });
 
+  it("replays a double click from the same client only: never hands someone else's edit token to another client", async () => {
+    const host = await setupHost(t.db);
+    const { pollId, slug } = await newPoll(host);
+    const [a] = await optionIds(pollId);
+    const requestId = "0b7f3c1e-5a3d-4c2b-9f00-1d2e3f4a5b6c";
+    const first = okVote(await vote(slug, { votes: [{ optionId: a!, choice: "yes" }], requestId }, { ip: "198.51.100.7" }));
+    const again = okVote(await vote(slug, { votes: [{ optionId: a!, choice: "yes" }], requestId }, { ip: "198.51.100.7" }));
+    expect(again).toMatchObject({ participantId: first.participantId, editToken: first.editToken, created: false });
+    // The same request id from another client is a new submission (and never answers with Ana's edit token).
+    const other = okVote(await vote(slug, { name: "Bo Chen", email: "bo@example.com", votes: [], requestId }, { ip: "198.51.100.8" }));
+    expect(other.participantId).not.toBe(first.participantId);
+    expect(other.editToken).not.toBe(first.editToken);
+    // Short ids are not replay keys; the replay window is a few minutes.
+    okVote(await vote(slug, { name: "Cy", email: "cy@example.com", votes: [], requestId: "abc" }, { ip: "198.51.100.9" }));
+    const dee = okVote(await vote(slug, { name: "Dee", email: "dee@example.com", votes: [], requestId: "abc" }, { ip: "198.51.100.9" }));
+    expect(dee.created).toBe(true);
+    advance(11 * 60_000);
+    const late = await vote(slug, { name: "Eve", email: "eve@example.com", votes: [], requestId }, { ip: "198.51.100.7" });
+    expect(late).toMatchObject({ ok: true, created: true });
+    expect((await participantsOf(t.db, pollId)).length).toBe(5);
+    // Host views never carry the replay keys.
+    const results = await getHostPoll(host.actor, pollId);
+    expect(results.activity.every((x) => !("requestKey" in x.data) && !("requestId" in x.data))).toBe(true);
+  });
+
   it("ties an invite link to the invited row: prefill locked, status responded, the email stays the invited one", async () => {
     const host = await setupHost(t.db);
     const { pollId, slug } = await newPoll(host);
@@ -314,6 +339,24 @@ describe("comments (MP-14)", () => {
     const host = await setupHost(t.db);
     const { slug } = await createPoll(host.actor, { title: "No comments", timezone: LA, defaultDurationMinutes: 30, options: [opt("2030-10-09 10:00")] });
     await expect(addPublicComment(slug, { body: "Hi", name: "Ana" }, { ip: ip() })).rejects.toMatchObject({ message: "Comments are turned off for this poll." });
+  });
+});
+
+describe("host preview (MP-05 'View live page')", () => {
+  it("flags the signed-in host and never saves their votes; other signed-in users vote and are matched by user id", async () => {
+    const host = await setupHost(t.db);
+    const colleague = await setupHost(t.db, { name: "Kim Lee", organizationId: host.user.organizationId, orgRole: "user" });
+    const { pollId, slug } = await newPoll(host);
+    const view = await getVoterView(slug, { viewer: { userId: host.user.id, name: host.user.name, email: host.user.email } });
+    if (view.status !== 200) throw new Error("view");
+    expect(view.view.viewerIsHost).toBe(true);
+    expect(await vote(slug, { name: host.user.name, email: host.user.email }, { userId: host.user.id })).toMatchObject({ ok: false, code: "preview", message: "Preview, your votes will not be saved" });
+    expect(await participantsOf(t.db, pollId)).toEqual([]);
+    const r = okVote(await vote(slug, { name: "Kim Lee", email: colleague.user.email }, { userId: colleague.user.id }));
+    const again = await getVoterView(slug, { viewer: { userId: colleague.user.id, name: "Kim Lee", email: colleague.user.email } });
+    if (again.status !== 200) throw new Error("view");
+    expect(again.view.viewerIsHost).toBe(false);
+    expect(again.view.me?.participantId).toBe(r.participantId);
   });
 });
 

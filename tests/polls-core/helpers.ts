@@ -72,7 +72,8 @@ export async function vote(slug: string, over: Partial<SubmitVoteInput> = {}, ct
   return submitVote(slug, voteInput(over), { skipBotCheck: true, ip: ctx.ip ?? ip(), editToken: ctx.editToken, inviteToken: ctx.inviteToken, userId: ctx.userId });
 }
 
-const POLL_TYPES = ["polls.*", "event:*:polls"];
+// The runner's type filter matches exact types or a trailing "*" prefix: list the polls subscriber jobs one by one.
+const POLL_TYPES = ["polls.*", "event:booking.canceled:polls"];
 const LIFECYCLE_TYPES = ["event:booking.created:lifecycle", "event:booking.canceled:lifecycle", "event:booking.rescheduled:lifecycle", "event:meeting.updated:lifecycle", "lifecycle.*"];
 
 /**
@@ -98,9 +99,15 @@ export function advance(ms: number): void {
   setFakeNow(new Date(now().getTime() + ms));
 }
 
-export async function outbox(db: DB, opts: { to?: string; template?: string } = {}) {
+export async function outbox(db: DB, opts: { to?: string; template?: string; scheduledEventId?: string; pollId?: string } = {}) {
   const rows = await db.select().from(emailOutbox).orderBy(asc(emailOutbox.createdAt));
-  return rows.filter((r) => (!opts.to || r.toAddresses.includes(opts.to)) && (!opts.template || r.template === opts.template));
+  return rows.filter(
+    (r) =>
+      (!opts.to || r.toAddresses.includes(opts.to)) &&
+      (!opts.template || r.template === opts.template) &&
+      (!opts.scheduledEventId || r.scheduledEventId === opts.scheduledEventId) &&
+      (!opts.pollId || r.pollId === opts.pollId),
+  );
 }
 
 export async function pollRow(db: DB, id: string) {

@@ -196,7 +196,10 @@ export const SubmitVoteSchema = z.object({
   website: z.string().max(500).nullish(),
   formToken: z.string().max(200).nullish(),
   turnstileToken: z.string().max(4096).nullish(),
-  /** Client generated id: a double click replays the first result. */
+  /**
+   * Client generated id of one submit (use crypto.randomUUID(); ids under 16 characters are ignored): a double click
+   * from the same client within 10 minutes answers the first result again instead of saving twice.
+   */
   requestId: z.string().trim().max(100).nullish(),
   embed: z.boolean().default(false),
 });

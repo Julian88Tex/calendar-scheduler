@@ -3,9 +3,9 @@
 // time and revived when a key comes back (enqueueOrReviveJob), and reschedules cancel the pending ones first. Handlers
 // re-read the state and no-op when no longer applicable, so cron latency never affects correctness. Server only.
 import "server-only";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { DbOrTx } from "@/db";
-import { meetingPollParticipants } from "@/db/schema";
+import { jobs, meetingPollParticipants } from "@/db/schema";
 import { cancelJobs, enqueueJob, enqueueOrReviveJob } from "@/lib/jobs";
 import { DEADLINE_WARNING_MS, MEETING_REMINDER_OFFSETS_MINUTES, POLL_JOBS, SUBSCRIBER_BATCH_MS, pollJobGroup } from "./constants";
 import { firstFutureOptionStart, lastOptionStart, type OptionRow, type PollRow } from "./load";
@@ -57,7 +57,7 @@ export async function scheduleTimedJobs(tx: DbOrTx, poll: PollTimes, options: re
 /** Anchor based reminders (smart 48 or 36 hours before the anchor, custom before the deadline), recomputed. */
 export async function scheduleAnchorReminders(tx: DbOrTx, poll: PollTimes, options: readonly OptionRow[], now: Date): Promise<number> {
   const group = anchorReminderGroup(poll.id);
-  await cancelJobs(tx, { groupKey: group, type: POLL_JOBS.reminder });
+  await cancelFutureReminders(tx, [group], now);
   if (poll.status !== "open") return 0;
   const plan = planAnchorReminders({
     mode: poll.reminderMode,
@@ -120,7 +120,7 @@ export async function scheduleInviteReminders(
  * poll is open. The send-time checks (still open, still invited, subscribed, at most 3) stay in the job.
  */
 export async function rescheduleReminders(tx: DbOrTx, poll: PollTimes, options: readonly OptionRow[], now: Date): Promise<number> {
-  await cancelReminders(tx, poll.id);
+  await cancelFutureReminders(tx, [anchorReminderGroup(poll.id), inviteReminderGroup(poll.id)], now);
   if (poll.status !== "open") return 0;
   let planned = await scheduleAnchorReminders(tx, poll, options, now);
   if (poll.reminderMode === "off") return planned;
@@ -145,6 +145,18 @@ export async function rescheduleReminders(tx: DbOrTx, poll: PollTimes, options: 
     planned += await scheduleInviteReminders(tx, poll, options, { invitedAt: new Date(invitedAt), participantIds }, now);
   }
   return planned;
+}
+
+/**
+ * Cancels the pending reminders of these groups that are not due yet. Reminders already due (waiting for the next cron
+ * run) stay: a recompute only plans future ones, and the job re-checks eligibility when it runs.
+ */
+async function cancelFutureReminders(tx: DbOrTx, groups: string[], now: Date): Promise<void> {
+  const rows = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(inArray(jobs.groupKey, groups), eq(jobs.type, POLL_JOBS.reminder), eq(jobs.status, "pending"), gt(jobs.runAt, now)));
+  if (rows.length) await cancelJobs(tx, { ids: rows.map((r) => r.id) });
 }
 
 /** Cancels every pending reminder (booked, closed, canceled or expired polls). */

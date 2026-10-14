@@ -294,7 +294,12 @@ test.describe("booking flows", () => {
     await page.getByRole("button", { name: "Next", exact: true }).click();
     const group = page.getByRole("radiogroup", { name: "Location" });
     await expect(group.getByRole("radio")).toHaveCount(9);
-    await expect(page.getByText("Golden Gate Grill - Marina - $$$")).toBeVisible();
+    await expect(group.getByText("Golden Gate Grill - Marina - $$$")).toBeVisible();
+    // The details panel lists every option on its own row, like Calendly: the 8 venues, then "Somewhere else".
+    const rows = page.getByRole("complementary", { name: "Event details" }).getByTestId("location-row");
+    await expect(rows).toHaveCount(9);
+    await expect(rows.filter({ hasText: "Golden Gate Grill - Marina - $$$" })).toHaveCount(1);
+    await expect(rows.last()).toHaveText("Somewhere else");
     await expect(page.getByText("2001 Chestnut Street, San Francisco, CA 94123")).toBeVisible();
     await fillDetails(page);
     await page.getByRole("button", { name: "Schedule Event" }).click();
