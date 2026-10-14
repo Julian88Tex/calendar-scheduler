@@ -3,7 +3,8 @@
 //
 //   polls.deadline          deadline reached: open -> closed, host email "Voting closed" (#11)
 //   polls.deadline_warning  24 hours before the deadline, when not everyone invited responded: host email (#12)
-//   polls.expire            the last option started: open/closed -> expired, holds removed, host email (#13)
+//   polls.expire            the last option started: open/closed -> expired, holds removed, host email (#13); a
+//                           reopened poll that still has its meeting goes back to booked instead
 //   polls.reminder          reminders to invited non-respondents (MP-24)
 //   polls.digest            hourly: the 08:00 daily digest of hosts on "daily digest" (#4)
 //   polls.holds_sync        calendar holds of Reserve times (MP-25)
@@ -16,7 +17,7 @@
 //   polls.purge             daily: personal data of polls deleted 30 days ago (MP-22)
 //   polls.sweep             hourly backstop: deadlines and expiries whose jobs were lost
 import "server-only";
-import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
 import {
@@ -25,6 +26,7 @@ import {
   meetingActivity,
   meetingPollActivity,
   meetingPollComments,
+  meetingPollOptions,
   meetingPollParticipants,
   meetingPolls,
   scheduledEventHosts,
@@ -78,18 +80,33 @@ export async function closeAtDeadline(db: DB, pollId: string, now: Date): Promis
   return true;
 }
 
-/** Expires an open or closed poll whose options all started (job and sweep). */
+/**
+ * Expires an open or closed poll whose options all started (job and sweep). A reopened poll whose meeting is still
+ * active returns to booked (the meeting stands; nothing "ended"). Returns true when the poll expired now.
+ */
 export async function expireIfEnded(db: DB, pollId: string, now: Date): Promise<boolean> {
   const expired = await db.transaction(async (tx) => {
     const poll = await lockPoll(tx, pollId, "update");
     if (poll.deletedAt || (poll.status !== "open" && poll.status !== "closed")) return null;
     const options = await loadOptions(tx, poll.id);
     if (statusOf(poll, options, now) !== "expired") return null;
-    await tx.update(meetingPolls).set({ status: "expired", votingClosedAt: poll.votingClosedAt ?? now, updatedAt: now }).where(eq(meetingPolls.id, poll.id));
-    await recordActivity(tx, { pollId: poll.id, type: "expired", at: now });
+    // A reopened poll whose times all passed without a new booking keeps its meeting: it is booked again, not ended.
+    const [kept] = poll.bookedScheduledEventId
+      ? await tx
+          .select({ id: scheduledEvents.id })
+          .from(scheduledEvents)
+          .where(and(eq(scheduledEvents.id, poll.bookedScheduledEventId), eq(scheduledEvents.status, "active")))
+          .limit(1)
+      : [];
+    await tx
+      .update(meetingPolls)
+      .set({ status: kept ? "booked" : "expired", votingClosedAt: poll.votingClosedAt ?? now, updatedAt: now })
+      .where(eq(meetingPolls.id, poll.id));
+    if (kept) await recordActivity(tx, { pollId: poll.id, type: "voting_closed", data: { reason: "times_passed", scheduledEventId: kept.id }, at: now });
+    else await recordActivity(tx, { pollId: poll.id, type: "expired", at: now });
     await cancelPollTimers(tx, poll.id);
     if (poll.reserveTimes) await enqueueHoldsSync(tx, poll.id, now);
-    return { poll, last: lastOptionStart(options, poll.timezone) };
+    return kept ? null : { poll, last: lastOptionStart(options, poll.timezone) };
   });
   if (!expired) return false;
   await sendHostStatus(db, expired.poll, "ended", `poll:${expired.poll.id}:ended:${expired.last?.getTime() ?? 0}`);
@@ -245,12 +262,32 @@ export async function purgeDeletedPolls(db: DB, now: Date, opts: { batch?: numbe
   return purged;
 }
 
-/** Backstop for lost timed jobs: closes past deadlines and expires ended polls. */
+/**
+ * Backstop for lost timed jobs: closes past deadlines and expires ended polls. Only polls that may need it are picked
+ * (open past their deadline, or without a time that surely lies ahead), so healthy polls never crowd out the rest.
+ */
 export async function sweepPolls(db: DB, now: Date): Promise<{ closed: number; expired: number }> {
+  // A date-only option surely starts after now when its date is two days ahead (local midnight in any zone).
+  const futureDate = new Date(now.getTime() + 2 * DAY).toISOString().slice(0, 10);
   const candidates = await db
     .select({ id: meetingPolls.id, status: meetingPolls.status, deadlineAt: meetingPolls.deadlineAt })
     .from(meetingPolls)
-    .where(and(isNull(meetingPolls.deletedAt), or(eq(meetingPolls.status, "open"), eq(meetingPolls.status, "closed"))))
+    .where(
+      and(
+        isNull(meetingPolls.deletedAt),
+        or(eq(meetingPolls.status, "open"), eq(meetingPolls.status, "closed")),
+        or(
+          and(eq(meetingPolls.status, "open"), isNotNull(meetingPolls.deadlineAt), lte(meetingPolls.deadlineAt, now)),
+          sql`not exists (
+            select 1 from ${meetingPollOptions}
+            where ${meetingPollOptions.pollId} = ${meetingPolls.id}
+              and ${meetingPollOptions.deletedAt} is null
+              and (${meetingPollOptions.startsAt} > ${now.toISOString()}::timestamptz or ${meetingPollOptions.allDayDate} > ${futureDate}::date)
+          )`,
+        ),
+      ),
+    )
+    .orderBy(meetingPolls.updatedAt)
     .limit(500);
   let closed = 0;
   let expired = 0;

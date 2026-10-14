@@ -14,7 +14,7 @@ import "server-only";
 import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { isUniqueViolation } from "@/db/helpers";
-import { eventTypeHosts, meetingPollActivity, meetingPollComments, meetingPollOptions, meetingPollParticipants, meetingPolls, meetingPollVotes } from "@/db/schema";
+import { eventTypeHosts, meetingPollActivity, meetingPollComments, meetingPollOptions, meetingPollParticipants, meetingPolls, meetingPollVotes, users } from "@/db/schema";
 import type { ActorCtx } from "@/lib/authz";
 import { checkBookingBot } from "@/lib/booking";
 import { hashIp, hashToken } from "@/lib/crypto";
@@ -154,12 +154,16 @@ async function participantByToken(tx: Tx, pollId: string, column: "edit" | "invi
 
 export type VoterIdentity = { editToken?: string | null; inviteToken?: string | null; userId?: string | null };
 
-/** The participant a request speaks for: edit cookie, else invite link, else the signed-in app user. */
+/**
+ * The participant a request speaks for: a personal invite link, else the edit cookie, else the signed-in app user. The
+ * invite link wins over the cookie: it names one person explicitly, while the cookie belongs to whoever voted last on
+ * this browser (a shared computer must never let the next invitee overwrite the previous voter's answers).
+ */
 export async function identifyParticipant(db: DbOrTx, pollId: string, id: VoterIdentity): Promise<{ participant: ParticipantRow; via: "edit" | "invite" | "user" } | null> {
-  const byEdit = await participantByToken(db, pollId, "edit", id.editToken);
-  if (byEdit) return { participant: byEdit, via: "edit" };
   const byInvite = await participantByToken(db, pollId, "invite", id.inviteToken);
   if (byInvite) return { participant: byInvite, via: "invite" };
+  const byEdit = await participantByToken(db, pollId, "edit", id.editToken);
+  if (byEdit) return { participant: byEdit, via: "edit" };
   if (id.userId) {
     const [row] = await db
       .select()
@@ -201,6 +205,24 @@ function replayKey(requestId: string | null | undefined, ipHash: string): string
   return hashToken(`poll-vote-request:${ipHash}:${id}`);
 }
 
+/** The live participant a recent submit with this replay key wrote (double click), or null. */
+async function replayedParticipant(db: DbOrTx, pollId: string, requestKey: string, at: Date): Promise<ParticipantRow | null> {
+  const [prev] = await db
+    .select({ participantId: meetingPollActivity.participantId })
+    .from(meetingPollActivity)
+    .where(
+      and(
+        eq(meetingPollActivity.pollId, pollId),
+        gte(meetingPollActivity.createdAt, new Date(at.getTime() - REPLAY_WINDOW_MS)),
+        sql`${meetingPollActivity.data}->>'requestKey' = ${requestKey}`,
+      ),
+    )
+    .limit(1);
+  if (!prev?.participantId) return null;
+  const [p] = await db.select().from(meetingPollParticipants).where(eq(meetingPollParticipants.id, prev.participantId)).limit(1);
+  return p && !p.deletedAt ? p : null;
+}
+
 /**
  * "Share times" / "None of these work for me" (MP-08 to MP-10). Answers duplicate_email without writing when the email
  * belongs to another participant and the request holds no valid edit token for it (MP-09: typing someone else's email
@@ -228,7 +250,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
   if (!limit.ok) throw rateLimitedError(limit);
   const requestKey = replayKey(input.requestId, ipHash);
 
-  const duplicate: { participant: ParticipantRow | null } = { participant: null };
+  const duplicate: { participant: ParticipantRow | null; email: string | null } = { participant: null, email: null };
   await warmPollKeys();
   try {
     const result = await db.transaction(async (tx) => {
@@ -242,21 +264,8 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       // Double click: the first result again (same request id from the same client within a few minutes; the replay
       // answers with that participant's edit token, so the key binds the request id to the client and expires).
       if (requestKey) {
-        const [prev] = await tx
-          .select({ participantId: meetingPollActivity.participantId })
-          .from(meetingPollActivity)
-          .where(
-            and(
-              eq(meetingPollActivity.pollId, poll.id),
-              gte(meetingPollActivity.createdAt, new Date(at.getTime() - REPLAY_WINDOW_MS)),
-              sql`${meetingPollActivity.data}->>'requestKey' = ${requestKey}`,
-            ),
-          )
-          .limit(1);
-        if (prev?.participantId) {
-          const [p] = await tx.select().from(meetingPollParticipants).where(eq(meetingPollParticipants.id, prev.participantId)).limit(1);
-          if (p && !p.deletedAt) return { participant: p, created: false, replay: true as const };
-        }
+        const p = await replayedParticipant(tx, poll.id, requestKey, at);
+        if (p) return { participant: p, created: false, replay: true as const };
       }
 
       const identified = await identifyParticipant(tx, poll.id, ctx);
@@ -271,7 +280,14 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
         if (hostRow) throw new VoteAbort(fail("preview", POLL_COPY.previewBanner));
       }
       let participant = identified?.participant ?? null;
-      const email = participant?.email ?? input.email ?? null;
+      // A signed-in app user votes with their account email (shown read-only, MP-09), never a typed one.
+      let accountEmail: string | null = null;
+      if (!participant && ctx.userId) {
+        const [account] = await tx.select({ email: users.email }).from(users).where(and(eq(users.id, ctx.userId), isNull(users.deletedAt))).limit(1);
+        accountEmail = account?.email ?? null;
+      }
+      const email = participant?.email ?? accountEmail ?? input.email ?? null;
+      duplicate.email = email;
       if (!participant && email) {
         const [taken] = await tx
           .select()
@@ -287,7 +303,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       if (!participant && (await participantCount(tx, poll.id)) >= MAX_POLL_PARTICIPANTS) throw new VoteAbort(fail("validation", POLL_ERRORS.tooManyParticipants));
 
       // Verify email (MP-04): new emails need the code; a participant proven before (or reached through their own
-      // invite link or edit token) does not.
+      // invite link, which only ever went to that address) does not. An edit token proves the row, not the address.
       let verifiedNow = false;
       const proven = Boolean(participant?.emailVerifiedAt) || identified?.via === "invite";
       if (poll.verifyEmail && email && !proven) {
@@ -380,6 +396,12 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
     runJobsAfterResponse({ groupKeys: [pollJobGroup(pollId)] });
     return { ok: true, participantId: result.participant.id, editToken: await editTokenFor(result.participant.id), status: result.participant.status, created: result.created };
   } catch (e) {
+    const duplicateEmail = (e instanceof VoteAbort && e.outcome.code === "duplicate_email") || isUniqueViolation(e, "poll_participant_email_uq");
+    if (duplicateEmail && requestKey) {
+      // A double click whose first request committed while this one ran: answer the first result, not "already voted".
+      const p = await replayedParticipant(db, pollId, requestKey, at);
+      if (p) return { ok: true, participantId: p.id, editToken: await editTokenFor(p.id), status: p.status, created: false };
+    }
     if (e instanceof VoteAbort) {
       if (e.outcome.code === "duplicate_email" && duplicate.participant) await sendEditLinkFor(pollId, duplicate.participant, at);
       return e.outcome;
@@ -389,7 +411,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       const [taken] = await db
         .select()
         .from(meetingPollParticipants)
-        .where(and(eq(meetingPollParticipants.pollId, pollId), eq(meetingPollParticipants.emailNormalized, normalizeEmail(input.email ?? "")), isNull(meetingPollParticipants.deletedAt)))
+        .where(and(eq(meetingPollParticipants.pollId, pollId), eq(meetingPollParticipants.emailNormalized, normalizeEmail(duplicate.email ?? input.email ?? "")), isNull(meetingPollParticipants.deletedAt)))
         .limit(1);
       if (taken) await sendEditLinkFor(pollId, taken, at);
       return fail("duplicate_email", POLL_ERRORS.duplicateEmail, { email: [POLL_ERRORS.duplicateEmail] });

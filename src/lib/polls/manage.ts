@@ -50,10 +50,12 @@ export async function closeVoting(actor: ActorCtx, pollId: string): Promise<void
     const poll = await lockPoll(tx, pollId, "update");
     const options = await loadOptions(tx, poll.id);
     const status = statusOf(poll, options, at);
-    if (!canTransition(status, "close")) throw transitionError(status);
+    // Already closed by its deadline (the deadline job has not run yet): store it, same as the job would.
+    const lazilyClosed = status === "closed" && poll.status === "open";
+    if (!lazilyClosed && !canTransition(status, "close")) throw transitionError(status);
     const updated = { ...poll, status: "closed" as const };
-    await tx.update(meetingPolls).set({ status: "closed", votingClosedAt: at, updatedAt: at }).where(eq(meetingPolls.id, poll.id));
-    await recordActivity(tx, { pollId: poll.id, type: "voting_closed", actorUserId: actor.user.id, data: { reason: "host" }, at });
+    await tx.update(meetingPolls).set({ status: "closed", votingClosedAt: lazilyClosed ? (poll.deadlineAt ?? at) : at, updatedAt: at }).where(eq(meetingPolls.id, poll.id));
+    await recordActivity(tx, { pollId: poll.id, type: "voting_closed", actorUserId: actor.user.id, data: { reason: lazilyClosed ? "deadline" : "host" }, at });
     await cancelReminders(tx, poll.id);
     await scheduleTimedJobs(tx, updated, options, at);
   });

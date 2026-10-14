@@ -295,11 +295,9 @@ test.describe("booking flows", () => {
     const group = page.getByRole("radiogroup", { name: "Location" });
     await expect(group.getByRole("radio")).toHaveCount(9);
     await expect(group.getByText("Golden Gate Grill - Marina - $$$")).toBeVisible();
-    // The details panel lists every option on its own row, like Calendly: the 8 venues, then "Somewhere else".
-    const rows = page.getByRole("complementary", { name: "Event details" }).getByTestId("location-row");
-    await expect(rows).toHaveCount(9);
-    await expect(rows.filter({ hasText: "Golden Gate Grill - Marina - $$$" })).toHaveCount(1);
-    await expect(rows.last()).toHaveText("Somewhere else");
+    // Like Calendly, the details panel of a multiple-location event lists no location (only the radio list does).
+    await expect(page.getByTestId("location-row")).toHaveCount(0);
+    await expect(page.getByTestId("details-when")).toBeVisible();
     await expect(page.getByText("2001 Chestnut Street, San Francisco, CA 94123")).toBeVisible();
     await fillDetails(page);
     await page.getByRole("button", { name: "Schedule Event" }).click();

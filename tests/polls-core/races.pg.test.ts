@@ -76,6 +76,31 @@ describe.runIf(process.env.TEST_DATABASE_URL)("meeting poll races on real Postgr
     }
   });
 
+  it("a double click (same request id, same client) saves one response and answers both clicks with it", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 24 });
+    setFakeNow(NOW);
+    try {
+      const host = await setupHost(t.db);
+      const { pollId, slug } = await newPoll(host);
+      const [a] = await optionIds(t.db, pollId);
+      const client = ip();
+      const requestId = "c0ffee00-1111-4222-8333-444455556666";
+      for (let round = 0; round < 3; round++) {
+        const email = `double${round}@example.com`;
+        const results = await Promise.all(
+          Array.from({ length: 3 }, () => vote(slug, { name: "Double", email, requestId: `${requestId}-${round}`, votes: [{ optionId: a!, choice: "yes" }] }, { ip: client })),
+        );
+        expect(results.map((r) => r.ok)).toEqual([true, true, true]);
+        expect(new Set(results.map((r) => (r.ok ? r.participantId : null))).size).toBe(1);
+      }
+      const { meetingPollParticipants } = await import("@/db/schema");
+      expect(await t.db.select().from(meetingPollParticipants).where(eq(meetingPollParticipants.pollId, pollId))).toHaveLength(3);
+    } finally {
+      resetFakeTime();
+      await t.close();
+    }
+  });
+
   it("two concurrent Book requests for one poll create one meeting", async () => {
     const t = await createTestDb({ kind: "postgres", poolSize: 24 });
     setFakeNow(NOW);

@@ -11,7 +11,7 @@ const links = vi.hoisted(() => ({
   consumed: [] as { kind: string; id: string; scheduledEventId: string }[],
   used: false,
 }));
-const polls = vi.hoisted(() => ({ booked: [] as Record<string, unknown>[] }));
+const polls = vi.hoisted(() => ({ booked: [] as Record<string, unknown>[], reservedDbs: [] as unknown[] }));
 vi.mock("@/lib/calendars", () => ({
   getExternalBusy: async (p: { userIds: string[] }) =>
     Object.fromEntries(p.userIds.map((id) => [id, { ok: true, stale: false, nocal: false, busy: cal.busy[id] ?? [] }])),
@@ -36,7 +36,10 @@ vi.mock("@/lib/links", () => {
   };
 });
 vi.mock("@/lib/polls", () => ({
-  getPollReservedIntervals: async () => ({}),
+  getPollReservedIntervals: async (_ids: string[], _start: Date, _end: Date, opts: { db?: unknown } = {}) => {
+    polls.reservedDbs.push(opts.db);
+    return {};
+  },
   markPollBookedInTx: async (_tx: unknown, p: Record<string, unknown>) => {
     polls.booked.push(p);
   },
@@ -46,6 +49,7 @@ vi.mock("@/lib/events/registry", () => ({ subscriberKeysFor: () => [], SUBSCRIBE
 const schema = await import("@/db/schema");
 const { blockedInvitees, domainEvents, inviteeGuests, invitees, meetingActivity, scheduledEventHosts, scheduledEvents } = schema;
 const { createBooking } = await import("@/lib/booking/create");
+const { isTransaction } = await import("@/db/helpers");
 const { getAvailability } = await import("@/lib/booking/availability");
 const { loadEventType } = await import("@/lib/booking/target");
 const { MESSAGES } = await import("@/lib/booking/validate");
@@ -65,6 +69,7 @@ beforeEach(() => {
   links.consumed = [];
   links.used = false;
   polls.booked = [];
+  polls.reservedDbs = [];
 });
 
 describe("createBooking: solo", () => {
@@ -143,6 +148,15 @@ describe("createBooking: solo", () => {
     expect(a.ok && b.ok && a.inviteeId === b.inviteeId).toBe(true);
     const rows = await t.db.select().from(invitees).where(eq(invitees.clientRequestId, "double-click-1"));
     expect(rows).toHaveLength(1);
+  });
+
+  it("re-checks poll holds through the booking transaction (a getDb() query there would hang PGlite)", async () => {
+    const fx = await setupSolo(t.db);
+    const r = await createBooking(bookingInput(fx.target, la("2030-10-08 14:00")), ctx);
+    expect(r.ok).toBe(true);
+    expect(polls.reservedDbs.length).toBeGreaterThan(0);
+    expect(polls.reservedDbs.every((db) => db !== undefined)).toBe(true);
+    expect(polls.reservedDbs.some((db) => isTransaction(db))).toBe(true);
   });
 
   it("re-checks Google busy blocks at submit time", async () => {

@@ -1847,7 +1847,7 @@ two 6x6 fold squares; on phones `top: 15px; left: -5px` and 7px label.
   branding logo or large host avatar (about 120px) with a divider below (observed screenshot); small host avatar
   (64px); host name (`#476788`, 16px bold); event name (h1, 28px bold, 32px line height, `#0A2540`); detail rows with
   20px icons in `#476788` and 16px semibold text: clock + "30 min" (or duration dropdown, BK-07), location row
-  (VID-01 display rules; multiple locations list every option on its own row, in order, identical rows once), card
+  (VID-01 display rules; with multiple locations the panel shows no location row, as observed on Calendly), card
   icon + price "$100.00 USD" when paid (PAY-02), globe + locked time zone when locked; description rich text; bottom
   links "Cookie settings" and "Privacy Policy".
 - **Right panel**: heading "Select a Date & Time" (22px bold); month calendar (BK-04); "Time zone" block (BK-05);

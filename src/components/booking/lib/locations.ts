@@ -3,7 +3,7 @@
 //
 //   toPublicLocations(configs)   what may reach the browser before booking: hidden addresses and custom texts
 //                                ("Display location only after confirmation") and the inbound call number never do
-//   locationRows(list)           the details panel rows (one location: its text; several: one row per option)
+//   locationRows(list)           the details panel rows (one location: its text; several: none, like Calendly)
 //   locationOption(l)            the "Location" radio label on the details form (BK-11)
 //   locationInput(l)             the extra field a choice needs: the phone (outbound call) or text (ask invitee)
 //   meetingLocation(resolved)    the confirmation page row of a booked meeting
@@ -86,13 +86,6 @@ export function providerName(kind: LocationKind): string {
   }
 }
 
-function iconOf(kind: LocationKind): LocationIcon {
-  if (isConferenceKind(kind)) return "video";
-  if (kind === "inbound_call" || kind === "outbound_call") return "phone";
-  if (kind === "custom") return "custom";
-  return "pin";
-}
-
 /** The row of a single location (VID-01 pre-booking display). */
 function singleRow(l: PublicLocation): LocationRow {
   const key = l.id;
@@ -113,28 +106,13 @@ function singleRow(l: PublicLocation): LocationRow {
 }
 
 /**
- * Details panel rows (BK-03): one location shows its own text; several list every option the invitee can choose, in
- * order, like Calendly: each in-person venue by its name ("In-person meeting" while its address is hidden until
- * booking), "Somewhere else" for ask invitee, provider names for conferencing. Identical rows show once.
+ * Details panel rows (BK-03): one location shows its own text; several show no row at all, like Calendly (observed on
+ * the owner's live page, docs/research/calendly-live-capture.md: the left panel of a multiple-location event lists no
+ * locations on the calendar or details step; the invitee sees the options only as the "Location" radio list).
  */
 export function locationRows(list: readonly PublicLocation[]): LocationRow[] {
-  if (list.length === 0) return [];
-  if (list.length === 1) return [singleRow(list[0]!)];
-  const rows: LocationRow[] = [];
-  const seen = new Set<string>();
-  for (const l of list) {
-    const row: LocationRow =
-      l.kind === "physical"
-        ? { key: l.id, icon: "pin", text: l.text ?? bt("location.inPerson"), detail: null }
-        : l.kind === "custom"
-          ? { ...singleRow(l), detail: null }
-          : { key: l.id, icon: iconOf(l.kind), text: locationOption(l).label, detail: null };
-    const dedupe = `${row.icon}\u0000${row.text}`;
-    if (seen.has(dedupe)) continue;
-    seen.add(dedupe);
-    rows.push(row);
-  }
-  return rows;
+  if (list.length !== 1) return [];
+  return [singleRow(list[0]!)];
 }
 
 /** The "Location" radio option of a choice (BK-11). */

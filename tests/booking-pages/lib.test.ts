@@ -38,7 +38,7 @@ describe("locations", () => {
     expect(list[2]).toMatchObject({ text: null, additionalInfo: null });
   });
 
-  it("shows one location's own text and several as one row per option", () => {
+  it("shows one location's own text and no row for several (like Calendly)", () => {
     expect(locationRows(toPublicLocations([loc({ kind: "google_conference" })]))).toEqual([
       { key: "google_conference-0", icon: "video", text: "Web conferencing details provided upon confirmation.", detail: null },
     ]);
@@ -52,19 +52,15 @@ describe("locations", () => {
       loc({ id: "ask", kind: "ask_invitee", position: 8, location: "Suggest a place" }),
     ]);
     expect(meal).toHaveLength(9);
-    // Like Calendly: every option the invitee can pick, in order (venue names, then "Somewhere else").
-    expect(locationRows(meal).map((r) => r.text)).toEqual([...Array.from({ length: 8 }, (_, i) => `Venue ${i}`), "Somewhere else"]);
-    expect(locationRows(meal).every((r) => r.icon === "pin" && r.detail === null)).toBe(true);
-    // Venues hidden until booking show once as "In-person meeting"; other kinds keep their provider labels.
-    const hidden = toPublicLocations([
+    // Like Calendly (live capture): a multiple-location event lists no location in the left panel; the invitee sees
+    // the options only as the "Location" radio list of the details form.
+    expect(locationRows(meal)).toEqual([]);
+    const mixed = toPublicLocations([
       loc({ id: "a", kind: "physical", position: 0, location: "Cafe A", displayBeforeBooking: false }),
-      loc({ id: "b", kind: "physical", position: 1, location: "Cafe B", displayBeforeBooking: false }),
-      loc({ id: "g", kind: "google_conference", position: 2 }),
+      loc({ id: "g", kind: "google_conference", position: 1 }),
     ]);
-    expect(locationRows(hidden).map((r) => [r.icon, r.text])).toEqual([
-      ["pin", "In-person meeting"],
-      ["video", "Google Meet"],
-    ]);
+    expect(locationRows(mixed)).toEqual([]);
+    expect(locationRows([])).toEqual([]);
     expect(locationOption(meal[8]!).label).toBe("Somewhere else");
     expect(meal[8]!.prompt).toBe("Suggest a place");
     expect(locationInput(meal[8]!)).toBe("text");

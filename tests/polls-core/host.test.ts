@@ -189,6 +189,20 @@ describe("settings and lifecycle (MP-22, MP-27)", () => {
     expect((await outbox(t.db, { to: "ana@example.com", template: "polls.canceled" }))[0]?.subject).toBe("Julian Joseph canceled the poll Roadmap sync");
   });
 
+  it("a deleted poll sends only its cancellation notice: queued invitations and confirmations are dropped", async () => {
+    const host = await setupHost(t.db);
+    const { pollId, slug } = await newPoll(host);
+    const [first] = await optionIds(pollId);
+    expect((await vote(slug, { votes: [{ optionId: first!, choice: "yes" }] })).ok).toBe(true);
+    await invitePeople(host.actor, { pollId, recipients: [{ email: "bo@example.com", name: "Bo" }] });
+    // Deleted before the queued emails went out.
+    await deletePoll(host.actor, { pollId });
+    await drain(t.db);
+    expect(await outbox(t.db, { to: "bo@example.com", pollId })).toHaveLength(0);
+    const ana = await outbox(t.db, { to: "ana@example.com", pollId });
+    expect(ana.map((m) => m.template)).toEqual(["polls.canceled"]);
+  });
+
   it("duplicates settings and future times without participants, and exports one CSV row per participant", async () => {
     const host = await setupHost(t.db);
     const { pollId, slug } = await newPoll(host, { allowComments: true, resultsVisibility: "everyone" });
@@ -212,8 +226,16 @@ describe("settings and lifecycle (MP-22, MP-27)", () => {
   it("keeps an old link ending redirecting after a change (MP-05)", async () => {
     const host = await setupHost(t.db);
     const { pollId, slug } = await newPoll(host);
+    const ana = await voted(slug);
     await updatePoll(host.actor, { pollId, slug: "q4-sync" });
-    expect(await getVoterView(slug, {})).toEqual({ status: 301, canonicalSlug: "q4-sync" });
+    expect(await getVoterView(slug, {})).toEqual({ status: 301, canonicalSlug: "q4-sync", editPath: null });
+    // A voter whose edit cookie lives on the old path is sent through the edit link of the new one (keeps "Edit").
+    expect(await getVoterView(slug, { editToken: ana.editToken })).toEqual({
+      status: 301,
+      canonicalSlug: "q4-sync",
+      editPath: `/api/public/polls/q4-sync/edit?t=${encodeURIComponent(ana.editToken)}`,
+    });
+    expect(await getVoterView(slug, { editToken: "x".repeat(43) })).toMatchObject({ status: 301, editPath: null });
     expect((await getVoterView("q4-sync", {})).status).toBe(200);
     const other = await newPoll(host);
     await expect(updatePoll(host.actor, { pollId: other.pollId, slug })).rejects.toMatchObject({ message: "This link is already taken." });

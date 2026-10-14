@@ -351,13 +351,13 @@ export async function requestVoteCodeAction(raw: unknown) {
   return runAction(VerifyEmailSchema.extend({ slug: zSlug }), raw, async ({ slug, ...input }) => requestVoteCode(slug, input, { ip: await clientIp() }), { auth: "none" });
 }
 
-/** A voter's comment (MP-14). */
+/** A voter's comment (MP-14); pass the page's ?i= invite token when there is one (it identifies the voter). */
 export async function addPublicCommentAction(raw: unknown) {
   return runAction(
-    CommentSchema.extend({ slug: zSlug }),
+    CommentSchema.extend({ slug: zSlug, inviteToken: z.string().trim().max(200).nullish() }),
     raw,
-    async ({ slug, ...input }, { actor }) => {
-      const out = await addPublicComment(slug, input, { editToken: await readEditTokenFromHeaders(), userId: actor?.user.id ?? null, ip: await clientIp() });
+    async ({ slug, inviteToken, ...input }, { actor }) => {
+      const out = await addPublicComment(slug, input, { editToken: await readEditTokenFromHeaders(), inviteToken: inviteToken ?? null, userId: actor?.user.id ?? null, ip: await clientIp() });
       refreshVoter(slug);
       return out;
     },
@@ -365,13 +365,13 @@ export async function addPublicCommentAction(raw: unknown) {
   );
 }
 
-/** A voter deletes their own comment. */
+/** A voter deletes their own comment (inviteToken: the page's ?i=, as for addPublicCommentAction). */
 export async function deletePublicCommentAction(raw: unknown) {
   return runAction(
-    z.object({ slug: zSlug, commentId: z.uuid() }),
+    z.object({ slug: zSlug, commentId: z.uuid(), inviteToken: z.string().trim().max(200).nullish() }),
     raw,
     async (input, { actor }) => {
-      await deletePublicComment(input.slug, input.commentId, { editToken: await readEditTokenFromHeaders(), userId: actor?.user.id ?? null });
+      await deletePublicComment(input.slug, input.commentId, { editToken: await readEditTokenFromHeaders(), inviteToken: input.inviteToken ?? null, userId: actor?.user.id ?? null });
       refreshVoter(input.slug);
       return { commentId: input.commentId };
     },

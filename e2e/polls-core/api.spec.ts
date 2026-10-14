@@ -66,8 +66,17 @@ test("poll API: list, create, public view and booking the demo poll", async ({ p
   await api.runJobs();
   const confirmation = await api.waitForEmail((e) => e.template === "lifecycle.invitee_confirmation", { to: "ana.lima@example.com" });
   expect(confirmation.hasIcs).toBe(true);
-  const after = (await (await anon.get(`/api/public/polls/${demo!.slug}`)).json()) as { poll: { status: string }; booked: { status: string } | null };
+  const after = (await (await anon.get(`/api/public/polls/${demo!.slug}`)).json()) as {
+    poll: { status: string };
+    booked: { status: string; scheduledEventId: string | null; joinUrl: string | null; addToCalendar: unknown[] } | null;
+  };
   expect(after.poll.status).toBe("booked");
-  expect(after.booked?.status).toBe("active");
+  // Someone holding only the poll link learns the time, never the meeting's join link or calendar file (GEN-08).
+  expect(after.booked).toMatchObject({ status: "active", scheduledEventId: null, joinUrl: null, addToCalendar: [] });
+  expect((await anon.get(`/api/public/polls/${demo!.slug}/event.ics`)).status()).toBe(404);
+  // The host sees the booked meeting on the voter page too ("View live page").
+  const hostIcs = await host.get(`/api/public/polls/${demo!.slug}/event.ics`);
+  expect(hostIcs.status()).toBe(200);
+  expect(await hostIcs.text()).toContain("BEGIN:VCALENDAR");
   await anon.dispose();
 });

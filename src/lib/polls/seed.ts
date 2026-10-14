@@ -4,7 +4,8 @@
 // created inside the seed transaction with direct inserts (decision C2: its adhoc event type with booking_method poll
 // and the owner as its host), five 60 minute options on the next Tuesday, Wednesday and Thursday inside the owner's
 // working hours, three voters (one public comment) and one invited person who has not answered yet. Idempotent: the
-// poll slug is derived from the owner id and an existing poll is left untouched. Like the rest of the seed it publishes
+// poll slug is derived from the owner id; an existing poll is left untouched while it still has a future time (or a
+// meeting), and a stale one whose times all passed is replaced with fresh times. Like the rest of the seed it publishes
 // no events and enqueues no jobs (no emails, no reminders, no holds). Voter tokens use the same derivation as real
 // participants, with the session key read inside the seed transaction (env first, then app_secrets).
 import { randomBytes } from "node:crypto";
@@ -20,6 +21,7 @@ import {
   meetingPollParticipants,
   meetingPolls,
   meetingPollVotes,
+  scheduledEvents,
   users,
 } from "@/db/schema";
 import { normalizeEmail } from "@/lib/validation";
@@ -85,8 +87,21 @@ function demoDates(zone: string, at: Date): DateTime[] {
 
 export async function seedDemo(tx: DbOrTx, ctx: SeedDemoContext): Promise<void> {
   const slug = demoPollSlug(ctx.ownerUserId);
-  const [existing] = await tx.select({ id: meetingPolls.id }).from(meetingPolls).where(eq(meetingPolls.slug, slug)).limit(1);
-  if (existing) return;
+  const [existing] = await tx
+    .select({ id: meetingPolls.id, eventTypeId: meetingPolls.eventTypeId, status: meetingPolls.status, bookedScheduledEventId: meetingPolls.bookedScheduledEventId })
+    .from(meetingPolls)
+    .where(eq(meetingPolls.slug, slug))
+    .limit(1);
+  if (existing) {
+    // Re-running the seed keeps a demo poll that is still useful (a future time, or booked) and replaces a stale one
+    // whose times all passed, so `db:seed -- --demo` always leaves a poll to vote on.
+    const options = await tx.select({ startsAt: meetingPollOptions.startsAt }).from(meetingPollOptions).where(eq(meetingPollOptions.pollId, existing.id));
+    const [meeting] = await tx.select({ id: scheduledEvents.id }).from(scheduledEvents).where(eq(scheduledEvents.pollId, existing.id)).limit(1);
+    const future = options.some((o) => o.startsAt && o.startsAt.getTime() > clockNow().getTime());
+    if (future || meeting || existing.bookedScheduledEventId || existing.status === "booked") return;
+    await tx.delete(meetingPolls).where(eq(meetingPolls.id, existing.id));
+    await tx.delete(eventTypes).where(eq(eventTypes.id, existing.eventTypeId));
+  }
 
   const [owner] = await tx.select({ id: users.id, timezone: users.timezone, locale: users.locale }).from(users).where(eq(users.id, ctx.ownerUserId)).limit(1);
   if (!owner) throw new Error("[seed] polls demo: owner not found");

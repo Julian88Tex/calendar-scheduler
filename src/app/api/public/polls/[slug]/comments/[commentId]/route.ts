@@ -1,7 +1,7 @@
 // OWNER: polls-core.
 //
-// DELETE /api/public/polls/{slug}/comments/{commentId}   a voter deletes their own comment (SPEC MP-14; identified by
-// the edit cookie) -> { ok, commentId }; 403 for someone else's comment.
+// DELETE /api/public/polls/{slug}/comments/{commentId}?i={invite token}   a voter deletes their own comment (SPEC MP-14;
+// identified by the invite link, else the edit cookie) -> { ok, commentId }; 403 for someone else's comment.
 import { getCurrentUser } from "@/lib/auth/session";
 import { assertSameOrigin, route } from "@/lib/http";
 import { ok, slugParam, uuidParam, type PublicPollChildRouteCtx } from "@/lib/polls/route-helpers";
@@ -15,6 +15,6 @@ export const DELETE = route<PublicPollChildRouteCtx<"commentId">>(async (request
   const slug = slugParam(params.slug);
   const commentId = uuidParam(params.commentId, "This comment no longer exists.");
   const user = await getCurrentUser();
-  await deletePublicComment(slug, commentId, { editToken: readEditToken(request), userId: user?.id ?? null });
+  await deletePublicComment(slug, commentId, { editToken: readEditToken(request), inviteToken: new URL(request.url).searchParams.get("i"), userId: user?.id ?? null });
   return ok({ commentId });
 });

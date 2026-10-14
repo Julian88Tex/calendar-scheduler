@@ -637,10 +637,12 @@ export async function prepareAvailability(
   const meetingRows = await loadMeetings(db, userIds, busyFrom, busyTo);
   const groupMeetingIds = meetingRows.filter((m) => m.isGroup).map((m) => m.scheduledEventId);
   const reservationRows = await loadReservations(db, userIds, busyFrom, busyTo, at);
+  // Poll holds are read through the same connection: inside createBooking's recheck transaction a query through getDb()
+  // would wait on that transaction forever (PGlite has a single connection).
   const [linkHolds, pollHolds] =
     mode.type === "poll"
       ? [{}, {}]
-      : await Promise.all([getReservedIntervals(userIds, busyFrom, busyTo), getPollReservedIntervals(userIds, busyFrom, busyTo)]);
+      : await Promise.all([getReservedIntervals(userIds, busyFrom, busyTo), getPollReservedIntervals(userIds, busyFrom, busyTo, { db })]);
 
   // Step 5: counts and group slots.
   const isGroup = et.kind === "group";

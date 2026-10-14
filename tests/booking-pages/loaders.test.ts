@@ -37,6 +37,7 @@ const { loadLanding } = await import("@/components/booking/server/landing");
 const { resolveCodePage, resolveEventPage, queryOf } = await import("@/components/booking/server/resolve");
 const { loadConfirmation } = await import("@/components/booking/server/confirmation");
 const icsRoute = await import("@/app/booking/[inviteeId]/event.ics/route");
+const slotsRoute = await import("@/app/api/public/slots/route");
 const { resetFakeTime, setFakeNow } = await import("@/lib/time/now");
 const { at } = await import("@/lib/slots/testing");
 const { useTestDb } = await import("../helpers/db");
@@ -203,13 +204,26 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
 
   it("turned off event types show the BK-23 state to invitees and the page to the host", async () => {
     const owner = await host();
-    await eventType(owner, { overrides: { active: false } });
+    const et = await eventType(owner, { overrides: { active: false } });
     const off = await resolveEventPage(owner.slug!, "intro", "calendar", null, "");
     expect(off).toMatchObject({ state: "off", shell: { hostName: "Ana Lima" }, meta: { noindex: true } });
     state.viewer = owner;
     const page = await ok(owner.slug!, "intro");
     expect(page.props.event.active).toBe(false);
     expect(page.meta.noindex).toBe(true);
+
+    // The host's page loads its times (regression: the slots API answered 404 and the page said "We couldn't load the
+    // available times"); everyone else still gets 404.
+    const slots = (viewer: unknown) => {
+      state.viewer = viewer;
+      const q = new URLSearchParams({ target: et.id, start: "2030-10-08", end: "2030-10-08", tz: LA });
+      return slotsRoute.GET(new Request(`http://localhost:3000/api/public/slots?${q}`, { headers: { "x-forwarded-for": `203.0.113.${++seq % 250}` } }), undefined);
+    };
+    const hostRes = await slots(owner);
+    expect(hostRes.status).toBe(200);
+    expect(((await hostRes.json()) as { days: Record<string, unknown[]> }).days["2030-10-08"]?.length).toBeGreaterThan(0);
+    expect((await slots(null)).status).toBe(404);
+    expect((await slots(await f.createUser(t.db, { timezone: LA }))).status).toBe(404);
   });
 
   it("gives hosts the owner tools: troubleshoot link, edit link and the editor preview", async () => {
@@ -403,7 +417,18 @@ describe("loadConfirmation (BK-20, CAL-12, CR-04)", () => {
     expect(await loadConfirmation(first.invitee!.id)).toEqual({ state: "redirect", inviteeId: second.invitee!.id });
     const current = await loadConfirmation(second.invitee!.id);
     expect(current?.state === "ok" && current.view.rescheduled).toBe(true);
+    // CR-03: the replaced time shows struck through under "Former Time", in the invitee's zone and format.
+    expect(current?.state === "ok" && current.view).toMatchObject({
+      whenText: "1:00pm - 1:30pm, Wednesday, October 9, 2030",
+      formerWhenText: "1:00pm - 1:30pm, Tuesday, October 8, 2030",
+    });
     void owner;
+  });
+
+  it("has no Former Time for bookings that were not rescheduled", async () => {
+    const { invitee } = await booked();
+    const res = await loadConfirmation(invitee!.id);
+    expect(res?.state === "ok" && res.view.formerWhenText).toBeNull();
   });
 
   it("shows canceled bookings with the reason and no manage links; past bookings have no manage links", async () => {

@@ -84,6 +84,40 @@ describe("deadline and expiry (MP-22, MP-23)", () => {
   });
 });
 
+describe("review regressions (MP-22, MP-23)", () => {
+  it("the sweep looks only at polls that may need it, so healthy polls never crowd out a lost deadline", async () => {
+    const host = await setupHost(t.db);
+    for (let i = 0; i < 3; i++) await newPoll(host, { title: `Healthy ${i}` });
+    const { pollId } = await newPoll(host, { deadline: la("2030-10-07 12:00").toISOString() });
+    await t.db.update(jobs).set({ status: "canceled" }).where(eq(jobs.type, "polls.deadline"));
+    advance(6 * HOUR);
+    expect(await sweepPolls(t.db, now())).toEqual({ closed: 1, expired: 0 });
+    expect((await pollRow(t.db, pollId)).status).toBe("closed");
+    expect(await sweepPolls(t.db, now())).toEqual({ closed: 0, expired: 0 });
+  });
+
+  it("Close voting on a poll its deadline already closed (job not run yet) stores the close instead of failing", async () => {
+    const host = await setupHost(t.db);
+    const { pollId } = await newPoll(host, { deadline: la("2030-10-07 12:00").toISOString() });
+    advance(6 * HOUR);
+    await closeVoting(host.actor, pollId);
+    expect(await pollRow(t.db, pollId)).toMatchObject({ status: "closed" });
+    expect((await pollRow(t.db, pollId)).votingClosedAt?.toISOString()).toBe(la("2030-10-07 12:00").toISOString());
+  });
+
+  it("inviting someone again who unsubscribed reports them as skipped and emails nothing", async () => {
+    const host = await setupHost(t.db);
+    const { pollId } = await newPoll(host);
+    await invitePeople(host.actor, { pollId, recipients: [{ email: "bo@example.com" }] });
+    await t.db.update(meetingPollParticipants).set({ unsubscribedAt: now() }).where(eq(meetingPollParticipants.pollId, pollId));
+    await drain(t.db);
+    const before = (await outbox(t.db, { to: "bo@example.com", template: "polls.invitation", pollId })).length;
+    expect(await invitePeople(host.actor, { pollId, recipients: [{ email: "bo@example.com" }] })).toEqual({ invited: 0, resent: 0, skipped: [{ email: "bo@example.com", reason: "unsubscribed" }] });
+    await drain(t.db);
+    expect(await outbox(t.db, { to: "bo@example.com", template: "polls.invitation", pollId })).toHaveLength(before);
+  });
+});
+
 describe("reminders to people who haven't voted (MP-24)", () => {
   it("smart mode: the early nudge and the 48 hour reminder go to invited non-respondents only, at most once each", async () => {
     const host = await setupHost(t.db);

@@ -4,7 +4,8 @@
 // mode only with the confirm flag: "Voters chose their answers expecting their names to be hidden"), comments, notify,
 // reminders, deadline (a past deadline closes voting), hosts (holds updated), the If need be and limits settings within
 // their rules, Reserve times. Booked polls: title, description, language, visibility, comments, notify and display
-// settings; title and description changes reach the scheduled meeting. Options: add (cap 100, existing respondents see
+// settings; title and description changes reach the scheduled meeting (also while a reopened poll keeps it, whose
+// location is then locked too). Options: add (cap 100, existing respondents see
 // "?", optional email to them), remove (votes on them deleted; a confirm flag when they have Yes or If need be votes),
 // started options frozen. Link ending edits keep the old link redirecting for 90 days.
 import "server-only";
@@ -54,6 +55,13 @@ async function ifNeedBeInUse(tx: DbOrTx, pollId: string): Promise<boolean> {
 
 const field = (name: string, message: string) => new AppError("validation", message, { fieldErrors: { [name]: [message] } });
 
+/** JSON equality that ignores object key order (jsonb columns come back with their keys reordered). */
+function stableJson(v: unknown): string {
+  return JSON.stringify(v ?? null, (_k, x: unknown) =>
+    x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x,
+  );
+}
+
 export type UpdatePollResult = { pollId: string; slug: string; fields: string[] };
 
 /** Settings edits (see the file header). Only the given fields change. */
@@ -70,15 +78,28 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
       const status = statusOf(poll, options, at);
       const given = Object.entries(input).filter(([k, v]) => v !== undefined && k !== "pollId" && k !== "confirmPublic").map(([k]) => k);
       if (status === "booked") {
-        const blocked = given.find((k) => !BOOKED_EDITABLE.has(k));
+        // The unchanged location (a whole form sent back) is not a change.
+        const blocked = given.find((k) => !BOOKED_EDITABLE.has(k) && !(k === "location" && stableJson(input.location) === stableJson(poll.location)));
         if (blocked) throw field(blocked, blocked === "location" ? POLL_ERRORS.bookedLocationLocked : "Reopen the poll to change this setting.");
+      }
+      // The scheduled meeting of a booked poll, or of a reopened one (it stays until the host books again).
+      const [meeting] = poll.bookedScheduledEventId
+        ? await tx
+            .select({ id: scheduledEvents.id })
+            .from(scheduledEvents)
+            .where(and(eq(scheduledEvents.id, poll.bookedScheduledEventId), eq(scheduledEvents.status, "active")))
+            .limit(1)
+        : [];
+      // A rebook moves that meeting in place and keeps its location: it can't change while the meeting exists.
+      if (meeting && input.location !== undefined && stableJson(input.location) !== stableJson(poll.location)) {
+        throw field("location", POLL_ERRORS.bookedLocationLocked);
       }
       const patch: Partial<typeof meetingPolls.$inferInsert> = {};
       const changed: string[] = [];
       const same = (a: unknown, b: unknown) =>
         a instanceof Date || b instanceof Date
           ? (a instanceof Date ? a.getTime() : null) === (b instanceof Date ? b.getTime() : null)
-          : JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+          : stableJson(a) === stableJson(b);
       const set = <K extends keyof typeof meetingPolls.$inferInsert>(k: K, v: (typeof meetingPolls.$inferInsert)[K]) => {
         if (!same((poll as Record<string, unknown>)[k], v)) {
           patch[k] = v;
@@ -209,17 +230,16 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
         })
         .where(eq(eventTypes.id, poll.eventTypeId));
 
-      // A booked meeting follows title and description changes: the meeting row takes the new name and the provider
-      // event is rewritten from the meeting and its event type (lifecycle provisioning on meeting.updated).
-      if (status === "booked" && poll.bookedScheduledEventId && ("title" in patch || "descriptionHtml" in patch)) {
-        const rows = await tx
+      // The scheduled meeting (booked, or kept by a reopened poll) follows title and description changes: the meeting
+      // row takes the new name and the provider event is rewritten from the meeting and its event type (lifecycle
+      // provisioning on meeting.updated).
+      const meetingUpdated = Boolean(meeting && ("title" in patch || "descriptionHtml" in patch));
+      if (meeting && meetingUpdated) {
+        await tx
           .update(scheduledEvents)
           .set({ ...(patch.title ? { name: patch.title } : {}), updatedAt: at })
-          .where(and(eq(scheduledEvents.id, poll.bookedScheduledEventId), eq(scheduledEvents.status, "active")))
-          .returning({ id: scheduledEvents.id });
-        if (rows.length) {
-          await publishEvent(tx, "meeting.updated", { scheduledEventId: rows[0]!.id, fields: ["location"] }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
-        }
+          .where(eq(scheduledEvents.id, meeting.id));
+        await publishEvent(tx, "meeting.updated", { scheduledEventId: meeting.id, fields: ["location"] }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
       }
 
       const fields = [...new Set(changed)];
@@ -234,7 +254,7 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
       else if (!next.reserveTimes && "reserveTimes" in patch) await enqueueHoldsSync(tx, poll.id, at);
       // A new title rewrites the holds already on the calendars ("Reserved: {Poll title}").
       if (next.reserveTimes && ("title" in patch || "locale" in patch)) await enqueueHoldsSync(tx, poll.id, at, { refresh: true });
-      return { pollId: poll.id, slug: next.slug, fields, meetingUpdated: status === "booked" && ("title" in patch || "descriptionHtml" in patch) };
+      return { pollId: poll.id, slug: next.slug, fields, meetingUpdated };
     });
     runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
     if (out.meetingUpdated) runJobsAfterResponse({ types: [eventJobPattern("meeting.updated")] });

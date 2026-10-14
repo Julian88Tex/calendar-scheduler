@@ -58,13 +58,13 @@ export async function addPublicComment(slug: string, raw: unknown, ctx: VoterIde
   return { commentId: out.commentId };
 }
 
-/** A voter deletes their own comment (edit token). */
+/** A voter deletes their own comment (identified like the page: invite link, edit token or signed-in user). */
 export async function deletePublicComment(slug: string, commentId: string, ctx: VoterIdentity): Promise<void> {
   const db = await getDb();
   const at = clockNow();
   const found = await loadPollBySlug(db, slug, at);
   if (!found || found.poll.deletedAt) throw new AppError("not_found", POLL_ERRORS.notFound);
-  const me = await identifyParticipant(db, found.poll.id, { editToken: ctx.editToken, userId: ctx.userId });
+  const me = await identifyParticipant(db, found.poll.id, { editToken: ctx.editToken, inviteToken: ctx.inviteToken, userId: ctx.userId });
   if (!me) throw new AppError("forbidden", "You can only delete your own comments.");
   const rows = await db
     .update(meetingPollComments)

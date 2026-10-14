@@ -360,6 +360,43 @@ describe("host preview (MP-05 'View live page')", () => {
   });
 });
 
+describe("who a request speaks for (MP-06, MP-09, MP-11)", () => {
+  it("a personal invite link wins over another voter's edit cookie on a shared browser", async () => {
+    const host = await setupHost(t.db);
+    const { pollId, slug } = await newPoll(host);
+    const [a, b] = await optionIds(pollId);
+    const ana = okVote(await vote(slug, { name: "Ana Lima", email: "ana@example.com", votes: [{ optionId: a!, choice: "yes" }] }));
+    await invitePeople(host.actor, { pollId, recipients: [{ email: "bo@example.com", name: "Bo Chen" }] });
+    await drain(t.db);
+    const mail = (await outbox(t.db, { to: "bo@example.com", template: "polls.invitation", pollId }))[0]!;
+    const token = decodeURIComponent(/\/p\/[a-z0-9-]+\?i=([^"&\s]+)/.exec(mail.html)![1]!);
+    // Bo opens his invite link on the computer Ana voted from: the page is Bo's, not Ana's.
+    const view = await getVoterView(slug, { editToken: ana.editToken, inviteToken: token });
+    if (view.status !== 200) throw new Error("view");
+    expect(view.view.me).toMatchObject({ name: "Bo Chen", email: "bo@example.com", status: "invited" });
+    expect(view.view.prefill).toEqual({ name: "Bo Chen", email: "bo@example.com", locked: true });
+    const r = okVote(await vote(slug, { name: "Bo Chen", email: "bo@example.com", votes: [{ optionId: b!, choice: "yes" }] }, { editToken: ana.editToken, inviteToken: token }));
+    expect(r.participantId).not.toBe(ana.participantId);
+    expect(await votesOf(t.db, ana.participantId)).toMatchObject({ [a!]: "yes", [b!]: "no" });
+    expect(await votesOf(t.db, r.participantId)).toMatchObject({ [a!]: "no", [b!]: "yes" });
+  });
+
+  it("a signed-in app user votes with their account email, not a typed one", async () => {
+    const host = await setupHost(t.db);
+    const colleague = await setupHost(t.db, { name: "Kim Lee", email: "kim@example.com", organizationId: host.user.organizationId, orgRole: "user" });
+    const { pollId, slug } = await newPoll(host);
+    okVote(await vote(slug, { name: "Kim Lee", email: "someone-else@example.com" }, { userId: colleague.user.id }));
+    const [p] = await participantsOf(t.db, pollId);
+    expect(p).toMatchObject({ email: "kim@example.com", emailNormalized: "kim@example.com", userId: colleague.user.id });
+    // Typing an existing voter's email while signed in as someone else changes nothing either.
+    const ana = okVote(await vote(slug, { name: "Ana Lima", email: "ana@example.com" }));
+    const other = await setupHost(t.db, { name: "Lee Roy", email: "lee@example.com", organizationId: host.user.organizationId, orgRole: "user" });
+    const r = okVote(await vote(slug, { name: "Lee Roy", email: "ana@example.com" }, { userId: other.user.id }));
+    expect(r.participantId).not.toBe(ana.participantId);
+    expect((await participantsOf(t.db, pollId)).map((x) => x.email).sort()).toEqual(["ana@example.com", "kim@example.com", "lee@example.com"]);
+  });
+});
+
 describe("page states (MP-15)", () => {
   it("unknown slugs answer 404 and expired polls show ended", async () => {
     const host = await setupHost(t.db);

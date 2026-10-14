@@ -94,16 +94,27 @@ export type VoterSelfView = {
 };
 
 export type BookedMeetingView = {
-  scheduledEventId: string;
+  /**
+   * The meeting (the "View meeting" link on the results page). Null on the public voter page unless the viewer is an
+   * invitee of the meeting: the id opens its join link (/events/{id}/join).
+   */
+  scheduledEventId: string | null;
   start: string;
   end: string;
   allDayDate: string | null;
   status: "active" | "canceled";
   location: PollLocationView;
-  /** Booked location details (address, join link once it exists). */
+  /**
+   * Booked location details (address, phone, custom text; for web conferences only for invitees and hosts, it may hold
+   * the join link).
+   */
   locationText: string | null;
+  /** The stable join link (/events/{id}/join) for invitees and hosts, else null. */
   joinUrl: string | null;
-  /** "Add to calendar" (MP-15): Google, Outlook.com, Office 365 and the ICS download; empty once canceled. */
+  /**
+   * "Add to calendar" (MP-15): Google, Outlook.com, Office 365 and the ICS download for invitees and hosts; empty for
+   * anyone else holding the poll link and once canceled.
+   */
   addToCalendar: { id: "google" | "outlook" | "office365" | "ical"; label: string; url: string }[];
 };
 

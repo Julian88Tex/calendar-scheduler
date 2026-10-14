@@ -1,8 +1,8 @@
-// OWNER: meetings-dashboard. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: meetings-dashboard.
 //
-// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). Keys are prefixed with
-// the module domain. Planned types: meetings.export.
-// A job enqueued for a type that has no handler yet is rescheduled one hour later (last_error 'no_handler').
+// Job handlers of this module, merged by src/lib/jobs/registry.ts (ARCHITECTURE section 12.2). None: the CSV export
+// (SPEC MT-11) streams from GET /api/meetings/export instead of running a meetings.export job (docs/SCOPE.md keeps the
+// export only as a simple route handler; one person's meetings fit a streamed response).
 import type { JobHandlers, PeriodicJob } from "@/lib/jobs/types";
 
 export const handlers: JobHandlers = {};

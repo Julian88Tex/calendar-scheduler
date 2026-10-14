@@ -281,8 +281,12 @@ async function rebook(
       .set({ status: "booked", bookedOptionId: option.id, bookedAt: at, bookedByUserId: actor.user.id, votingClosedAt: poll.votingClosedAt ?? at, sendMeetingReminders: intent.sendMeetingReminders, updatedAt: at })
       .where(eq(meetingPolls.id, poll.id));
   });
+  // A failed move hands the poll back as it was (reopened, the old booking details).
   const revert = async () => {
-    await db.update(meetingPolls).set({ status: "open", bookedOptionId: fromOptionId, updatedAt: clockNow() }).where(eq(meetingPolls.id, poll0.id));
+    await db
+      .update(meetingPolls)
+      .set({ status: poll0.status, bookedOptionId: fromOptionId, bookedAt: poll0.bookedAt, bookedByUserId: poll0.bookedByUserId, votingClosedAt: poll0.votingClosedAt, sendMeetingReminders: poll0.sendMeetingReminders, updatedAt: clockNow() })
+      .where(eq(meetingPolls.id, poll0.id));
   };
 
   try {

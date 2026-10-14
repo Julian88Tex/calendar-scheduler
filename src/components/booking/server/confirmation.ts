@@ -3,6 +3,8 @@
 // /booking/{inviteeId} is a capability URL: the invitee id alone opens it. An old (rescheduled) invitee id follows the
 // chain to the current booking (CR-04). Times use the invitee's stored zone and time format; the notification copy
 // follows the meeting's effective CAL-12 mode; "Open Invitation" appears when the provider returned a link to the event.
+// A rescheduled booking also carries the time it replaced (the meeting of current.oldInviteeId), shown struck through
+// under "Former Time" (CR-03).
 import "server-only";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -38,6 +40,8 @@ export type ConfirmationView = {
   zoneName: string;
   hour12: boolean;
   whenText: string;
+  /** Rescheduled bookings: the replaced meeting's time ("Former Time", struck through, CR-03), else null. */
+  formerWhenText: string | null;
   location: MeetingLocationView | null;
   mode: MeetingSettingsSnapshot["notificationMode"];
   invitationUrl: string | null;
@@ -72,6 +76,19 @@ async function bookingPagePath(eventTypeId: string): Promise<string | null> {
   if (!ownerCondition) return null;
   const [h] = await db.select({ slug: handles.slug }).from(handles).where(ownerCondition).limit(1);
   return h ? `/${encodeURIComponent(h.slug)}/${encodeURIComponent(et.slug)}` : null;
+}
+
+/** Start and end of the meeting an invitee of a reschedule chain belonged to (the time the reschedule replaced). */
+async function formerTimes(oldInviteeId: string | null): Promise<{ startAt: Date; endAt: Date } | null> {
+  if (!oldInviteeId) return null;
+  const db = await getDb();
+  const [row] = await db
+    .select({ startAt: scheduledEvents.startAt, endAt: scheduledEvents.endAt })
+    .from(invitees)
+    .innerJoin(scheduledEvents, eq(scheduledEvents.id, invitees.scheduledEventId))
+    .where(eq(invitees.id, oldInviteeId))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function loadConfirmation(inviteeIdRaw: string): Promise<ConfirmationResult> {
@@ -128,6 +145,8 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
   const legal = await getLegalLinks();
   const pagePath = snap.scheduleAnotherEnabled && event.source !== "poll" && event.source !== "one_off" ? await bookingPagePath(event.eventTypeId) : null;
   const metadata = (brandUser?.metadata ?? {}) as Record<string, unknown>;
+  const former = await formerTimes(current.oldInviteeId);
+  const formerChanged = former && (former.startAt.getTime() !== event.startAt.getTime() || former.endAt.getTime() !== event.endAt.getTime());
 
   const view: ConfirmationView = {
     inviteeId: current.id,
@@ -144,6 +163,7 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
     zoneName: friendlyZoneName(zone),
     hour12,
     whenText: formatMeetingWhen(event.startAt, event.endAt, zone, "en-US", hour12),
+    formerWhenText: former && formerChanged ? formatMeetingWhen(former.startAt, former.endAt, zone, "en-US", hour12) : null,
     location,
     mode: snap.notificationMode,
     invitationUrl: snap.notificationMode === "calendar_invitation" ? safeLink(event.invitationUrl) : null,

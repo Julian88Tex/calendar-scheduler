@@ -142,6 +142,9 @@ export type PollEmailPayload = {
 export async function sendPollEmail(db: DB, p: PollEmailPayload): Promise<boolean> {
   const poll = await loadPoll(db, p.pollId);
   if (!poll) return false;
+  // A deleted poll only sends its "{Host} canceled the poll" notice: queued invitations, confirmations, magic links,
+  // codes and other notices would point at a link that answers 410.
+  if ((poll.deletedAt || poll.status === "canceled") && p.template !== "canceled") return false;
   const now = clockNow();
   const brand = await emailBrandForUser(poll.ownerUserId, db);
   const hostName = await ownerName(db, poll);
@@ -475,17 +478,23 @@ export async function sendAutomaticReminders(db: DB, pollId: string, opts: { kin
  * (the job runs hourly; one email per host and local date thanks to the idempotency key). Activity of the last 24 hours.
  */
 export async function sendDigests(db: DB, at: Date): Promise<number> {
-  const polls = await db
-    .select()
-    .from(meetingPolls)
-    .where(and(isNull(meetingPolls.deletedAt), inArray(meetingPolls.status, ["open", "closed", "booked"])));
-  if (!polls.length) return 0;
+  // Only polls with votes or comments in the last 24 hours (the activity index, not every poll of the instance).
   const since = new Date(at.getTime() - 24 * 3_600_000);
   const recent = await db
     .select({ pollId: meetingPollActivity.pollId, type: meetingPollActivity.type })
     .from(meetingPollActivity)
-    .where(and(inArray(meetingPollActivity.pollId, polls.map((p) => p.id)), gte(meetingPollActivity.createdAt, since), lt(meetingPollActivity.createdAt, at), inArray(meetingPollActivity.type, ["voted", "vote_changed", "declined", "commented"])));
+    .innerJoin(meetingPolls, eq(meetingPolls.id, meetingPollActivity.pollId))
+    .where(
+      and(
+        gte(meetingPollActivity.createdAt, since),
+        lt(meetingPollActivity.createdAt, at),
+        inArray(meetingPollActivity.type, ["voted", "vote_changed", "declined", "commented"]),
+        isNull(meetingPolls.deletedAt),
+        inArray(meetingPolls.status, ["open", "closed", "booked"]),
+      ),
+    );
   if (!recent.length) return 0;
+  const polls = await db.select().from(meetingPolls).where(inArray(meetingPolls.id, [...new Set(recent.map((r) => r.pollId))]));
   const byUser = new Map<string, { host: PollHostRow; polls: { poll: PollRow; votes: number; comments: number }[] }>();
   for (const poll of polls) {
     const acts = recent.filter((r) => r.pollId === poll.id);

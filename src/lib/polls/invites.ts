@@ -28,7 +28,8 @@ import { enqueuePollEmail, rescheduleReminders } from "./schedule";
 import { tokenHashesFor, verifyUnsubscribeToken, warmPollKeys } from "./tokens";
 import { InviteSchema, RemindSchema } from "./validation";
 
-export type InviteResult = { invited: number; resent: number; skipped: { email: string; reason: "responded" }[] };
+/** skipped: people who already responded, and invited people who unsubscribed from this poll (never emailed again). */
+export type InviteResult = { invited: number; resent: number; skipped: { email: string; reason: "responded" | "unsubscribed" }[] };
 
 /** "Invite people" (MP-06). */
 export async function invitePeople(actor: ActorCtx, raw: unknown): Promise<InviteResult> {
@@ -79,7 +80,11 @@ export async function invitePeople(actor: ActorCtx, raw: unknown): Promise<Invit
           .update(meetingPollParticipants)
           .set({ inviteTokenHash: hashes.inviteTokenHash, invitedAt: at, isRequired: prev.isRequired || r.required, name: prev.name || r.name?.trim() || "", updatedAt: at })
           .where(eq(meetingPollParticipants.id, prev.id));
-        if (!prev.unsubscribedAt) sendTo.push(prev.id);
+        if (prev.unsubscribedAt) {
+          result.skipped.push({ email: r.email, reason: "unsubscribed" });
+          continue;
+        }
+        sendTo.push(prev.id);
         result.resent++;
         continue;
       }

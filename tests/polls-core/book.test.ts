@@ -42,7 +42,9 @@ const { cancelScheduledEvent } = await import("@/lib/lifecycle");
 const { getPollReservedIntervals } = await import("@/lib/polls");
 const { bookPoll, bookingPreview } = await import("@/lib/polls/book");
 const { deletePoll, reopenPoll } = await import("@/lib/polls/manage");
-const { getHostPoll, getVoterView } = await import("@/lib/polls/queries");
+const { getBookedMeetingIcs, getHostPoll, getVoterView } = await import("@/lib/polls/queries");
+const { updatePoll } = await import("@/lib/polls/update");
+const { expireIfEnded } = await import("@/lib/polls/job-handlers");
 const { fakeCalendarProvider, resetFakeProviders } = await import("../helpers/fake-providers");
 const { createBooking: insertMeeting, createCalendarConnection, createEventType } = await import("../factories");
 const { useTestDb } = await import("../helpers/db");
@@ -323,6 +325,73 @@ describe("reopen, rebook, cancel (MP-21)", () => {
     const again = await bookDefault(host, p.pollId, p.options[1]!);
     expect(again.mode).toBe("booked");
     expect(again.scheduledEventId).not.toBe(first.scheduledEventId);
+  });
+});
+
+describe("the booked voter page (MP-15, GEN-08)", () => {
+  it("shows the join link, location and calendar links to invitees and hosts only, never to others holding the link", async () => {
+    const host = await setupHost(t.db);
+    const p = await votedPoll(host);
+    // Ana is the only invitee; Bo voted but was left out.
+    const r = await bookPoll(host.actor, { pollId: p.pollId, optionId: p.options[0]!, invitees: [{ participantId: p.ana.participantId, email: "ana@example.com" }] });
+    await drain(t.db, { lifecycle: true });
+    await t.db
+      .update(scheduledEvents)
+      .set({ location: { configId: null, kind: "google_conference", location: "https://meet.google.com/abc-defg-hij", additionalInfo: null, joinUrl: "https://meet.google.com/abc-defg-hij", status: "pushed", providerMeetingId: null, password: null, dialIn: null, data: null, error: null } })
+      .where(eq(scheduledEvents.id, r.scheduledEventId));
+
+    const anonymous = await getVoterView(p.slug, {});
+    const bo = await getVoterView(p.slug, { editToken: p.bo.editToken });
+    for (const v of [anonymous, bo]) {
+      if (v.status !== 200) throw new Error("view");
+      expect(v.view.booked).toMatchObject({ status: "active", scheduledEventId: null, joinUrl: null, locationText: null, addToCalendar: [] });
+      expect(JSON.stringify(v.view)).not.toContain("meet.google.com");
+      expect(JSON.stringify(v.view)).not.toContain(r.scheduledEventId);
+    }
+    const ana = await getVoterView(p.slug, { editToken: p.ana.editToken });
+    if (ana.status !== 200) throw new Error("view");
+    expect(ana.view.booked).toMatchObject({ scheduledEventId: r.scheduledEventId, joinUrl: `http://localhost:3000/events/${r.scheduledEventId}/join` });
+    expect(ana.view.booked!.addToCalendar.length).toBeGreaterThan(0);
+    const hostView = await getVoterView(p.slug, { viewer: { userId: host.user.id, name: host.user.name, email: host.user.email } });
+    if (hostView.status !== 200) throw new Error("view");
+    expect(hostView.view.booked?.scheduledEventId).toBe(r.scheduledEventId);
+
+    // The "Add to calendar" download carries the join link: invitees and hosts only.
+    expect(await getBookedMeetingIcs(p.slug, {})).toBeNull();
+    expect(await getBookedMeetingIcs(p.slug, { editToken: p.bo.editToken })).toBeNull();
+    expect((await getBookedMeetingIcs(p.slug, { editToken: p.ana.editToken }))?.ics).toContain("BEGIN:VCALENDAR");
+    expect(await getBookedMeetingIcs(p.slug, { viewer: { userId: host.user.id, email: host.user.email } })).not.toBeNull();
+  });
+
+  it("an in-person address stays visible to everyone (it was on the page before booking)", async () => {
+    const host = await setupHost(t.db);
+    const p = await votedPoll(host);
+    await bookPoll(host.actor, { pollId: p.pollId, optionId: p.options[0]!, invitees: [{ participantId: p.ana.participantId, email: "ana@example.com" }] });
+    const anonymous = await getVoterView(p.slug, {});
+    if (anonymous.status !== 200) throw new Error("view");
+    expect(anonymous.view.booked).toMatchObject({ scheduledEventId: null, locationText: "Blue Bottle, 66 Mint St", addToCalendar: [] });
+  });
+});
+
+describe("a reopened poll keeps its meeting (MP-21, MP-27)", () => {
+  it("title edits reach the kept meeting, its location is locked, and it is booked again once every time passed", async () => {
+    const host = await setupHost(t.db);
+    const p = await votedPoll(host);
+    const first = await bookDefault(host, p.pollId, p.options[0]!);
+    await drain(t.db, { lifecycle: true });
+    await reopenPoll(host.actor, { pollId: p.pollId, notify: false });
+    await updatePoll(host.actor, { pollId: p.pollId, title: "Roadmap sync (final)" });
+    expect((await t.db.select().from(scheduledEvents).where(eq(scheduledEvents.id, first.scheduledEventId)))[0]?.name).toBe("Roadmap sync (final)");
+    await expect(updatePoll(host.actor, { pollId: p.pollId, location: { id: "5eed0000-0000-4000-8000-0000000000b2", kind: "physical", position: 0, location: "Elsewhere" } })).rejects.toMatchObject({
+      message: "The location of a scheduled meeting can't be changed here.",
+    });
+    // The unchanged location (keys in another order) is not a change.
+    await updatePoll(host.actor, { pollId: p.pollId, location: { location: "Blue Bottle, 66 Mint St", position: 0, kind: "physical", id: "5eed0000-0000-4000-8000-0000000000b1" } });
+    // Every time passes without a new booking: the poll is booked again (the meeting stands), not "ended".
+    setFakeNow(new Date(la("2030-10-10 14:00").getTime() + MIN));
+    expect(await expireIfEnded(t.db, p.pollId, now())).toBe(false);
+    expect(await pollRow(t.db, p.pollId)).toMatchObject({ status: "booked", bookedScheduledEventId: first.scheduledEventId });
+    expect(await outbox(t.db, { template: "polls.ended" })).toHaveLength(0);
   });
 });
 

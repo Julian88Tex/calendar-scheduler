@@ -185,6 +185,7 @@ const messages = {
     summary: "Meeting details",
     host: "Host",
     when: "Date and time",
+    formerTime: "Former Time",
     zone: "Time zone",
     guests: "Guests",
   },

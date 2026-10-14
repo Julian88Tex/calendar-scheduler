@@ -38,7 +38,7 @@ export async function checkVoterCalendar(
   ctx: { ip?: string | null } = {},
 ): Promise<{ check: VoterCalendarCheck; cookie: string; slug: string }> {
   const { poll, options } = await livePoll(slug);
-  const limit = await rateLimit(`poll-freebusy:ip:${await hashIp(ctx.ip)}`, 10, 3600);
+  const limit = await rateLimit(`poll-freebusy:ip:${await hashIp(ctx.ip)}`, 10, 3600, { nowMs: clockNow().getTime() });
   if (!limit.ok) throw rateLimitedError(limit);
   const range = checkRange(poll, options, clockNow());
   let busy: Busy[] = [];

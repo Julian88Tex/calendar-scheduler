@@ -2,8 +2,8 @@
 // scheduled" ("You are rescheduled"), the CAL-12 notification sentence, "Open Invitation" when the provider returned a
 // link, the summary box (event, host, time in the invitee's zone and format, zone, location), "Add to calendar"
 // (Google, Outlook.com, Office 365, Apple / iCal), cancel and reschedule links, "Schedule another event" and custom
-// links, and the optional "Powered by" footer. Canceled bookings show the same summary struck through. Server
-// component.
+// links, and the optional "Powered by" footer. Rescheduled bookings add the replaced time under a small "Former Time"
+// label, struck through (CR-03). Canceled bookings show the same summary struck through. Server component.
 import { CalendarDays, Check, ExternalLink, Globe, User, XCircle } from "lucide-react";
 import type * as React from "react";
 import type { Route } from "next";
@@ -74,6 +74,16 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
           <span className="sr-only">{bt("confirmation.when")}: </span>
           <span data-testid="confirmation-when">{v.whenText}</span>
         </Row>
+        {!canceled && v.formerWhenText && (
+          <div className="flex flex-col gap-1" data-testid="confirmation-former">
+            <span className="text-[11px] leading-4 font-bold text-ink-2">{bt("confirmation.formerTime")}</span>
+            <Row icon={<CalendarDays />}>
+              <s className="decoration-ink-2" data-testid="confirmation-former-when">
+                {v.formerWhenText}
+              </s>
+            </Row>
+          </div>
+        )}
         <Row icon={<Globe />} strike={canceled}>
           <span className="sr-only">{bt("confirmation.zone")}: </span>
           <span data-testid="confirmation-zone">{v.zoneName}</span>

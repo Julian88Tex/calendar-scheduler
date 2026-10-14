@@ -7,6 +7,7 @@ import { getDb } from "@/db";
 import {
   eventTypeHosts,
   eventTypes,
+  invitees,
   meetingPollActivity,
   meetingPollComments,
   meetingPollOptions,
@@ -18,12 +19,13 @@ import {
 } from "@/db/schema";
 import { oauthStartPath } from "@/lib/auth/oauth/links";
 import { isOrgAdmin, type ActorCtx } from "@/lib/authz";
-import { conferenceJoinUrl } from "@/lib/conferencing/kinds";
+import { conferenceJoinUrl, isConferenceKind } from "@/lib/conferencing/kinds";
 import { getFeatures } from "@/lib/env";
 import { sanitizeRichText } from "@/lib/html";
 import { decodeCursor, encodeCursor } from "@/lib/pagination";
 import { now as clockNow } from "@/lib/time/now";
 import { absoluteUrl, appUrl, joinUrl, pollUrl } from "@/lib/url";
+import { normalizeEmail } from "@/lib/validation";
 import { addToCalendarLinks } from "@/lib/email/calendar-links";
 import { buildIcs, icsUid } from "@/lib/email/ical";
 import { requirePollAccess } from "./access";
@@ -48,6 +50,7 @@ import {
   unknownOptionIds,
   votesByParticipant,
   type OptionRow,
+  type ParticipantRow,
   type PollRow,
 } from "./load";
 import { rankPollOptions } from "./ranking";
@@ -72,30 +75,44 @@ import type {
 
 export type VoterViewResult =
   | { status: 200; view: VoterPollView; canonicalSlug: string; pollId: string }
-  | { status: 301; canonicalSlug: string }
+  /**
+   * An old link ending: redirect to the canonical slug. The voter's edit cookie lives on the old path, so when the
+   * request carried a valid one, `editPath` is the magic edit link on the new slug (it moves the cookies to the new
+   * paths and lands on /p/{canonicalSlug}): redirect there instead to keep "Edit your preferred times".
+   */
+  | { status: 301; canonicalSlug: string; editPath: string | null }
   | { status: 404 }
   | { status: 410 };
 
-async function bookedView(poll: PollRow, options: readonly OptionRow[]): Promise<BookedMeetingView | null> {
+/**
+ * Who may see the booked meeting's join details: "full" (hosts, and voters who are invitees of the meeting) gets the
+ * join link, the location text and the "Add to calendar" links; "public" (anyone else holding the poll link) only
+ * learns that the meeting is scheduled, when, and a physical address or phone number already shown before booking.
+ */
+type MeetingAccess = "full" | "public";
+
+async function bookedView(poll: PollRow, options: readonly OptionRow[], access: MeetingAccess, opts: { inviteToken?: string | null } = {}): Promise<BookedMeetingView | null> {
   if (poll.status !== "booked" || !poll.bookedScheduledEventId) return null;
   const db = await getDb();
   const [m] = await db.select().from(scheduledEvents).where(eq(scheduledEvents.id, poll.bookedScheduledEventId)).limit(1);
   if (!m) return null;
   const option = options.find((o) => o.id === poll.bookedOptionId);
-  const join = m.location?.kind ? conferenceJoinUrl(m.location) : null;
+  const full = access === "full";
+  const conference = Boolean(m.location?.kind && isConferenceKind(m.location.kind));
+  const join = full && m.location?.kind ? conferenceJoinUrl(m.location) : null;
   const joinLink = join ? joinUrl(m.id) : null;
   const allDayDate = option?.allDayDate ?? null;
   return {
-    scheduledEventId: m.id,
+    scheduledEventId: full ? m.id : null,
     start: m.startAt.toISOString(),
     end: m.endAt.toISOString(),
     allDayDate,
     status: m.status,
     location: locationView(poll.location),
-    locationText: m.location?.location ?? null,
+    locationText: full || !conference ? (m.location?.location ?? null) : null,
     joinUrl: joinLink,
     addToCalendar:
-      m.status === "active"
+      full && m.status === "active"
         ? addToCalendarLinks({
             title: m.name,
             start: m.startAt,
@@ -103,18 +120,46 @@ async function bookedView(poll: PollRow, options: readonly OptionRow[]): Promise
             allDayDate,
             location: joinLink ?? m.location?.location ?? null,
             details: pollUrl(poll.slug),
-            icsUrl: absoluteUrl(`/api/public/polls/${encodeURIComponent(poll.slug)}/event.ics`),
+            // A voter recognized by their invite link (no edit cookie yet) downloads with the same link.
+            icsUrl: absoluteUrl(`/api/public/polls/${encodeURIComponent(poll.slug)}/event.ics${opts.inviteToken ? `?i=${encodeURIComponent(opts.inviteToken)}` : ""}`),
             locale: poll.locale,
           })
         : [],
   };
 }
 
+/** "full" when the identified voter (or the signed-in viewer's email) is an active invitee of the booked meeting. */
+async function voterMeetingAccess(
+  poll: PollRow,
+  me: Pick<ParticipantRow, "id" | "emailNormalized"> | null,
+  viewer: { email: string } | null | undefined,
+  isHost: boolean,
+): Promise<MeetingAccess> {
+  if (isHost) return "full";
+  if (!poll.bookedScheduledEventId) return "public";
+  const emails = [me?.emailNormalized, viewer?.email ? normalizeEmail(viewer.email) : null].filter((v): v is string => Boolean(v));
+  const match: SQL[] = [];
+  if (me) match.push(eq(invitees.pollParticipantId, me.id));
+  if (emails.length) match.push(inArray(invitees.emailNormalized, emails));
+  if (!match.length) return "public";
+  const db = await getDb();
+  const [row] = await db
+    .select({ id: invitees.id })
+    .from(invitees)
+    .where(and(eq(invitees.scheduledEventId, poll.bookedScheduledEventId), eq(invitees.status, "active"), or(...match)))
+    .limit(1);
+  return row ? "full" : "public";
+}
+
 /**
  * The booked meeting as an "Add to calendar" download (MP-15; METHOD PUBLISH, the meeting's UID so it merges with the
- * invitation). Null unless the poll is booked and its meeting is active.
+ * invitation). Null unless the poll is booked, its meeting is active and the caller is an invitee of it or a host (the
+ * file carries the join link, which people who were not invited never get).
  */
-export async function getBookedMeetingIcs(slug: string): Promise<{ filename: string; ics: string } | null> {
+export async function getBookedMeetingIcs(
+  slug: string,
+  identity: VoterIdentity & { viewer?: { userId: string; email: string } | null } = {},
+): Promise<{ filename: string; ics: string } | null> {
   const db = await getDb();
   const found = await loadPollBySlug(db, slug, clockNow());
   if (!found || found.poll.deletedAt) return null;
@@ -122,6 +167,10 @@ export async function getBookedMeetingIcs(slug: string): Promise<{ filename: str
   if (poll.status !== "booked" || !poll.bookedScheduledEventId) return null;
   const [m] = await db.select().from(scheduledEvents).where(eq(scheduledEvents.id, poll.bookedScheduledEventId)).limit(1);
   if (!m || m.status !== "active") return null;
+  const viewerId = identity.userId ?? identity.viewer?.userId ?? null;
+  const isHost = viewerId ? (await loadPollHosts(db, poll)).some((h) => h.userId === viewerId) : false;
+  const me = await identifyParticipant(db, poll.id, { ...identity, userId: viewerId });
+  if ((await voterMeetingAccess(poll, me?.participant ?? null, identity.viewer, isHost)) !== "full") return null;
   const [organizer] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, m.organizerUserId)).limit(1);
   const options = await loadOptions(db, poll.id);
   const allDayDate = options.find((o) => o.id === poll.bookedOptionId)?.allDayDate ?? undefined;
@@ -186,7 +235,11 @@ export async function getVoterView(
   if (!found) return { status: 404 };
   const poll = found.poll;
   if (poll.deletedAt || poll.status === "canceled") return { status: 410 };
-  if (found.redirected) return { status: 301, canonicalSlug: poll.slug };
+  if (found.redirected) {
+    const carried = identity.editToken ? await identifyParticipant(db, poll.id, { editToken: identity.editToken }) : null;
+    const editPath = carried?.via === "edit" ? `/api/public/polls/${encodeURIComponent(poll.slug)}/edit?t=${encodeURIComponent(identity.editToken!)}` : null;
+    return { status: 301, canonicalSlug: poll.slug, editPath };
+  }
   const [options, hosts, participants, voteRows, comments] = await Promise.all([
     loadOptions(db, poll.id),
     loadPollHosts(db, poll),
@@ -210,6 +263,7 @@ export async function getVoterView(
   });
   const myVotes = mine ? (votes.get(mine.id) ?? {}) : {};
   const deadlineSoon = Boolean(poll.deadlineAt && status === "open" && poll.deadlineAt.getTime() - at.getTime() <= DEADLINE_SOON_MS);
+  const viewerIsHost = Boolean(identity.viewer && hosts.some((h) => h.userId === identity.viewer!.userId));
   const view: VoterPollView = {
     poll: {
       slug: poll.slug,
@@ -233,7 +287,10 @@ export async function getVoterView(
       canSubscribe: canSubscribe(poll.resultsVisibility),
       commentsHostOnly: poll.resultsVisibility === "host_only",
     },
-    options: options.map((o) => ({ ...optionView(o, poll.timezone, at), ...red.options[o.id]! })),
+    // Chronological (date-only options at local midnight in the poll zone), then in creation order.
+    options: [...options]
+      .sort((a, b) => startOf(a, poll.timezone) - startOf(b, poll.timezone) || a.position - b.position)
+      .map((o) => ({ ...optionView(o, poll.timezone, at), ...red.options[o.id]! })),
     me: mine
       ? {
           participantId: mine.id,
@@ -259,8 +316,8 @@ export async function getVoterView(
     respondentCount: red.respondentCount,
     comments: poll.allowComments ? red.comments : null,
     canVote: status === "open",
-    booked: await bookedView(poll, options),
-    viewerIsHost: Boolean(identity.viewer && hosts.some((h) => h.userId === identity.viewer!.userId)),
+    booked: await bookedView(poll, options, await voterMeetingAccess(poll, mine, identity.viewer, viewerIsHost), { inviteToken: me?.via === "invite" ? identity.inviteToken : null }),
+    viewerIsHost,
     calendarCheck: { googleStartPath: voterCalendarStartPath(poll.slug), account: Boolean(identity.viewer) },
   };
   return { status: 200, view, canonicalSlug: poll.slug, pollId: poll.id };
@@ -425,7 +482,7 @@ export async function getHostPoll(actor: ActorCtx, pollId: string, opts: { markV
 
 /** The booked meeting of a booked or reopened poll (results keep it, MP-21 "Meeting canceled" state). */
 async function bookedViewAny(poll: PollRow, options: readonly OptionRow[]): Promise<BookedMeetingView | null> {
-  return poll.bookedScheduledEventId ? bookedView({ ...poll, status: "booked" }, options) : null;
+  return poll.bookedScheduledEventId ? bookedView({ ...poll, status: "booked" }, options, "full") : null;
 }
 
 /** Live updates since an instant (MP-16: polled every 15 seconds; toasts "{Name} voted"). */
@@ -506,9 +563,22 @@ export async function listPolls(
   ]);
   const meetingById = new Map(meetings.map((m) => [m.id, m]));
   const lastActivity = new Map(activityRows.map((r) => [r.pollId, new Date(r.last)]));
+  // Rows grouped per poll once (no scan of every row for every poll).
+  const group = <T extends { pollId: string }>(rows: readonly T[]): Map<string, T[]> => {
+    const out = new Map<string, T[]>();
+    for (const r of rows) {
+      const list = out.get(r.pollId);
+      if (list) list.push(r);
+      else out.set(r.pollId, [r]);
+    }
+    return out;
+  };
+  const optionsByPoll = group(optionRows);
+  const participantsByPoll = group(participantRows);
+  const votesByPoll = group(voteRows);
   const items: (PollListItem & { sortKey: [number, number, number] })[] = [];
   for (const p of polls) {
-    const options = optionRows.filter((o) => o.pollId === p.id);
+    const options = optionsByPoll.get(p.id) ?? [];
     const status = p.deletedAt ? "canceled" : statusOf(p, options, at);
     const keep =
       filter === "all" || filter === "deleted"
@@ -519,8 +589,8 @@ export async function listPolls(
             ? status === "booked"
             : status === "expired";
     if (!keep) continue;
-    const parts = participantRows.filter((r) => r.pollId === p.id);
-    const votes = voteRows.filter((v) => v.pollId === p.id);
+    const parts = participantsByPoll.get(p.id) ?? [];
+    const votes = votesByPoll.get(p.id) ?? [];
     const sorted = [...options].sort((a, b) => startOf(a, p.timezone) - startOf(b, p.timezone));
     const ranked = status === "open" || status === "closed"
       ? rankPollOptions(sorted.map((o) => ({ id: o.id, start: startOf(o, p.timezone) })), votes, parts.map((x) => ({ id: x.id, status: x.status, isRequired: x.isRequired })), [], at)
@@ -626,8 +696,10 @@ export async function listPollEventTypesForApi(organizationId: string, userId: s
     ? await db.select().from(meetingPollOptions).where(and(inArray(meetingPollOptions.pollId, ids), isNull(meetingPollOptions.deletedAt)))
     : [];
   const out: PollEventTypeApiRow[] = [];
+  const optionsByPoll = new Map<string, OptionRow[]>();
+  for (const o of optionRows) optionsByPoll.set(o.pollId, [...(optionsByPoll.get(o.pollId) ?? []), o]);
   for (const { poll, et } of rows) {
-    const options = optionRows.filter((o) => o.pollId === poll.id);
+    const options = optionsByPoll.get(poll.id) ?? [];
     const status = statusOf(poll, options, at);
     out.push({
       eventTypeId: et.id,

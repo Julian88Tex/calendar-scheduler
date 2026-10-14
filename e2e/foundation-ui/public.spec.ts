@@ -10,7 +10,9 @@ const TRACKER = "https://www.googletagmanager.com/**";
 
 /** The rendered color of a CSS property composited over white, as #rrggbb. */
 async function renderedColor(locator: Locator, prop: "background-color" | "color"): Promise<string> {
-  return locator.evaluate((el, p) => {
+  return locator.evaluate(async (el, p) => {
+    // Days and buttons fade between colors (transition-colors): read the color once the transition has ended.
+    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)));
     const value = getComputedStyle(el).getPropertyValue(p);
     const canvas = document.createElement("canvas");
     canvas.width = 1;

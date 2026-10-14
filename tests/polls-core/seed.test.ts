@@ -43,4 +43,20 @@ describe("seedDemo (ADM-10)", () => {
     expect(view.view.me?.name).toBe("Ana Lima");
     expect(view.view.participants?.length).toBe(3);
   });
+
+  it("re-seeding weeks later replaces the stale demo poll (every time passed) with fresh times, once", async () => {
+    const host = await setupHost(t.db);
+    const ctx = { ownerUserId: host.user.id, organizationId: host.user.organizationId, eventTypeIds: [] as string[] };
+    await t.db.transaction((tx) => seedDemo(tx, ctx));
+    const [old] = await t.db.select().from(meetingPolls).where(eq(meetingPolls.ownerUserId, host.user.id));
+    setFakeNow(new Date(NOW.getTime() + 30 * 86_400_000));
+    await t.db.transaction((tx) => seedDemo(tx, ctx));
+    await t.db.transaction((tx) => seedDemo(tx, ctx));
+    const polls = await t.db.select().from(meetingPolls).where(eq(meetingPolls.ownerUserId, host.user.id));
+    expect(polls).toHaveLength(1);
+    expect(polls[0]!.id).not.toBe(old!.id);
+    expect(await t.db.select().from(eventTypes).where(eq(eventTypes.id, old!.eventTypeId))).toEqual([]);
+    const options = await t.db.select().from(meetingPollOptions).where(eq(meetingPollOptions.pollId, polls[0]!.id));
+    expect(options.every((o) => o.startsAt!.getTime() > NOW.getTime() + 30 * 86_400_000)).toBe(true);
+  });
 });
