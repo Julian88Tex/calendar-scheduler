@@ -67,8 +67,8 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 ### Milestone 5: meeting polls (the Doodle replacement)
 | Module | What it gives you | Status |
 |---|---|---|
-| polls-core | Poll logic: proposing times, voting, booking the winner, emails | in review |
-| polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | queued |
+| polls-core | Poll logic: proposing times, voting, booking the winner, emails | done |
+| polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | building |
 
 ### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |
