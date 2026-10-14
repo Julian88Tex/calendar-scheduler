@@ -36,7 +36,7 @@ export type EventTypeCardProps = {
   dropIndicator: "before" | "after" | null;
   highlight: boolean;
   /** Ref callback of the row (reorder measures it and moves it with the pointer). */
-  rowRef: (el: HTMLElement | null) => void;
+  registerRow: (el: HTMLElement | null) => void;
   onShare: (trigger: HTMLElement) => void;
   onNote: () => void;
   onSecret: (secret: boolean) => void;
@@ -49,7 +49,7 @@ export type EventTypeCardProps = {
 const INTERACTIVE = "a,button,input,textarea,select,label,[role=checkbox],[role=menuitem],[role=menuitemcheckbox],[data-no-card-click]";
 
 export function EventTypeCard(p: EventTypeCardProps) {
-  const { item } = p;
+  const { item, registerRow } = p;
   const router = useRouter();
   const editHref = `/app/event-types/${item.id}` as Route;
   const nameId = `et-name-${item.id}`;
@@ -63,7 +63,7 @@ export function EventTypeCard(p: EventTypeCardProps) {
   };
 
   return (
-    <li ref={p.rowRef} aria-labelledby={nameId} className={cn("relative", p.dragging && "opacity-90")} data-event-type-id={item.id}>
+    <li ref={registerRow} aria-labelledby={nameId} className={cn("relative", p.dragging && "opacity-90")} data-event-type-id={item.id}>
       {p.dropIndicator === "before" && <span aria-hidden="true" className="absolute inset-x-0 -top-2 h-0.5 rounded-full bg-primary" />}
       {p.dropIndicator === "after" && <span aria-hidden="true" className="absolute inset-x-0 -bottom-2 h-0.5 rounded-full bg-primary" />}
       <div

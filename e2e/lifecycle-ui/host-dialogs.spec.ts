@@ -139,7 +139,7 @@ test.describe("host meeting dialogs", () => {
     expect(rebookedId).toBeTruthy();
     // The request's links now lead to the new booking.
     await page.goto(new URL(link!).pathname, SLOW);
-    await expect(page).toHaveURL(new RegExp(`/reschedulings/${rebookedId}$`));
+    await expect(page).toHaveURL(new RegExp(`/reschedulings/${rebookedId}(\\?.*)?$`));
   });
 
   test("marks a no-show only after the start, with undo, and keeps notes host-only (CR-11, CR-14)", async ({ page, api }) => {

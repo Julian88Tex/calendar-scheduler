@@ -436,7 +436,7 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
                       dragging={reorder.draggingId === item.id}
                       dropIndicator={reorder.dropTarget?.id === item.id ? reorder.dropTarget.position : null}
                       highlight={highlightId === item.id}
-                      rowRef={reorder.rowRef(item.id)}
+                      registerRow={reorder.registerRow(item.id)}
                       onShare={(trigger) => {
                         shareTrigger.current = trigger;
                         setShareTarget(item);

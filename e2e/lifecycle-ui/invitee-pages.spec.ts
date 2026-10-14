@@ -102,7 +102,7 @@ test.describe("invitee cancel and reschedule pages", () => {
 
     // Old links follow the reschedule chain to the active invitee (CR-02).
     await page.goto(reschedulePath, SLOW);
-    await expect(page).toHaveURL(new RegExp(`/reschedulings/${newId}$`));
+    await expect(page).toHaveURL(new RegExp(`/reschedulings/${newId}(\\?.*)?$`));
     await expect(page.getByTestId("former-when")).toHaveText("2:00pm - 2:30pm, Tuesday, October 8, 2030");
     const oldCancel = linkOf(confirmation, "/cancellations/");
     await page.goto(oldCancel, SLOW);

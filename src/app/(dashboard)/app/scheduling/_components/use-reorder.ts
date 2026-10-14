@@ -31,7 +31,7 @@ export type ReorderApi = {
   announcement: string;
   handleProps: (id: string, name: string) => React.ComponentProps<"button">;
   /** Ref callback of a card's row element (measured during a drag, moved with the pointer). */
-  rowRef: (id: string) => (el: HTMLElement | null) => void;
+  registerRow: (id: string) => (el: HTMLElement | null) => void;
 };
 
 type PointerDrag = { started: boolean; stop: () => void };
@@ -276,10 +276,10 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
     },
   });
 
-  const rowRef: ReorderApi["rowRef"] = (id) => (el) => {
+  const registerRow: ReorderApi["registerRow"] = (id) => (el) => {
     if (el) rows.current.set(id, el);
     else rows.current.delete(id);
   };
 
-  return { order, liftedId, draggingId, dropTarget, announcement, handleProps, rowRef };
+  return { order, liftedId, draggingId, dropTarget, announcement, handleProps, registerRow };
 }
