@@ -34,7 +34,7 @@ export function CardMenu({ item, busy, onNote, onSecret, onDuplicate, onDelete, 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <IconButton aria-label={`${item.name} actions`} size="md">
+        <IconButton aria-label={`${item.name} actions`} size="md" className="max-sm:size-10">
           <MoreVertical aria-hidden="true" />
         </IconButton>
       </DropdownMenuTrigger>

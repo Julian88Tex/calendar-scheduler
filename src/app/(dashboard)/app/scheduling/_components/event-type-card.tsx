@@ -1,12 +1,12 @@
 // Event type row card of the Scheduling page (SPEC ET-04, ET-05, ET-07, ET-08, ET-09, ET-10; walkthrough 5.1):
 // full-width white card with a 1px #D4E0ED border, 8px radius and a 6px strip in the event color on the left; the
-// drag handle (on hover or focus, desktop) and the bulk select checkbox; the bold event name (a link to the editor)
+// drag handle (shown on hover or focus with a mouse, always on touch screens) and the bulk select checkbox; the bold event name (a link to the editor)
 // with the slashed eye when secret; when turned off a gray "Off" badge, a faded color strip and a grayed name (Calendly
 // fades the whole text to 50%, which fails WCAG AA contrast, GEN-05, so the text keeps 4.5:1); the meta line
 // "30 min, Google Meet, One-on-One", the availability summary, the internal note and "View booking page"; on the
 // right "Copy link" ("Copied" for 2 seconds, "Link copied" toast), the share icon and the kebab menu. Clicking the card
-// outside its controls opens the editor. Docs/SCOPE.md skips the hover quick actions (single-use links, offered times,
-// shared availability, booking on behalf). Client component.
+// outside its controls opens the editor. Phone widths get 40px tap targets (GEN-04). Docs/SCOPE.md skips the hover
+// quick actions (single-use links, offered times, shared availability, booking on behalf). Client component.
 "use client";
 
 import { EyeOff, GripVertical, Share2, StickyNote } from "lucide-react";
@@ -16,12 +16,12 @@ import { useRouter } from "next/navigation";
 import type * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CopyButton } from "@/components/ui/copy-button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { EventTypeListItem } from "@/lib/event-types/types";
 import { CardMenu } from "./card-menu";
+import { CopyLinkButton } from "./copy-link-button";
 import { metaLine } from "./list-text";
 
 export type EventTypeCardProps = {
@@ -35,7 +35,8 @@ export type EventTypeCardProps = {
   dragging: boolean;
   dropIndicator: "before" | "after" | null;
   highlight: boolean;
-  rowProps: React.ComponentProps<"li"> & { ref?: (el: HTMLElement | null) => void };
+  /** Ref callback of the row (reorder measures it and moves it with the pointer). */
+  rowRef: (el: HTMLElement | null) => void;
   onShare: (trigger: HTMLElement) => void;
   onNote: () => void;
   onSecret: (secret: boolean) => void;
@@ -62,12 +63,7 @@ export function EventTypeCard(p: EventTypeCardProps) {
   };
 
   return (
-    <li
-      {...p.rowProps}
-      aria-labelledby={nameId}
-      className={cn("relative", p.dragging && "opacity-60")}
-      data-event-type-id={item.id}
-    >
+    <li ref={p.rowRef} aria-labelledby={nameId} className={cn("relative", p.dragging && "opacity-90")} data-event-type-id={item.id}>
       {p.dropIndicator === "before" && <span aria-hidden="true" className="absolute inset-x-0 -top-2 h-0.5 rounded-full bg-primary" />}
       {p.dropIndicator === "after" && <span aria-hidden="true" className="absolute inset-x-0 -bottom-2 h-0.5 rounded-full bg-primary" />}
       <div
@@ -77,6 +73,7 @@ export function EventTypeCard(p: EventTypeCardProps) {
           "hover:border-line-medium hover:shadow-[var(--shadow-next)]",
           p.selected ? "border-primary" : "border-line",
           p.lifted && "border-primary shadow-[var(--shadow-pop)] outline-2 outline-offset-2 outline-focus",
+          p.dragging && "cursor-grabbing border-primary shadow-[var(--shadow-pop)]",
           p.highlight && "outline-2 outline-offset-2 outline-focus",
         )}
       >
@@ -87,16 +84,19 @@ export function EventTypeCard(p: EventTypeCardProps) {
               <button
                 {...p.handle}
                 className={cn(
-                  "hidden size-8 shrink-0 cursor-grab items-center justify-center rounded-full text-ink-2 transition-[opacity,background-color] sm:inline-flex",
-                  "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-primary-soft hover:text-primary-text active:cursor-grabbing",
+                  "inline-flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-ink-2 select-none max-sm:size-10",
+                  "transition-[opacity,background-color] hover:bg-primary-soft hover:text-primary-text active:cursor-grabbing",
+                  // A mouse reveals it on hover or focus (Calendly); touch screens have no hover, so it always shows there.
+                  "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
                   "aria-pressed:bg-primary-soft aria-pressed:text-primary-text aria-pressed:opacity-100",
+                  p.dragging && "bg-primary-soft text-primary-text opacity-100",
                 )}
               >
                 <GripVertical aria-hidden="true" className="size-4" />
               </button>
             )}
-            {/* The 32px label widens the checkbox's click target. */}
-            <label className="inline-flex size-8 cursor-pointer items-center justify-center" data-no-card-click>
+            {/* The label widens the checkbox's click target (32px, 40px on phones). */}
+            <label className="inline-flex size-8 cursor-pointer items-center justify-center max-sm:size-10" data-no-card-click>
               <Checkbox checked={p.selected} onCheckedChange={p.onSelectedChange} aria-label={`Select ${item.name}`} />
             </label>
           </div>
@@ -145,10 +145,10 @@ export function EventTypeCard(p: EventTypeCardProps) {
             </div>
 
             <div className="flex shrink-0 items-center gap-1" data-no-card-click>
-              {item.publicUrl && <CopyButton value={item.publicUrl} size="sm" className="min-h-9 px-4" />}
+              {item.publicUrl && <CopyLinkButton url={item.publicUrl} describedBy={nameId} />}
               {item.publicUrl && (
                 <Tooltip content="Share">
-                  <IconButton aria-label={`Share ${item.name}`} onClick={(e) => p.onShare(e.currentTarget)}>
+                  <IconButton aria-label={`Share ${item.name}`} className="max-sm:size-10" onClick={(e) => p.onShare(e.currentTarget)}>
                     <Share2 aria-hidden="true" />
                   </IconButton>
                 </Tooltip>

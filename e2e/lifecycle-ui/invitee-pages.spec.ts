@@ -163,6 +163,8 @@ test.describe("invitee cancel and reschedule pages", () => {
   test("unknown ids are 404, past meetings say they already occurred, and the phone layout works", async ({ page, api }) => {
     const missing = await page.goto("/cancellations/4b0c9f3e-0000-4000-8000-000000000000", SLOW);
     expect(missing?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1, name: "This page isn't available" })).toBeVisible();
+    await expect(page.getByText("The link may be broken or the meeting may have been removed.")).toBeVisible();
     expect((await page.goto("/reschedulings/not-an-id", SLOW))?.status()).toBe(404);
     expect((await page.goto("/reschedulings/4b0c9f3e-0000-4000-8000-000000000000/not-a-start", SLOW))?.status()).toBe(404);
 

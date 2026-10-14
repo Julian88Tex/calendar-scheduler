@@ -44,6 +44,7 @@ const messages = {
   states: {
     notFoundTitle: "This page isn't available",
     notFoundBody: "The link may be broken or the meeting may have been removed.",
+    goHome: "Go to homepage",
     contactHost: "Email {hostName}",
     scheduleAnother: "Schedule another event",
   },

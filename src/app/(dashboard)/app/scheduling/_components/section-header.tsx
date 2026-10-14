@@ -34,7 +34,7 @@ export function SectionHeader({ profile }: { profile: SchedulingProfile }) {
               >
                 {profile.linkLabel}
               </a>
-              <CopyButton value={profile.publicUrl} iconOnly size="sm" variant="ghost" label="Copy your link" className="size-8 min-h-8 text-ink-2" />
+              <CopyButton value={profile.publicUrl} iconOnly size="sm" variant="ghost" label="Copy your link" className="size-8 min-h-8 text-ink-2 max-sm:size-10 max-sm:min-h-10" />
             </div>
           ) : (
             <Link href="/app/settings/link" className="w-fit text-body-md font-semibold text-primary-text hover:underline">
