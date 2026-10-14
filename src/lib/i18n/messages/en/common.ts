@@ -82,7 +82,7 @@ const common = {
     nextWeek: "Next week",
     minutes: "{count} min",
     hours: "{count} hr",
-    hoursPlural: "{count} hrs",
+    hoursPlural: "{count} hr",
     hoursMinutes: "{hours} hr {minutes} min",
     days: "{count} days",
     day: "1 day",

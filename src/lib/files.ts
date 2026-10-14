@@ -11,8 +11,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
+import { isTransaction } from "@/db/helpers";
 import { files } from "@/db/schema";
 import { AppError } from "./errors";
+import { enqueueJob } from "./jobs/queue";
 import { log } from "./logger";
 
 export type FilePurpose = (typeof files.$inferSelect)["purpose"];
@@ -134,10 +136,11 @@ async function putBlob(pathname: string, body: Buffer, contentType: string): Pro
   return json.url;
 }
 
-async function deleteBlob(url: string): Promise<void> {
+/** Deletes a Vercel Blob by URL (no-op without BLOB_READ_WRITE_TOKEN). Throws when the store refuses or is unreachable. */
+export async function deleteBlobNow(url: string): Promise<void> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) return;
-  await fetch("https://vercel.com/api/blob/delete", {
+  const res = await fetch("https://vercel.com/api/blob/delete", {
     method: "POST",
     body: JSON.stringify({ urls: [url] }),
     headers: {
@@ -147,8 +150,12 @@ async function deleteBlob(url: string): Promise<void> {
       "x-vercel-blob-store-id": blobStoreId(token),
     },
     signal: AbortSignal.timeout(15_000),
-  }).catch((e: unknown) => log.warn("files.blob_delete_failed", { error: e }));
+  });
+  if (!res.ok) throw new Error(`blob delete failed: HTTP ${res.status}`);
 }
+
+/** Job that deletes a blob once the transaction that deleted its files row has committed. */
+export const DELETE_BLOB_JOB = "files.delete_blob";
 
 export type SaveFileInput = {
   data: Blob | Uint8Array | Buffer | ArrayBuffer;
@@ -255,9 +262,21 @@ export async function readFileBytes(row: FileRow): Promise<Buffer> {
   return Buffer.alloc(0);
 }
 
-/** Deletes a file row (and its blob). */
+/**
+ * Deletes a file row and its blob. The blob is never deleted inside the caller's transaction: there the deletion is
+ * enqueued as a files.delete_blob job in the same transaction, so it happens only after the commit (a rollback keeps
+ * both the row and the blob). Outside a transaction the row is gone already and the blob is deleted at once.
+ */
 export async function deleteFile(id: string, db?: DbOrTx): Promise<void> {
   const d = db ?? (await getDb());
   const [row] = await d.delete(files).where(eq(files.id, id)).returning({ blobUrl: files.blobUrl });
-  if (row?.blobUrl) await deleteBlob(row.blobUrl);
+  if (!row?.blobUrl) return;
+  if (isTransaction(d)) {
+    await enqueueJob(d, { type: DELETE_BLOB_JOB, payload: { url: row.blobUrl } });
+    return;
+  }
+  await deleteBlobNow(row.blobUrl).catch(async (e: unknown) => {
+    log.warn("files.blob_delete_failed", { error: e });
+    await enqueueJob(d, { type: DELETE_BLOB_JOB, payload: { url: row.blobUrl } });
+  });
 }

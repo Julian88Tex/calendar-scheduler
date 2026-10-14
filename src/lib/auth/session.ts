@@ -210,10 +210,15 @@ export async function touchSession(): Promise<void> {
   await touchSessionRecord(await getDb(), data.session.id, data.user.id);
 }
 
-/** Revokes one session (logout, Settings > Login). */
-export async function revokeSession(id: string): Promise<void> {
+/**
+ * Revokes one session (logout, sign-in replacing the previous session). Pass `userId` whenever the id comes from user
+ * input (Settings > Login): only a session of that user is revoked, so a foreign id is a no-op. Without it the caller
+ * must hold the id of the request's own session (getSession()).
+ */
+export async function revokeSession(id: string, opts: { userId?: string } = {}): Promise<void> {
   const db = await getDb();
-  await db.update(sessions).set({ revokedAt: now() }).where(and(eq(sessions.id, id), isNull(sessions.revokedAt)));
+  const owned = opts.userId === undefined ? undefined : eq(sessions.userId, opts.userId);
+  await db.update(sessions).set({ revokedAt: now() }).where(and(eq(sessions.id, id), owned, isNull(sessions.revokedAt)));
 }
 
 /** "Log out of all other sessions" (AU-05) and password resets (AU-07). */

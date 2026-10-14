@@ -298,7 +298,7 @@ describe("misc UI helpers", () => {
     expect(renamedFile("photo.HEIC.jpeg", "image/png")).toBe("photo.HEIC.png");
     expect(checkImageFile({ type: "image/png", size: 1000 })).toBeNull();
     expect(checkImageFile({ type: "application/pdf", size: 1000 })).toBe("Upload a JPG, PNG, GIF or WebP image.");
-    expect(checkImageFile({ type: "image/png", size: 6 * 1024 * 1024 })).toBe("The image must be 5 MB or smaller.");
+    expect(checkImageFile({ type: "image/png", size: 6 * 1024 * 1024 })).toBe("Images must be smaller than 5 MB.");
   });
 
   it("parses stored cookie consent with the 365 day expiry", () => {

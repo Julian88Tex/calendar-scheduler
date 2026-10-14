@@ -29,9 +29,9 @@ import { recordActivity, type PollActivityType } from "./activity";
 import { MAX_POLL_COMMENTS, MAX_POLL_PARTICIPANTS, POLL_ERRORS, POLL_JOBS, VOTE_SUBMITS_PER_IP_PER_HOUR, pollJobGroup } from "./constants";
 import { loadOptions, loadPollBySlug, lockPoll, participantCount, startOf, statusOf, type OptionRow, type ParticipantRow, type PollRow } from "./load";
 import { enqueueNotify, enqueuePollEmail, enqueueSubscriberBatch } from "./schedule";
-import { editTokenFor, presentedTokenHash, tokenHashesFor } from "./tokens";
-import { AddParticipantSchema, RemoveParticipantSchema, SetVotesSchema, SubmitVoteSchema, UpdateParticipantSchema, type SubmitVoteInput } from "./validation";
-import { checkVoteCode, codeCheckMessage } from "./verification";
+import { editTokenFor, presentedTokenHash, tokenHashesFor, warmPollKeys } from "./tokens";
+import { AddParticipantSchema, RemoveParticipantSchema, SetVotesSchema, SubmitVoteSchema, UpdateParticipantSchema, VerifyEmailSchema, type SubmitVoteInput } from "./validation";
+import { checkVoteCode, codeCheckMessage, issueVoteCode } from "./verification";
 import type { SubmitVoteOutcome, VoteChoice } from "./types";
 import { visibilityFlags } from "./visibility";
 
@@ -210,6 +210,7 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
   if (!limit.ok) throw rateLimitedError(limit);
 
   const duplicate: { participant: ParticipantRow | null } = { participant: null };
+  await warmPollKeys();
   try {
     const result = await db.transaction(async (tx) => {
       const poll = await lockPoll(tx, pollId, "share");
@@ -256,7 +257,8 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       if (poll.verifyEmail && email && !proven) {
         if (!input.verificationCode) throw new VoteAbort(fail("verification_required", POLL_ERRORS.verificationRequired));
         const check = await checkVoteCode(tx, { pollId: poll.id, email, code: input.verificationCode, at });
-        if (check !== "ok") throw new VoteAbort(fail("validation", codeCheckMessage(check), { verificationCode: [codeCheckMessage(check)] }));
+        // Returned (not thrown) so the transaction commits the failed attempt count (nothing else is written yet).
+        if (check !== "ok") return { codeFailure: check };
         verifiedNow = true;
       }
 
@@ -335,6 +337,10 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
       await afterVoteJobs(tx, { poll, participant, activityId, at, confirm: true });
       return { participant, created, replay: false as const };
     });
+    if (result.codeFailure) {
+      const message = codeCheckMessage(result.codeFailure);
+      return fail("validation", message, { verificationCode: [message] });
+    }
     runJobsAfterResponse({ groupKeys: [pollJobGroup(pollId)] });
     return { ok: true, participantId: result.participant.id, editToken: await editTokenFor(result.participant.id), status: result.participant.status, created: result.created };
   } catch (e) {
@@ -354,6 +360,47 @@ export async function submitVote(slug: string, raw: SubmitVoteInput, ctx: Submit
     }
     throw e;
   }
+}
+
+/**
+ * The "Review or change your response" magic link (MP-11): the poll's canonical slug and whether the token is a live
+ * participant's edit token of that poll (null for an unknown, deleted or canceled poll). Reads only: the caller sets the
+ * edit cookies and redirects to the clean URL, so link scanners change nothing.
+ */
+export async function verifyEditLink(slug: string, token: string | null | undefined): Promise<{ slug: string; valid: boolean } | null> {
+  const db = await getDb();
+  const found = await loadPollBySlug(db, slug, clockNow());
+  if (!found || found.poll.deletedAt || found.poll.status === "canceled") return null;
+  const participant = await participantByToken(db, found.poll.id, "edit", token);
+  return { slug: found.poll.slug, valid: Boolean(participant) };
+}
+
+/**
+ * "Verify email" (MP-04, MP-09): sends a 6-digit code to the email the voter typed (10 per IP per hour, 5 per email per
+ * hour). Answers { required: false } when the poll does not verify emails.
+ */
+export async function requestVoteCode(
+  slug: string,
+  raw: unknown,
+  ctx: { ip?: string | null; now?: Date } = {},
+): Promise<{ required: boolean; expiresAt: string | null }> {
+  const input = VerifyEmailSchema.parse(raw);
+  const at = ctx.now ?? clockNow();
+  const db = await getDb();
+  const found = await loadPollBySlug(db, slug, at);
+  if (!found || found.poll.deletedAt || found.poll.status === "canceled") throw new AppError("not_found", POLL_ERRORS.notFound);
+  const poll = found.poll;
+  const status = statusOf(poll, await loadOptions(db, poll.id), at);
+  if (status !== "open" || (poll.deadlineAt && poll.deadlineAt.getTime() <= at.getTime())) {
+    throw new AppError("conflict", status === "booked" ? POLL_ERRORS.pollBooked : status === "expired" ? POLL_ERRORS.pollEnded : POLL_ERRORS.votingClosed);
+  }
+  if (!poll.verifyEmail) return { required: false, expiresAt: null };
+  const limit = await rateLimit(`poll-code:ip:${await hashIp(ctx.ip)}`, VOTE_SUBMITS_PER_IP_PER_HOUR, 3600, { nowMs: at.getTime() });
+  if (!limit.ok) throw rateLimitedError(limit);
+  await warmPollKeys();
+  const { expiresAt } = await issueVoteCode(db, { pollId: poll.id, email: input.email, at });
+  runJobsAfterResponse({ groupKeys: [pollJobGroup(poll.id)] });
+  return { required: true, expiresAt: expiresAt.toISOString() };
 }
 
 function identifiedResponded(p: ParticipantRow | null | undefined): boolean {
@@ -438,6 +485,7 @@ export async function addParticipant(actor: ActorCtx, raw: unknown): Promise<{ p
   await requirePollAccess(actor, input.pollId, db);
   const at = clockNow();
   const id = newId();
+  await warmPollKeys();
   try {
     await db.transaction(async (tx) => {
       const { poll, options } = await hostWritablePoll(tx, input.pollId, at);

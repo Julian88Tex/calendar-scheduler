@@ -152,8 +152,15 @@ describe("cookie flows", () => {
     expect(await session.lookupSession(t.db, b.token)).toBeNull();
     expect(await session.lookupSession(t.db, c.token)).toBeNull();
     expect((await session.listSessions(u.id)).map((s) => s.id)).toEqual([a.session.id]);
-    await session.revokeSession(a.session.id);
+    // With a userId, only that user's session is revoked (ids from user input).
+    const stranger = await createUser(t.db);
+    await session.revokeSession(a.session.id, { userId: stranger.id });
+    expect(await session.lookupSession(t.db, a.token)).not.toBeNull();
+    await session.revokeSession(a.session.id, { userId: u.id });
     expect(await session.listSessions(u.id)).toEqual([]);
+    const e = await session.createSessionRecord(t.db, u.id);
+    await session.revokeSession(e.session.id);
+    expect(await session.lookupSession(t.db, e.token)).toBeNull();
     const d = await session.createSessionRecord(t.db, u.id);
     await session.revokeAllSessions(u.id);
     expect(await session.lookupSession(t.db, d.token)).toBeNull();

@@ -23,7 +23,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     title: "Share your scheduling link",
     paragraphs: [
       "Your booking page lists every event type that is turned on and not secret. Invitees pick an event, a day and a time, then enter their details.",
-      "Copy the link from the account menu (Share your link) or from an event type card on Scheduling. Change the link itself in Settings, My link.",
+      "Copy the link from the account menu (Share your link) or from an event type card on Scheduling. Change the link itself in Settings, My Link.",
     ],
   },
   {

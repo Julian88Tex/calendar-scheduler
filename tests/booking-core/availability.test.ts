@@ -60,6 +60,17 @@ describe("getAvailability", () => {
     expect(cal.calls[0]?.maxAgeSeconds).toBe(180);
   });
 
+  it("booking pages read external busy with the CALENDAR_CACHE_TTL_SECONDS cache age (CAL-10)", async () => {
+    const f = await setupSolo(t.db);
+    process.env.CALENDAR_CACHE_TTL_SECONDS = "300";
+    try {
+      await getAvailability({ target: f.target, ...day("2030-10-08"), now: NOW });
+    } finally {
+      delete process.env.CALENDAR_CACHE_TTL_SECONDS;
+    }
+    expect(cal.calls[0]?.maxAgeSeconds).toBe(300);
+  });
+
   it("uses the event type's own schedule (Block Off Work) and date-specific hours", async () => {
     const f = await setupSolo(t.db);
     const blockOff = await createSchedule(t.db, { userId: f.owner.id, name: "Block Off Work", isDefault: false, timezone: h.LA, weeklyHours: hours("17:00", "20:00") });

@@ -1,7 +1,8 @@
 // OWNER: foundation-ui.
 //
 // Server-side data for the dashboard shell (SPEC GEN-16, GEN-20, BR-15): the cron tick, whether the cron warning applies
-// on this deployment, the cron endpoint URL for its setup steps and the user's public link.
+// on this deployment, the number of overdue reminders (any deployment), the cron endpoint URL for its setup steps and the
+// user's public link.
 import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -9,6 +10,7 @@ import { instanceSettings } from "@/db/schema";
 import { isE2eMode, isVercel } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { absoluteUrl } from "@/lib/url";
+import { getReminderDeliveryHealth } from "@/lib/workflows";
 
 /** instance_settings.last_cron_at as ISO, or null. */
 export async function getLastCronAt(): Promise<string | null> {
@@ -32,6 +34,16 @@ export function cronWarningApplies(lastCronAt: string | null): boolean {
   if (isVercel()) return true;
   if (isE2eMode()) return lastCronAt !== null;
   return false;
+}
+
+/** Reminders more than 15 minutes past their send time across the instance (0 when the check fails). */
+export async function getOverdueReminderCount(): Promise<number> {
+  try {
+    return (await getReminderDeliveryHealth()).overdueCount;
+  } catch (e) {
+    log.warn("shell.reminder_health_failed", { error: e });
+    return 0;
+  }
 }
 
 /** The absolute /api/cron URL for the GEN-16 setup steps. */

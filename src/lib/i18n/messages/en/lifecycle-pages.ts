@@ -52,7 +52,7 @@ const messages = {
     messageTooLong: "Keep the message under 2,000 characters.",
   },
   host: {
-    when: "{time}, {date}",
+    invitees: "{count} invitees",
     cancel: {
       title: "Cancel event",
       messageLabel: "Add a cancellation message",

@@ -25,6 +25,7 @@ import {
 } from "@/db/schema";
 import { loadScheduleInput } from "@/lib/availability";
 import { getExternalBusy, type ExternalBusy, type ExternalBusyByUser } from "@/lib/calendars";
+import { calendarCacheTtlSeconds } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { fileUrl } from "@/lib/files";
 import { getReservedIntervals } from "@/lib/links";
@@ -48,8 +49,13 @@ import type { AvailabilityResult, BookingTarget, EventTypeRow, GetAvailabilityPa
 
 const MIN = 60_000;
 const DAY = 86_400_000;
-/** Cache ages for external busy (CAL-10, SCH-20). */
-export const FRESHNESS_MAX_AGE_SECONDS = { page: 180, submit: 60 } as const;
+/** Cache ages for external busy (CAL-10, SCH-20): booking pages use CALENDAR_CACHE_TTL_SECONDS (default 180). */
+export const FRESHNESS_MAX_AGE_SECONDS: { readonly page: number; readonly submit: number } = {
+  get page() {
+    return calendarCacheTtlSeconds();
+  },
+  submit: 60,
+};
 /** Timeout of a fresh provider fetch (SCH-20: 4 seconds, then the cache). */
 export const EXTERNAL_BUSY_TIMEOUT_MS = 4_000;
 /** Slots requests cover at most 62 days (SCH-05, BK-31). */

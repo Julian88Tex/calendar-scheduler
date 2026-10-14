@@ -1,19 +1,22 @@
-// OWNER: lifecycle-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: lifecycle-ui.
 //
-// /cancellations/{inviteeId} placeholder (ARCHITECTURE section 3.1, SPEC CR-02): renders inside PublicPageShell and answers 404 for unknown
-// inviteeId. Never framed (frame-ancestors 'none'). The owner replaces it with the real page.
-import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { PublicCard } from "@/components/public/public-card";
+// /cancellations/{inviteeId}: the invitee cancel page (SPEC CR-02, CR-05, SCH-23, GEN-08; walkthrough 11.6). The
+// invitee id is a capability URL from the confirmation emails, reminders and the confirmation page: noindex, never
+// framed (frame-ancestors 'none' from src/lib/net/frame-policy.ts), 404 for unknown ids. An old invitee of a
+// rescheduled booking redirects to the active invitee of its chain, so links in older emails keep working. Canceling
+// works even when the event type is now off or deleted; the page shows "This event has already been canceled.",
+// "This event has already occurred." or the cutoff message when canceling online is no longer possible. The form posts
+// through a Server Action (no state change on GET).
+import type { Metadata, Route } from "next";
+import { notFound, redirect } from "next/navigation";
+import { CancelPage } from "@/components/lifecycle/cancel-page";
+import { changePagePath, queryStringOf } from "@/components/lifecycle/lib/state";
+import { lt } from "@/components/lifecycle/lib/t";
+import { loadChangePage } from "@/components/lifecycle/server/change-page";
 import { PublicPageShell } from "@/components/public/public-page-shell";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { invitees } from "@/db/schema";
-import { isUuid } from "@/lib/ids";
-import { notFound } from "next/navigation";
+import { cancelInviteeAction } from "./actions";
 
-export const metadata: Metadata = { title: "Cancel Event", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: lt("cancel.title"), robots: { index: false, follow: false } };
 
 type Props = {
   params: Promise<{ inviteeId: string }>;
@@ -21,19 +24,14 @@ type Props = {
 };
 
 export default async function Page({ params, searchParams }: Props) {
-  const [{ inviteeId }] = await Promise.all([params, searchParams]);
-  if (!isUuid(inviteeId)) notFound();
-  const db = await getDb();
-  const [invitee] = await db.select({ id: invitees.id }).from(invitees).where(eq(invitees.id, inviteeId)).limit(1);
-  if (!invitee) notFound();
+  const [{ inviteeId }, sp] = await Promise.all([params, searchParams]);
+  const r = await loadChangePage(inviteeId, "cancel");
+  if (r.state === "not_found") notFound();
+  if (r.state === "redirect") redirect(changePagePath("cancel", r.inviteeId, queryStringOf(sp)) as Route);
+  const v = r.view;
   return (
-    <PublicPageShell>
-      <PublicCard width="narrow">
-        <div className="p-8">
-          <PageHeader title={"Cancel Event"} />
-          <EmptyState heading="This page is being built." />
-        </div>
-      </PublicCard>
+    <PublicPageShell branding={v.shell.branding} showFooterLinks={false} operatorEmail={v.shell.operatorEmail} privacyUrl={v.shell.privacyUrl}>
+      <CancelPage view={v} cancelAction={cancelInviteeAction} />
     </PublicPageShell>
   );
 }

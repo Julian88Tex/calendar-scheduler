@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { eventDotColor } from "@/components/public/event-type-list";
 import { privacyPolicyHref } from "@/components/public/public-footer-links";
 import { mailtoAddress, reportAbuseHref } from "@/components/public/report-abuse";
-import { cronLastRunLabel, isCronStale } from "@/components/shell/cron-warning-banner";
+import { cronBannerMessage, cronLastRunLabel, isCronStale, overdueRemindersLabel } from "@/components/shell/cron-warning-banner";
 import { CHANGELOG, HELP_ARTICLES, reportProblemHref } from "@/components/shell/help-center";
 import { ALL_NAV } from "@/components/shell/nav";
 
@@ -34,6 +34,7 @@ const SHELL_FILES = [
   "src/app/(dashboard)/app/scheduling/layout.tsx",
   "src/app/(dashboard)/app/availability/layout.tsx",
   "src/app/(dashboard)/app/settings/layout.tsx",
+  "src/app/(dashboard)/app/admin/layout.tsx",
   "src/app/(dashboard)/app/integrations/page.tsx",
   "src/app/(dashboard)/app/_shell/data.ts",
   "src/app/(dashboard)/app/_shell/integrations-hub.tsx",
@@ -79,6 +80,16 @@ describe("docs/SCOPE.md: the shell links only to kept areas", () => {
     }
   });
 
+  it("the admin center is not built: its layout answers 404 for every /app/admin route and has no sub-navigation", () => {
+    const src = code("src/app/(dashboard)/app/admin/layout.tsx");
+    expect(src).toMatch(/notFound\(\)/);
+    expect(src).not.toMatch(/href|RouteTabs/);
+  });
+
+  it("the settings sub-navigation says My Link (Calendly's label)", () => {
+    expect(code("src/app/(dashboard)/app/settings/layout.tsx")).toContain('label: "My Link"');
+  });
+
   it("the integrations hub keeps Google Calendar, Google Meet and the email status tile only", () => {
     const src = code("src/app/(dashboard)/app/integrations/page.tsx");
     expect(src).toMatch(/KEPT_INTEGRATION_IDS[^=]*=\s*\["google-calendar", "google-meet", "email"\]/);
@@ -117,6 +128,16 @@ describe("Help center and What's new copy", () => {
   });
 });
 
+describe("GEN-05 selected time chip contrast", () => {
+  it("the --slot-selected token is at least 0.65 alpha and no flow overrides it", () => {
+    const css = fs.readFileSync(path.join(root, "src/app/globals.css"), "utf8");
+    const values = [...css.matchAll(/--slot-selected:\s*rgba\(\s*10,\s*37,\s*64,\s*([\d.]+)\s*\)/g)].map((m) => Number(m[1]));
+    expect(values.length).toBeGreaterThan(0);
+    for (const alpha of values) expect(alpha).toBeGreaterThanOrEqual(0.65);
+    expect(code("src/components/booking/booking-flow.tsx")).not.toContain("--slot-selected");
+  });
+});
+
 describe("GEN-16 cron warning helpers", () => {
   const now = Date.UTC(2026, 9, 12, 12, 0);
   const ago = (ms: number) => new Date(now - ms).toISOString();
@@ -137,6 +158,15 @@ describe("GEN-16 cron warning helpers", () => {
   it("is stale at exactly 15 minutes plus one millisecond", () => {
     expect(isCronStale(ago(15 * 60_000), now)).toBe(false);
     expect(isCronStale(ago(15 * 60_000 + 1), now)).toBe(true);
+  });
+
+  it("warns about a stale cron tick and, on any deployment, about reminders past their send time", () => {
+    expect(cronBannerMessage({ stale: false })).toBeNull();
+    expect(cronBannerMessage({ stale: false, overdueReminders: 0 })).toBeNull();
+    expect(cronBannerMessage({ stale: true })).toBe("Reminders may be sent late. Set up a pinger that calls /api/cron every 5 minutes.");
+    expect(cronBannerMessage({ stale: false, overdueReminders: 3 })).toBe("3 reminders are past their send time.");
+    expect(cronBannerMessage({ stale: true, overdueReminders: 3 })).toBe("3 reminders are past their send time. Set up a pinger that calls /api/cron every 5 minutes.");
+    expect(overdueRemindersLabel(1)).toBe("1 reminder is past its send time.");
   });
 });
 

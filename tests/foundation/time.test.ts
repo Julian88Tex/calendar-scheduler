@@ -153,7 +153,9 @@ describe("formatting (GEN-06)", () => {
     expect(formatDuration(30)).toBe("30 min");
     expect(formatDuration(60)).toBe("1 hr");
     expect(formatDuration(90)).toBe("1 hr 30 min");
-    expect(formatDuration(120)).toBe("2 hrs");
+    expect(formatDuration(120)).toBe("2 hr");
+    expect(formatDuration(150)).toBe("2 hr 30 min");
+    expect(formatDuration(720)).toBe("12 hr");
     expect(hour12For("24h")).toBe(false);
     expect(hour12For("12h", "de")).toBe(true);
     expect(hour12For(null, "en-US")).toBe(true);

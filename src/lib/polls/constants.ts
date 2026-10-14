@@ -56,9 +56,14 @@ export const POLL_COLOR = "#8247f5";
 /** Options offered in the Duration select (MP-02). */
 export const DURATION_CHOICES = [15, 30, 45, 60, 90, 120] as const;
 
-/** The cookie holding the voter's edit token (scoped to /p/{slug} and /api/public/polls/{slug}). */
+/**
+ * The cookies holding the voter's edit token: EDIT_COOKIE on /p/{slug} (the voter page and its Server Actions) and
+ * EDIT_API_COOKIE on /api/public/polls/{slug} (the public routes). Two names because a response built with next/headers
+ * cookies() keeps one cookie per name. Inside embeds the page mirrors the token in localStorage under EDIT_COOKIE.
+ */
 export const EDIT_COOKIE = "kairos_poll_edit";
-/** The cookie holding the voter's last calendar check (MP-13), never a provider token. */
+export const EDIT_API_COOKIE = "kairos_poll_edit_api";
+/** The cookie holding the voter's last calendar check (MP-13) on /p/{slug}, never a provider token. */
 export const FREEBUSY_COOKIE = "kairos_poll_freebusy";
 
 /** Link endings (MP-04). */

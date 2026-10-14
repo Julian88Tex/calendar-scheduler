@@ -1,7 +1,8 @@
 // Event type row card of the Scheduling page (SPEC ET-04, ET-05, ET-07, ET-08, ET-09, ET-10; walkthrough 5.1):
 // full-width white card with a 1px #D4E0ED border, 8px radius and a 6px strip in the event color on the left; the
 // drag handle (on hover or focus, desktop) and the bulk select checkbox; the bold event name (a link to the editor)
-// with the slashed eye when secret and a gray "Off" badge plus 50% text opacity when turned off; the meta line
+// with the slashed eye when secret; when turned off a gray "Off" badge, a faded color strip and a grayed name (Calendly
+// fades the whole text to 50%, which fails WCAG AA contrast, GEN-05, so the text keeps 4.5:1); the meta line
 // "30 min, Google Meet, One-on-One", the availability summary, the internal note and "View booking page"; on the
 // right "Copy link" ("Copied" for 2 seconds, "Link copied" toast), the share icon and the kebab menu. Clicking the card
 // outside its controls opens the editor. Docs/SCOPE.md skips the hover quick actions (single-use links, offered times,
@@ -65,7 +66,6 @@ export function EventTypeCard(p: EventTypeCardProps) {
       {...p.rowProps}
       aria-labelledby={nameId}
       className={cn("relative", p.dragging && "opacity-60")}
-      data-testid="event-type-card"
       data-event-type-id={item.id}
     >
       {p.dropIndicator === "before" && <span aria-hidden="true" className="absolute inset-x-0 -top-2 h-0.5 rounded-full bg-primary" />}
@@ -95,9 +95,10 @@ export function EventTypeCard(p: EventTypeCardProps) {
                 <GripVertical aria-hidden="true" className="size-4" />
               </button>
             )}
-            <span className="inline-flex size-8 items-center justify-center" data-no-card-click>
+            {/* The 32px label widens the checkbox's click target. */}
+            <label className="inline-flex size-8 cursor-pointer items-center justify-center" data-no-card-click>
               <Checkbox checked={p.selected} onCheckedChange={p.onSelectedChange} aria-label={`Select ${item.name}`} />
-            </span>
+            </label>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">

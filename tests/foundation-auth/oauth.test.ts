@@ -90,7 +90,7 @@ const { SESSION_COOKIE, createSessionRecord, lookupSession } = await import("@/l
 const { hashPassword } = await import("@/lib/crypto");
 const { createLoginMethodConfirmation } = await import("@/lib/auth/flows/login-method-code");
 const { useTestDb } = await import("../helpers/db");
-const { createInvitation, createUser } = await import("../factories");
+const { createCalendarConnection, createInvitation, createUser } = await import("../factories");
 const { fakeIdToken, googleRoutes, microsoftRoutes, mockFetch } = await import("../helpers/fake-providers");
 const { jar, locationOf, resetRequest } = await import("./_request");
 
@@ -453,6 +453,22 @@ describe("connect_calendar, link_login_method and poll_freebusy", () => {
     expect(calls.connect).toHaveLength(1);
     expect(calls.connect[0]).toMatchObject({ intent: "connect_calendar", userId: u.id, provider: "google", profile: { email: "other@gmail.example" } });
     expect(await t.db.select().from(oauthAccounts)).toHaveLength(0);
+  });
+
+  it("connect_calendar with data.reconnect uses that connection's account email as the login_hint (own connections only)", async () => {
+    const u = await signIn();
+    const { connection } = await createCalendarConnection(t.db, { userId: u.id, accountEmail: "carla.work@gmail.example" });
+    const other = await createUser(t.db, { email: "otto@example.com" });
+    const { connection: foreign } = await createCalendarConnection(t.db, { userId: other.id, accountEmail: "otto@gmail.example" });
+    const hint = async (query: string) => {
+      const res = await handleOAuthStart(new Request(`http://localhost:3000/api/auth/google/start?intent=connect_calendar${query}`), "google");
+      expect(res.status).toBe(302);
+      return new URL(res.headers.get("location")!).searchParams.get("login_hint");
+    };
+    expect(await hint(`&reconnect=${connection.id}`)).toBe("carla.work@gmail.example");
+    expect(await hint(`&reconnect=${foreign.id}`)).toBeNull();
+    expect(await hint("&reconnect=not-a-uuid")).toBeNull();
+    expect(await hint("")).toBeNull();
   });
 
   it("link_login_method requires the AU-10 confirmation of the emailed code", async () => {

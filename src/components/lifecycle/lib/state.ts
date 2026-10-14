@@ -87,3 +87,10 @@ export function guestsNotice(inviteeName: string, guestCount: number): string | 
   if (guestCount <= 0) return null;
   return guestCount === 1 ? lt("cancel.guestsOne", { name: inviteeName }) : lt("cancel.guests", { name: inviteeName, count: guestCount });
 }
+
+/** The query string of a request's search params (single values only), kept across the chain redirect. */
+export function queryStringOf(sp: Record<string, string | string[] | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) if (typeof v === "string") q.set(k, v);
+  return q.toString();
+}

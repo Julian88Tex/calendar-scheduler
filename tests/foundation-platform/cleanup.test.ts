@@ -118,6 +118,14 @@ describe("system.cleanup", () => {
       .insert(calendarSyncWindows)
       .values({ calendarId: cal.id, windowStart: ago(8), windowEnd: ago(7), fetchedAt: ago(6), status: "ok" })
       .returning();
+    // A Calendly import calendar (CAL-22) is never refetched: its old cache rows are kept.
+    const { calendars: importCalendars } = await createCalendarConnection(t.db, { userId: user.id, provider: "calendly_import" });
+    const importCal = importCalendars[0]!;
+    const [extImported] = await t.db.insert(externalEvents).values({ ...extRow(30), calendarId: importCal.id }).returning();
+    const [winImported] = await t.db
+      .insert(calendarSyncWindows)
+      .values({ calendarId: importCal.id, windowStart: ago(40), windowEnd: ago(39), fetchedAt: ago(30), status: "ok" })
+      .returning();
 
     const sess = (expiresInDays: number, revokedDaysAgo: number | null, n: string) => ({
       userId: user.id,
@@ -200,9 +208,9 @@ describe("system.cleanup", () => {
     expect(evOld).toBeTruthy();
     expect(await ids(t.db.select({ id: webhookDeliveries.id }).from(webhookDeliveries))).toEqual([delNew!.id]);
     expect(delOld).toBeTruthy();
-    expect(await ids(t.db.select({ id: externalEvents.id }).from(externalEvents))).toEqual([extNew!.id]);
+    expect(await ids(t.db.select({ id: externalEvents.id }).from(externalEvents))).toEqual([extNew!.id, extImported!.id].sort());
     expect(extOld).toBeTruthy();
-    expect(await ids(t.db.select({ id: calendarSyncWindows.id }).from(calendarSyncWindows))).toEqual([winNew!.id]);
+    expect(await ids(t.db.select({ id: calendarSyncWindows.id }).from(calendarSyncWindows))).toEqual([winNew!.id, winImported!.id].sort());
     expect(winOld).toBeTruthy();
     expect(await ids(t.db.select({ id: sessions.id }).from(sessions))).toEqual([sValid!.id, sRevokedNew!.id].sort());
     expect(sExpired && sRevokedOld).toBeTruthy();

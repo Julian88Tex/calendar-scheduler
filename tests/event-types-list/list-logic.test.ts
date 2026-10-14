@@ -26,6 +26,7 @@ import {
 import { applyOrder, dropOrder, moveId, reorderAnnouncements, sameOrder } from "@/app/(dashboard)/app/scheduling/_components/reorder";
 import { BULK_MAX, zBulkActiveInput, zBulkIdsInput } from "@/app/(dashboard)/app/scheduling/_components/schemas";
 import type { UiKind } from "@/lib/event-types/constants";
+import { formatDuration } from "@/lib/time/format";
 
 type Item = { id: string; name: string; slug: string; active: boolean; kind: UiKind };
 const items: Item[] = [
@@ -105,10 +106,11 @@ describe("card text and bulk rules (ET-04, ET-08, ET-12)", () => {
   it("builds the meta line with durations, locations and the kind", () => {
     expect(durationsLabel([30])).toBe("30 min");
     expect(durationsLabel([15, 30, 90])).toBe("15 min / 30 min / 1 hr 30 min");
+    expect(durationsLabel([60, 120])).toBe(`1 hr / ${formatDuration(120)}`);
     expect(metaLine({ durations: [30], locationKinds: ["google_conference"], locationSummary: "Google Meet", kindLabel: "One-on-One" })).toBe(
       "30 min, Google Meet, One-on-One",
     );
-    expect(metaLine({ durations: [120], locationKinds: [], locationSummary: "No location given", kindLabel: "One-on-One" })).toBe("2 hrs, One-on-One");
+    expect(metaLine({ durations: [120], locationKinds: [], locationSummary: "No location given", kindLabel: "One-on-One" })).toBe(`${formatDuration(120)}, One-on-One`);
     expect(
       metaLine({
         durations: [15, 30],

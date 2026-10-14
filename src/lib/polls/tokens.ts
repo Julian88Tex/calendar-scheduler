@@ -7,9 +7,9 @@
 // working. Unsubscribe tokens are a separate HMAC ("{participantId}.{mac}") checked without a lookup, and never grant
 // edit rights (they end up in List-Unsubscribe headers).
 //
-// The edit token lives in the httpOnly cookie EDIT_COOKIE, set on both /p/{slug} (the voter page and its Server
-// Actions) and /api/public/polls/{slug} (the public routes), through setEmbedSafeCookie (embed-safe attributes; the
-// page mirrors it in localStorage inside embeds and sends it back in the x-kairos-fallback header).
+// The edit token lives in two httpOnly cookies set together, EDIT_COOKIE on /p/{slug} (the voter page and its Server
+// Actions) and EDIT_API_COOKIE on /api/public/polls/{slug} (the public routes), through the embed-safe cookie helpers
+// (the page mirrors it in localStorage inside embeds and sends it back in the x-kairos-fallback header).
 import "server-only";
 import { createHmac } from "node:crypto";
 import { appendEmbedSafeCookie, readEmbedSafeCookie, readEmbedSafeCookieFromHeaders, setEmbedSafeCookie } from "@/lib/cookies";
@@ -17,10 +17,30 @@ import { hashToken, timingSafeEqualStr } from "@/lib/crypto";
 import { isUuid } from "@/lib/ids";
 import { getSecret } from "@/lib/secrets";
 import { absoluteUrl } from "@/lib/url";
-import { EDIT_COOKIE, EDIT_COOKIE_MAX_AGE_SECONDS } from "./constants";
+import { EDIT_API_COOKIE, EDIT_COOKIE, EDIT_COOKIE_MAX_AGE_SECONDS } from "./constants";
+
+/**
+ * Loads the instance keys before a transaction derives tokens or checks codes: PGlite runs one transaction at a time,
+ * so a first key read through getDb() from inside a transaction would wait on that transaction forever.
+ */
+export async function warmPollKeys(): Promise<void> {
+  await Promise.all([getSecret("session_secret"), getSecret("encryption_key")]);
+}
+
+function macWithKey(key: Buffer, purpose: string, participantId: string): Buffer {
+  return createHmac("sha256", key).update(`poll-${purpose}:v1:${participantId}`).digest();
+}
 
 async function mac(purpose: string, participantId: string): Promise<Buffer> {
-  return createHmac("sha256", await getSecret("session_secret")).update(`poll-${purpose}:v1:${participantId}`).digest();
+  return macWithKey(await getSecret("session_secret"), purpose, participantId);
+}
+
+/** tokenHashesFor with an explicit session key (the seed reads the key inside its own transaction). */
+export function tokenHashesWithKey(key: Buffer, participantId: string): { editTokenHash: string; inviteTokenHash: string } {
+  return {
+    editTokenHash: hashToken(macWithKey(key, "edit", participantId).toString("base64url")),
+    inviteTokenHash: hashToken(macWithKey(key, "invite", participantId).toString("base64url")),
+  };
 }
 
 /** The participant's edit token (32 bytes, base64url). */
@@ -84,30 +104,33 @@ export async function unsubscribePostUrl(slug: string, participantId: string): P
 // ---------------------------------------------------------------------------------------------------------------
 // Edit cookie
 
-/** Paths the edit cookie is scoped to. */
-export function editCookiePaths(slug: string): string[] {
+/** Paths the edit cookies are scoped to: [voter page, public routes]. */
+export function editCookiePaths(slug: string): [string, string] {
   const s = encodeURIComponent(slug);
   return [`/p/${s}`, `/api/public/polls/${s}`];
 }
 
-/** Sets the edit cookie on the current Server Action or Route Handler response (both scopes). */
+/** Sets the edit cookies on the current Server Action or Route Handler response (both scopes). */
 export async function setEditCookie(slug: string, token: string, opts: { embed?: boolean } = {}): Promise<void> {
-  for (const path of editCookiePaths(slug)) {
-    await setEmbedSafeCookie(EDIT_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path, embed: opts.embed });
-  }
+  const [page, api] = editCookiePaths(slug);
+  await setEmbedSafeCookie(EDIT_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path: page, embed: opts.embed });
+  await setEmbedSafeCookie(EDIT_API_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path: api, embed: opts.embed });
 }
 
-/** Appends the edit cookie to a hand-built Response (redirects). */
+/** Appends the edit cookies to a hand-built Response (redirects). */
 export function appendEditCookie(response: Response, slug: string, token: string, opts: { embed?: boolean } = {}): Response {
-  for (const path of editCookiePaths(slug)) {
-    appendEmbedSafeCookie(response, EDIT_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path, embed: opts.embed });
-  }
+  const [page, api] = editCookiePaths(slug);
+  appendEmbedSafeCookie(response, EDIT_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path: page, embed: opts.embed });
+  appendEmbedSafeCookie(response, EDIT_API_COOKIE, token, { maxAgeSeconds: EDIT_COOKIE_MAX_AGE_SECONDS, path: api, embed: opts.embed });
   return response;
 }
 
-/** The edit token sent with a request (cookie, or the embed localStorage fallback header). */
+/**
+ * The edit token sent with a request: the route cookie, else the page cookie, else the embed localStorage fallback
+ * header (x-kairos-fallback-kairos_poll_edit).
+ */
 export function readEditToken(request: Request | { headers: Headers }): string | null {
-  return readEmbedSafeCookie(request, EDIT_COOKIE);
+  return readEmbedSafeCookie(request, EDIT_API_COOKIE) ?? readEmbedSafeCookie(request, EDIT_COOKIE);
 }
 
 /** The edit token in a Server Action or Server Component (next/headers). */

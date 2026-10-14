@@ -103,6 +103,8 @@ export type BookedMeetingView = {
   /** Booked location details (address, join link once it exists). */
   locationText: string | null;
   joinUrl: string | null;
+  /** "Add to calendar" (MP-15): Google, Outlook.com, Office 365 and the ICS download; empty once canceled. */
+  addToCalendar: { id: "google" | "outlook" | "office365" | "ical"; label: string; url: string }[];
 };
 
 export type VoterPollView = {
@@ -351,3 +353,16 @@ export type VoterCalendarCheck = {
   checkedAt: string;
   statuses: Record<string, FreeBusyStatus>;
 };
+
+/**
+ * Result of a Server Action whose change needs a second confirmation (B14 "more public" visibility, removing times
+ * that have Yes or If need be votes): done, or the warning to show before retrying with confirm set.
+ */
+export type ConfirmableResult<T> =
+  | { done: true; result: T }
+  | { done: false; confirm: { message: string; voters: string[] } };
+
+/** The public vote Server Action result: the service outcome, with the edit token only inside embeds. */
+export type SubmitVoteActionResult =
+  | { ok: true; participantId: string; status: ParticipantStatus; created: boolean; editToken: string | null }
+  | Extract<SubmitVoteOutcome, { ok: false }>;

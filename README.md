@@ -86,6 +86,9 @@ end tests seed the same scenarios through `POST /api/test/seed`.
    environments. This sets `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED` and the legacy `POSTGRES_*` variables.
 3. Optionally set `APP_URL` (your production domain), `ENCRYPTION_KEY`, `CRON_SECRET` and any integration variables
    (see below), then **Redeploy**.
+4. To connect Google Calendar and Google Meet (and offer "Continue with Google"), follow
+   [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md): it creates the Google OAuth client, registers the redirect URI and
+   sets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on Vercel.
 
 Until a database is connected, every page shows the setup page with status 503, API routes answer 503
 `{ "error": "setup_required" }` and `GET /api/health` answers `{ "ok": false, "db": "missing", "setupRequired": true }`;
@@ -107,7 +110,8 @@ the app never falls back to PGlite on Vercel. Never run `npm run db:seed` agains
 
 ### OAuth redirect URIs
 
-Register these exact URIs (built from `APP_URL`, never from the per-deployment `VERCEL_URL`):
+Register these exact URIs (built from `APP_URL`, never from the per-deployment `VERCEL_URL`). For Google, the
+step-by-step guide is [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md).
 
 | Provider | Redirect URI | Variables |
 |---|---|---|

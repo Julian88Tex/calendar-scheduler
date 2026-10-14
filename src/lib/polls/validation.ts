@@ -142,12 +142,12 @@ const settingsShape = {
 };
 
 export const CreatePollSchema = z.object({
+  ...settingsShape,
   title: zPollTitle,
   timezone: zTimeZone,
   defaultDurationMinutes: z.number().int().min(MIN_OPTION_MINUTES).max(MAX_OPTION_MINUTES),
   options: z.array(zOptionInput).min(1, POLL_ERRORS.noOptions).max(MAX_POLL_OPTIONS, POLL_ERRORS.tooManyOptions),
   slug: zPollSlug.optional(),
-  ...settingsShape,
 });
 export type CreatePollInput = z.input<typeof CreatePollSchema>;
 

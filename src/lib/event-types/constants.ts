@@ -109,7 +109,7 @@ export const MESSAGES = {
   invalidColor: "Enter a valid color like #8247F5",
   slugInvalid: "Use lowercase letters, numbers and hyphens (1 to 100 characters).",
   slugTaken: "This link is already used by another event type",
-  durationRange: "Enter a duration between 1 min and 12 hrs.",
+  durationRange: "Enter a duration between 1 min and 12 hr.",
   durationDuplicate: "This duration is already an option",
   durationTooMany: `You can offer up to ${MAX_DURATIONS} durations.`,
   durationGroup: "Group events have a single duration.",

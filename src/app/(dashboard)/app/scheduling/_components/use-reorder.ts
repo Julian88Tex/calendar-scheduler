@@ -35,6 +35,7 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
   // Refs mirror the keyboard state so key, blur and frame callbacks never act on a stale render.
   const draftRef = useRef<string[] | null>(null);
   const liftedRef = useRef<string | null>(null);
+  const liftedName = useRef("");
   const startIndex = useRef(0);
   // A keyboard move re-inserts DOM nodes, which can blur the handle: those blurs must not drop the card.
   const moving = useRef(false);
@@ -57,9 +58,10 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
     if (liftedId) document.getElementById(handleId(liftedId))?.focus();
   });
 
-  const finish = (commit: boolean, name: string) => {
+  const finish = (commit: boolean) => {
     const lifted = liftedRef.current;
     if (!lifted) return;
+    const name = liftedName.current;
     const current = draftRef.current ?? ids;
     setDraft(null);
     setLifted(null);
@@ -87,10 +89,15 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         if (lifted) {
-          finish(true, name);
+          finish(true);
         } else {
-          if (liftedRef.current) finish(true, name);
+          // Another card is still lifted: drop it first (lifting this one needs the refreshed order).
+          if (liftedRef.current) {
+            finish(true);
+            return;
+          }
           startIndex.current = ids.indexOf(id);
+          liftedName.current = name;
           setDraft([...ids]);
           setLifted(id);
           setAnnouncement(say.lifted(name, startIndex.current + 1, count));
@@ -101,7 +108,7 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        finish(false, name);
+        finish(false);
         return;
       }
       const at = current.indexOf(id);
@@ -123,7 +130,7 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       const handle = e.currentTarget;
       // Wait for the re-render: a move that blurred the handle focuses it again in the layout effect.
       requestAnimationFrame(() => {
-        if (liftedRef.current === id && !moving.current && document.activeElement !== handle) finish(true, name);
+        if (liftedRef.current === id && !moving.current && document.activeElement !== handle) finish(true);
       });
     },
     onDragStart: (e) => {

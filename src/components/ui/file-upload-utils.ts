@@ -9,14 +9,14 @@ export const DEFAULT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; width: number; height: number };
 
-/** "Upload a JPG, PNG, GIF or WebP image." / "The image must be 5 MB or smaller." or null when acceptable. */
+/** "Upload a JPG, PNG, GIF or WebP image." / "Images must be smaller than 5 MB." (BR-02) or null when acceptable. */
 export function checkImageFile(file: { type: string; size: number }, opts: { accept?: string; maxBytes?: number } = {}): string | null {
   const accept = (opts.accept ?? DEFAULT_IMAGE_ACCEPT).split(",").map((s) => s.trim().toLowerCase());
   const type = file.type.toLowerCase();
   const ok = accept.some((a) => a === type || (a.endsWith("/*") && type.startsWith(a.slice(0, -1))));
   if (!ok) return "Upload a JPG, PNG, GIF or WebP image.";
   const max = opts.maxBytes ?? 5 * 1024 * 1024;
-  if (file.size > max) return `The image must be ${formatBytes(max)} or smaller.`;
+  if (file.size > max) return `Images must be smaller than ${formatBytes(max)}.`;
   if (file.size === 0) return "This file is empty.";
   return null;
 }

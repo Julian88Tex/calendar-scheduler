@@ -16,7 +16,6 @@ import type { Route } from "next";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type * as React from "react";
 import { BookingCard, BookingMainSection, BookingPanelHeading } from "@/components/public/booking-card";
 import { BackButton } from "@/components/public/back-button";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
@@ -92,11 +91,6 @@ const LOCALE = "en-US";
 const MIN_FORM_WAIT_MS = 2_300;
 const MAX_JUMP_MONTHS = 12;
 const MAX_MONTHS_AHEAD = 24;
-/**
- * The selected time chip is white on rgba(10, 37, 64, 0.5) in Calendly (3.2:1, below WCAG AA for 16px text, GEN-05);
- * the booking flow darkens the token to 0.65 alpha (5:1) and keeps the look.
- */
-const FLOW_STYLE = { "--slot-selected": "rgba(10, 37, 64, 0.65)" } as React.CSSProperties;
 const EMBED_KEYS = ["embed_type", "embed_domain", "hide_gdpr_banner", "background_color", "text_color", "primary_color"];
 /**
  * On tall desktop screens the card is 700px high (BookingCard); the times list then runs down to the card's bottom
@@ -605,7 +599,7 @@ export function BookingFlow(p: BookingPageProps) {
 
   if (step === "details" && start) {
     return (
-      <div data-booking-flow="details" style={FLOW_STYLE}>
+      <div data-booking-flow="details">
         {banners}
         <BookingCard side={side} ribbon={p.ribbon} embed={embed} hideSide={hideSide}>
           <BookingMainSection>
@@ -745,7 +739,7 @@ export function BookingFlow(p: BookingPageProps) {
   ) : null;
 
   return (
-    <div data-booking-flow="calendar" style={FLOW_STYLE}>
+    <div data-booking-flow="calendar">
       {banners}
       <BookingCard side={side} times={times} expanded={Boolean(effectiveDate)} mobileView={effectiveDate ? phoneView : "main"} ribbon={p.ribbon} embed={embed} hideSide={hideSide}>
         <BookingMainSection className="pb-[32px]">

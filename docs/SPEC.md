@@ -1847,9 +1847,9 @@ two 6x6 fold squares; on phones `top: 15px; left: -5px` and 7px label.
   branding logo or large host avatar (about 120px) with a divider below (observed screenshot); small host avatar
   (64px); host name (`#476788`, 16px bold); event name (h1, 28px bold, 32px line height, `#0A2540`); detail rows with
   20px icons in `#476788` and 16px semibold text: clock + "30 min" (or duration dropdown, BK-07), location row
-  (VID-01 display rules; multiple locations list each kind on its own row (our choice)), card icon + price "$100.00
-  USD" when paid (PAY-02), globe + locked time zone when locked; description rich text; bottom links "Cookie settings"
-  and "Privacy Policy".
+  (VID-01 display rules; multiple locations list every option on its own row, in order, identical rows once), card
+  icon + price "$100.00 USD" when paid (PAY-02), globe + locked time zone when locked; description rich text; bottom
+  links "Cookie settings" and "Privacy Policy".
 - **Right panel**: heading "Select a Date & Time" (22px bold); month calendar (BK-04); "Time zone" block (BK-05);
   troubleshoot link for the owner (BK-24).
 - **Multi-host header** (replaces the single host avatar and name in the left panel): collective events show stacked
@@ -1886,8 +1886,8 @@ two 6x6 fold squares; on phones `top: 15px; left: -5px` and 7px label.
   with a zone param or lock). Hidden when the event locks the zone. Changing the zone re-renders days and times and is
   carried into the details form and the booking, together with the detected browser zone and the "am/pm | 24h" choice
   (stored on the invitee, GEN-06).
-- **Acceptance**: with Playwright `timezoneId: Asia/Kolkata`, the selector shows "India Standard Time" and slot labels
-  match IST.
+- **Acceptance**: with Playwright `timezoneId: Asia/Kolkata`, the selector shows "India, Sri Lanka Time" (Calendly's
+  zone label) and slot labels match IST.
 
 ### BK-06 Time slot list and Next (P0)
 

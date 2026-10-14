@@ -3,9 +3,10 @@
 // CronWarningBanner (SPEC GEN-16, docs/SCOPE.md priority 5): for instance admins when /api/cron last ran more than 15
 // minutes ago (or never): "Reminders may be sent late. Set up a pinger that calls /api/cron every 5 minutes." with a
 // "See setup steps" button that opens the setup instructions in a dialog (a free external pinger every 5 minutes, the
-// exact URL with a copy button, the Authorization header when CRON_SECRET is set, and when cron last ran). The
-// dashboard layout renders it only where cron is the trigger (Vercel; self-hosted servers run the in-process poller).
-// Dismissible for the session.
+// exact URL with a copy button, the Authorization header when CRON_SECRET is set, and when cron last ran). The cron
+// staleness check applies only where cron is the trigger (Vercel; self-hosted servers run the in-process poller,
+// checkCron=false). On any deployment, reminders more than 15 minutes past their send time (getReminderDeliveryHealth
+// overdueCount) also show it: "{n} reminders are past their send time." Dismissible for the session.
 "use client";
 
 import { useState } from "react";
@@ -23,6 +24,10 @@ export type CronWarningBannerProps = {
   cronUrl?: string;
   /** CRON_SECRET is set: the pinger must send "Authorization: Bearer {CRON_SECRET}". */
   secretConfigured?: boolean;
+  /** Cron is the job trigger on this deployment, so a stale tick warns (default true; false on self-hosted servers). */
+  checkCron?: boolean;
+  /** Reminders more than 15 minutes past their send time (getReminderDeliveryHealth().overdueCount). */
+  overdueReminders?: number;
 };
 
 export const CRON_STALE_AFTER_MS = 15 * 60 * 1000;
@@ -46,7 +51,19 @@ export function cronLastRunLabel(lastCronAt: string | null, nowMs: number): stri
   return `${days} days ago`;
 }
 
-function CronSetupSteps({ cronUrl, secretConfigured, lastRun }: { cronUrl: string; secretConfigured: boolean; lastRun: string }) {
+/** "1 reminder is past its send time." / "{n} reminders are past their send time." */
+export function overdueRemindersLabel(n: number): string {
+  return n === 1 ? "1 reminder is past its send time." : `${n} reminders are past their send time.`;
+}
+
+/** The banner text, or null when nothing is wrong (cron fresh or not the trigger, and no overdue reminders). */
+export function cronBannerMessage({ stale, overdueReminders = 0 }: { stale: boolean; overdueReminders?: number }): string | null {
+  const pinger = "Set up a pinger that calls /api/cron every 5 minutes.";
+  if (overdueReminders > 0) return stale ? `${overdueRemindersLabel(overdueReminders)} ${pinger}` : overdueRemindersLabel(overdueReminders);
+  return stale ? `Reminders may be sent late. ${pinger}` : null;
+}
+
+function CronSetupSteps({ cronUrl, secretConfigured, lastRun, overdue }: { cronUrl: string; secretConfigured: boolean; lastRun: string; overdue: boolean }) {
   return (
     <div className="flex flex-col gap-4 text-body-md text-ink">
       <p>
@@ -78,16 +95,18 @@ function CronSetupSteps({ cronUrl, secretConfigured, lastRun }: { cronUrl: strin
         </li>
       </ol>
       <p className="text-ink-2">
-        Last run: <span className="font-semibold text-ink">{lastRun}</span>. This notice disappears once a run is recorded.
+        Last run: <span className="font-semibold text-ink">{lastRun}</span>.{" "}
+        {overdue ? "This notice disappears once the late reminders are sent." : "This notice disappears once a run is recorded."}
       </p>
     </div>
   );
 }
 
-export function CronWarningBanner({ lastCronAt, nowMs, cronUrl, secretConfigured = false }: CronWarningBannerProps) {
+export function CronWarningBanner({ lastCronAt, nowMs, cronUrl, secretConfigured = false, checkCron = true, overdueReminders = 0 }: CronWarningBannerProps) {
   const [dismissed, dismiss] = useSessionDismissal("cron");
   const [open, setOpen] = useState(false);
-  if (!isCronStale(lastCronAt, nowMs) || dismissed) return null;
+  const message = cronBannerMessage({ stale: checkCron && isCronStale(lastCronAt, nowMs), overdueReminders });
+  if (!message || dismissed) return null;
   const url = cronUrl ?? "/api/cron";
   return (
     <>
@@ -102,10 +121,10 @@ export function CronWarningBanner({ lastCronAt, nowMs, cronUrl, secretConfigured
           </button>
         }
       >
-        Reminders may be sent late. Set up a pinger that calls /api/cron every 5 minutes.
+        {message}
       </Banner>
       <Dialog open={open} onOpenChange={setOpen} title="Set up a pinger" size="md">
-        <CronSetupSteps cronUrl={url} secretConfigured={secretConfigured} lastRun={cronLastRunLabel(lastCronAt, nowMs)} />
+        <CronSetupSteps cronUrl={url} secretConfigured={secretConfigured} lastRun={cronLastRunLabel(lastCronAt, nowMs)} overdue={overdueReminders > 0} />
       </Dialog>
     </>
   );

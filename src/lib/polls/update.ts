@@ -75,8 +75,12 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
       }
       const patch: Partial<typeof meetingPolls.$inferInsert> = {};
       const changed: string[] = [];
+      const same = (a: unknown, b: unknown) =>
+        a instanceof Date || b instanceof Date
+          ? (a instanceof Date ? a.getTime() : null) === (b instanceof Date ? b.getTime() : null)
+          : JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
       const set = <K extends keyof typeof meetingPolls.$inferInsert>(k: K, v: (typeof meetingPolls.$inferInsert)[K]) => {
-        if ((poll as Record<string, unknown>)[k] !== v) {
+        if (!same((poll as Record<string, unknown>)[k], v)) {
           patch[k] = v;
           changed.push(k);
         }
@@ -215,7 +219,8 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
         if (rows.length) await publishEvent(tx, "meeting.updated", { scheduledEventId: rows[0]!.id, fields: ["location"] }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
       }
 
-      if (changed.length) await recordActivity(tx, { pollId: poll.id, type: "edited", actorUserId: actor.user.id, data: { fields: changed }, at });
+      const fields = [...new Set(changed)];
+      if (fields.length) await recordActivity(tx, { pollId: poll.id, type: "edited", actorUserId: actor.user.id, data: { fields }, at });
       if (closeNow) await recordActivity(tx, { pollId: poll.id, type: "voting_closed", actorUserId: actor.user.id, data: { reason: "host" }, at });
       const timing = ["deadlineAt", "reminderMode", "reminderOffsets", "status"].some((k) => k in patch) || closeNow;
       if (timing) {
@@ -225,7 +230,7 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
       if (next.reserveTimes && (hostsChanged || "title" in patch || "reserveTimes" in patch) || (!next.reserveTimes && "reserveTimes" in patch)) {
         await enqueueHoldsSync(tx, poll.id, at);
       }
-      return { pollId: poll.id, slug: next.slug, fields: changed };
+      return { pollId: poll.id, slug: next.slug, fields };
     });
     runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
     return out;

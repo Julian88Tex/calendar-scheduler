@@ -3,7 +3,7 @@
 //
 //   toPublicLocations(configs)   what may reach the browser before booking: hidden addresses and custom texts
 //                                ("Display location only after confirmation") and the inbound call number never do
-//   locationRows(list)           the details panel rows (one location: its text; several: one row per kind)
+//   locationRows(list)           the details panel rows (one location: its text; several: one row per option)
 //   locationOption(l)            the "Location" radio label on the details form (BK-11)
 //   locationInput(l)             the extra field a choice needs: the phone (outbound call) or text (ask invitee)
 //   meetingLocation(resolved)    the confirmation page row of a booked meeting
@@ -113,31 +113,26 @@ function singleRow(l: PublicLocation): LocationRow {
 }
 
 /**
- * Details panel rows (BK-03): one location shows its own text; several list each kind on its own row (our choice):
- * several in-person venues collapse to "In-person meeting", conferencing kinds show their provider names.
+ * Details panel rows (BK-03): one location shows its own text; several list every option the invitee can choose, in
+ * order, like Calendly: each in-person venue by its name ("In-person meeting" while its address is hidden until
+ * booking), "Somewhere else" for ask invitee, provider names for conferencing. Identical rows show once.
  */
 export function locationRows(list: readonly PublicLocation[]): LocationRow[] {
   if (list.length === 0) return [];
   if (list.length === 1) return [singleRow(list[0]!)];
-  const byKind = new Map<LocationKind, PublicLocation[]>();
-  for (const l of list) {
-    const group = byKind.get(l.kind);
-    if (group) group.push(l);
-    else byKind.set(l.kind, [l]);
-  }
   const rows: LocationRow[] = [];
-  for (const [kind, group] of byKind) {
-    const first = group[0]!;
-    if (kind === "physical" && group.length > 1) {
-      rows.push({ key: `kind-${kind}`, icon: "pin", text: bt("location.inPerson"), detail: null });
-      continue;
-    }
-    if (group.length === 1 && (kind === "physical" || kind === "custom")) {
-      const row = singleRow(first);
-      rows.push({ ...row, detail: null });
-      continue;
-    }
-    rows.push({ key: `kind-${kind}`, icon: iconOf(kind), text: locationOption(first).label, detail: null });
+  const seen = new Set<string>();
+  for (const l of list) {
+    const row: LocationRow =
+      l.kind === "physical"
+        ? { key: l.id, icon: "pin", text: l.text ?? bt("location.inPerson"), detail: null }
+        : l.kind === "custom"
+          ? { ...singleRow(l), detail: null }
+          : { key: l.id, icon: iconOf(l.kind), text: locationOption(l).label, detail: null };
+    const dedupe = `${row.icon}\u0000${row.text}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    rows.push(row);
   }
   return rows;
 }

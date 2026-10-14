@@ -96,7 +96,7 @@ test.describe("account settings", () => {
     await expect(page.getByRole("heading", { name: "Profile", level: 1 })).toBeVisible();
     const subNav = page.getByRole("navigation", { name: "Account settings" });
     await expect(subNav.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "page");
-    for (const item of ["Branding", "My link", "Login and security"]) await expect(subNav.getByRole("link", { name: item })).toBeVisible();
+    for (const item of ["Branding", "My Link", "Login and security"]) await expect(subNav.getByRole("link", { name: item })).toBeVisible();
     for (const item of ["Notifications", "Cookie settings", "Privacy", "Import from Calendly"]) await expect(subNav.getByRole("link", { name: item })).toHaveCount(0);
     const name = page.getByLabel("Name");
     await expect(name).toHaveValue("Julian Joseph");

@@ -87,13 +87,13 @@ export function formatZoneWithTime(
   return `${friendlyZoneName(zone, locale, opts.names)} (${currentLocalTime(zone, { locale, hour12: opts.hour12 ?? true, at: opts.at })})`;
 }
 
-/** "30 min", "1 hr", "1 hr 30 min", "2 hrs" (event type durations, Calendly style). */
+/** "30 min", "1 hr", "1 hr 30 min", "2 hr", "2 hr 30 min" (event type durations, Calendly style: "hr" is never plural). */
 export function formatDuration(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));
   const h = Math.floor(m / 60);
   const rest = m % 60;
   if (h === 0) return `${rest} min`;
-  const hours = `${h} ${h === 1 ? "hr" : "hrs"}`;
+  const hours = `${h} hr`;
   return rest ? `${hours} ${rest} min` : hours;
 }
 

@@ -3,7 +3,8 @@
 // Dashboard shell (ARCHITECTURE section 4 step 3, SPEC GEN-20, GEN-04, GEN-16, GEN-22, GEN-23, docs/SCOPE.md):
 // requireUser through getActorCtx() (redirects to /login?next=...), the sidebar with the nav items docs/SCOPE.md keeps,
 // the header (account menu, 56px mobile top bar) with the stacked banners (calendar problem CAL-15, verify email
-// AU-08, time zone mismatch GEN-23, cron warning with its setup steps for instance admins GEN-16), the user's theme
+// AU-08, time zone mismatch GEN-23, cron warning with its setup steps for instance admins GEN-16, also shown for
+// overdue reminders on any deployment), the user's theme
 // (GEN-22) and an opportunistic job run after the response (maybeRunDueJobs, throttled).
 import { after } from "next/server";
 import type * as React from "react";
@@ -25,20 +26,21 @@ import { maybeRunDueJobs } from "@/lib/jobs";
 import { log } from "@/lib/logger";
 import { now } from "@/lib/time/now";
 import { resendVerificationEmail, setSidebarCollapsed, updateProfileTimeZone } from "./_shell/actions";
-import { cronEndpointUrl, cronWarningApplies, getLastCronAt, publicLinkFor } from "./_shell/data";
+import { cronEndpointUrl, cronWarningApplies, getLastCronAt, getOverdueReminderCount, publicLinkFor } from "./_shell/data";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const actor = await getActorCtx();
   const { user } = actor;
   const adminCenter = canSeeAdminCenter(actor);
 
-  const [health, operator, lastCronAt] = await Promise.all([
+  const [health, operator, lastCronAt, overdueReminders] = await Promise.all([
     getCalendarHealth(user.id).catch((e: unknown) => {
       log.warn("shell.calendar_health_failed", { error: e });
       return { ok: true, brokenConnections: [] as { id: string; email: string | null; status: string }[] };
     }),
     getOperatorContact(),
     actor.isInstanceAdmin ? getLastCronAt() : Promise.resolve(null),
+    actor.isInstanceAdmin ? getOverdueReminderCount() : Promise.resolve(0),
   ]);
   after(() => maybeRunDueJobs());
 
@@ -51,14 +53,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
     timezone: user.timezone,
     emailVerified: Boolean(user.emailVerifiedAt),
   };
-  const showCron = actor.isInstanceAdmin && cronWarningApplies(lastCronAt);
+  const checkCron = cronWarningApplies(lastCronAt);
+  const showCron = actor.isInstanceAdmin && (checkCron || overdueReminders > 0);
 
   const banners = (
     <>
       <CalendarProblemBanner brokenConnections={health.brokenConnections} />
       {!shellUser.emailVerified && <VerifyEmailBanner email={shellUser.email} resendAction={resendVerificationEmail} />}
       <TimeZoneMismatchBanner profileZone={shellUser.timezone} updateAction={updateProfileTimeZone} />
-      {showCron && <CronWarningBanner lastCronAt={lastCronAt} nowMs={now().getTime()} cronUrl={cronEndpointUrl()} secretConfigured={getFeatures().cronSecret} />}
+      {showCron && (
+        <CronWarningBanner
+          lastCronAt={lastCronAt}
+          nowMs={now().getTime()}
+          cronUrl={cronEndpointUrl()}
+          secretConfigured={getFeatures().cronSecret}
+          checkCron={checkCron}
+          overdueReminders={overdueReminders}
+        />
+      )}
     </>
   );
 

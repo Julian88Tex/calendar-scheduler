@@ -23,7 +23,7 @@ export default async function ProfilePage({ searchParams }: Props) {
     <div className="flex max-w-3xl min-w-0 flex-col">
       <PageHeader title="Profile" />
       <Card padding="lg" className="flex flex-col gap-8">
-        <AvatarField initialUrl={avatarUrlOf(user)} />
+        <AvatarField initialUrl={avatarUrlOf(user)} name={user.name} />
         <ProfileForm initial={profileFormValues(user)} />
       </Card>
     </div>

@@ -8,6 +8,8 @@
 //   - unconfigured provider: back with error not_configured; connect_calendar and link_login_method need a signed-in
 //     user (else /login?next=<this start URL>), link_login_method also the AU-10 confirmation (?confirm=, from
 //     verifyLoginMethodCode); accept_invitation needs a pending invitation (its email becomes the login_hint);
+//     connect_calendar with data.reconnect = one of the user's calendar connection ids uses that account's email as
+//     the login_hint (the "Reconnect" links preselect the right Google account);
 //   - stores provider, state, PKCE verifier, intent, returnTo, invitation token, data and user id in the sealed
 //     10-minute state cookie and redirects to the provider (PKCE S256, scopes per intent).
 //
@@ -16,7 +18,11 @@
 //   - "access_denied" from the provider: "{Provider} sign in was canceled.";
 //   - exchanges the code, decodes the id token into an OAuthProfile and dispatches the intent (intents.ts).
 import "server-only";
+import { and, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { getDb } from "@/db";
+import { calendarConnections } from "@/db/schema";
+import { isUuid } from "@/lib/ids";
 import { log } from "@/lib/logger";
 import { getPendingInvitation } from "@/lib/teams";
 import { appHost, absoluteUrl, safeNextPath } from "@/lib/url";
@@ -70,6 +76,18 @@ function readData(params: URLSearchParams): Record<string, string> {
   return data;
 }
 
+/** The account email of one of the user's calendar connections (the reconnect target), or null. */
+async function reconnectLoginHint(userId: string, connectionId: string | undefined): Promise<string | null> {
+  if (!connectionId || !isUuid(connectionId)) return null;
+  const db = await getDb();
+  const [row] = await db
+    .select({ accountEmail: calendarConnections.accountEmail })
+    .from(calendarConnections)
+    .where(and(eq(calendarConnections.id, connectionId), eq(calendarConnections.userId, userId)))
+    .limit(1);
+  return row?.accountEmail || null;
+}
+
 /** GET /api/auth/{provider}/start (see the file header). */
 export async function handleOAuthStart(request: Request, provider: OAuthProviderId): Promise<Response> {
   const url = new URL(request.url);
@@ -114,6 +132,8 @@ export async function handleOAuthStart(request: Request, provider: OAuthProvider
     const invitation = invitationToken ? await getPendingInvitation(invitationToken) : null;
     if (!invitation) return errorTo("invitation_invalid");
     loginHint = invitation.email;
+  } else if (intent === "connect_calendar" && userId) {
+    loginHint = await reconnectLoginHint(userId, data.reconnect);
   }
 
   const state = generateState();

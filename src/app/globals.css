@@ -24,7 +24,7 @@
   --public-bg: var(--white); --public-text: var(--ink);
   /* Additions (foundation-ui): focus ring, selected-time chip, text on filled controls, hover row fill. */
   --focus: #006bff;
-  --slot-selected: rgba(10, 37, 64, 0.5);
+  --slot-selected: rgba(10, 37, 64, 0.65);           /* Calendly uses 0.5 (3.2:1); 0.65 gives white text 5:1 (GEN-05) */
   --on-primary: #ffffff;
   --row-hover: #f0f3f8;
   /* Booking calendar tints derived from --primary-color (#006BFF gives #F4F8FF days, #E6F0FF hover, #004EBA text). */

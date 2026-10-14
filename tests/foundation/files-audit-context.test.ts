@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const sessionState: { user: { id: string } | null } = { user: null };
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => sessionState.user }));
 
-const { auditLog, files, users } = await import("@/db/schema");
+const { auditLog, files, jobs, users } = await import("@/db/schema");
 const { audit } = await import("@/lib/audit");
 const { loadActorCtx } = await import("@/lib/authz");
-const { detectImageType, fileUrl, imageDimensions, saveFile, saveImageUpload } = await import("@/lib/files");
+const { DELETE_BLOB_JOB, deleteFile, detectImageType, fileUrl, imageDimensions, saveFile, saveImageUpload } = await import("@/lib/files");
+const { builtinHandlers } = await import("@/lib/jobs/builtin-handlers");
 const { GET } = await import("@/app/api/files/[id]/route");
 const { buildMeetingTemplateContext } = await import("@/lib/template-context");
 const { resetFakeTime, setFakeNow } = await import("@/lib/time/now");
@@ -105,6 +106,55 @@ describe("files", () => {
     expect((await get(expiring.id)).status).toBe(404);
     expect((await get("not-a-uuid")).status).toBe(404);
     expect((await get("00000000-0000-4000-8000-000000000000")).status).toBe(404);
+  });
+});
+
+describe("deleteFile with Vercel Blob", () => {
+  const env = process.env as Record<string, string | undefined>;
+  const BLOB = "https://store1.public.blob.vercel-storage.com/avatar/abc.png";
+  afterEach(() => {
+    delete env.BLOB_READ_WRITE_TOKEN;
+    vi.unstubAllGlobals();
+  });
+
+  it("deletes the blob only after the transaction that deleted the row commits (never inside it)", async () => {
+    env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_store1_secret";
+    const calls: { url: string; body: string }[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, body: typeof init?.body === "string" ? init.body : "" });
+      return url.startsWith("https://vercel.com/api/blob/?") ? Response.json({ url: BLOB }) : new Response(null, { status: 200 });
+    });
+    const deletes = () => calls.filter((c) => c.url === "https://vercel.com/api/blob/delete");
+    const blobJobs = () => t.db.select().from(jobs).where(eq(jobs.type, DELETE_BLOB_JOB));
+    const u = await createUser(t.db);
+    const row = await saveFile({ data: png(8, 8), contentType: "image/png", purpose: "avatar", ownerUserId: u.id });
+    expect(row.blobUrl).toBe(BLOB);
+
+    // Rolled back: the row and the blob stay, nothing is queued.
+    await expect(
+      t.db.transaction(async (tx) => {
+        await deleteFile(row.id, tx);
+        throw new Error("rollback");
+      }),
+    ).rejects.toThrow("rollback");
+    expect(await t.db.select({ id: files.id }).from(files).where(eq(files.id, row.id))).toHaveLength(1);
+    expect(await blobJobs()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+
+    // Committed: the blob deletion waits for the files.delete_blob job.
+    await t.db.transaction(async (tx) => deleteFile(row.id, tx));
+    expect(await t.db.select({ id: files.id }).from(files).where(eq(files.id, row.id))).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+    const [job] = await blobJobs();
+    expect(job?.payload).toEqual({ url: BLOB });
+    await builtinHandlers[DELETE_BLOB_JOB]!(job!.payload, {} as never);
+    expect(deletes().map((c) => JSON.parse(c.body))).toEqual([{ urls: [BLOB] }]);
+
+    // Outside a transaction the blob goes at once.
+    const other = await saveFile({ data: png(8, 8), contentType: "image/png", purpose: "avatar", ownerUserId: u.id });
+    await deleteFile(other.id, t.db);
+    expect(deletes()).toHaveLength(2);
   });
 });
 

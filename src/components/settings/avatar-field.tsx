@@ -15,9 +15,11 @@ import { uploadSettingsImage } from "./upload-image";
 export type AvatarFieldProps = {
   /** The current picture (uploaded avatar or provider picture), or null for initials. */
   initialUrl: string | null;
+  /** The user's name: its initials fill the preview while there is no picture. */
+  name?: string | null;
 };
 
-export function AvatarField({ initialUrl }: AvatarFieldProps) {
+export function AvatarField({ initialUrl, name }: AvatarFieldProps) {
   const router = useRouter();
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [url, setUrl] = useState(initialUrl);
@@ -39,6 +41,7 @@ export function AvatarField({ initialUrl }: AvatarFieldProps) {
         label={url ? "Change picture" : "Upload picture"}
         hint={AVATAR_HINT}
         previewShape="circle"
+        name={name}
         loading={removing}
         onFile={async (file) => {
           const saved = await uploadSettingsImage("avatar", file);

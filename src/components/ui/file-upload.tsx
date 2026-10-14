@@ -3,13 +3,15 @@
 // FileUpload (ARCHITECTURE 20.2, SPEC BR-01, BR-05): image picker (button or drag and drop) with type and size checks,
 // a crop dialog (square: pan by dragging or arrow keys and zoom with the slider or wheel; free: move and resize a
 // rectangle) and client-side canvas resize before upload (the server never resizes). crop={false} only downsizes.
-// Animated GIFs that need no resize are passed through untouched.
+// Animated GIFs that need no resize are passed through untouched. Without an image the preview shows the initials of
+// `name` (profile pictures) or an upload icon.
 "use client";
 
 import { ImageUp, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
+import { initialsOf } from "./avatar";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
 import {
@@ -50,6 +52,8 @@ export type FileUploadProps = {
   previewShape?: "circle" | "square";
   /** Help text under the button ("JPG, PNG or GIF. Max 5 MB."). */
   hint?: string;
+  /** Profile pictures: the person's name, whose initials fill the preview while there is no image. */
+  name?: string | null;
 };
 
 const STAGE = 280;
@@ -113,6 +117,7 @@ export function FileUpload({
   className,
   previewShape,
   hint,
+  name,
 }: FileUploadProps) {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const inputId = id ?? `${base}-file`;
@@ -197,6 +202,10 @@ export function FileUpload({
           {value ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={value} alt="Current image" className="size-full object-cover" />
+          ) : name?.trim() ? (
+            <span aria-hidden="true" className="text-[24px] leading-none font-semibold select-none">
+              {initialsOf(name)}
+            </span>
           ) : (
             <ImageUp aria-hidden="true" className="size-6" />
           )}

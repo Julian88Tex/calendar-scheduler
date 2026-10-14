@@ -68,8 +68,9 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [noteTarget, setNoteTarget] = useState<{ id: string; note: string | null } | null>(null);
   const [shareTarget, setShareTarget] = useState<EventTypeListItem | null>(null);
-  // The ids the bulk delete confirmation was opened for (its title keeps the count while it closes).
+  // The ids the bulk delete confirmation was opened for, and their count (kept for the title while it closes).
   const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
+  const [bulkDeleteCount, setBulkDeleteCount] = useState(0);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const shareTrigger = useRef<HTMLElement | null>(null);
@@ -90,14 +91,15 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
   const selectedItems = useMemo(() => visible.filter((e) => selected.has(e.id)), [visible, selected]);
   const kinds = useMemo(() => kindOptions(items), [items]);
 
+  // The latest filters for callbacks that outlive a render (the debounced search).
+  const filtersRef = useRef(initialFilters);
   const updateFilters = (patch: Partial<ListFilters>) => {
-    setFilters((f) => {
-      const next = { ...f, ...patch };
-      // Bulk actions act on what is visible: drop selections the new filters hide.
-      const keep = new Set(filterEventTypes(items, next).map((e) => e.id));
-      setSelected((s) => new Set([...s].filter((id) => keep.has(id))));
-      return next;
-    });
+    const next = { ...filtersRef.current, ...patch };
+    filtersRef.current = next;
+    setFilters(next);
+    // Bulk actions act on what is visible: drop selections the new filters hide.
+    const keep = new Set(filterEventTypes(itemsRef.current, next).map((e) => e.id));
+    setSelected((s) => new Set([...s].filter((id) => keep.has(id))));
   };
   const clearFilters = () => {
     setSearchText("");
@@ -243,7 +245,7 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
 
   return (
     <div className="flex flex-col gap-6">
-      <div role="search" aria-label="Event types" className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div role="search" aria-label="Event types" className="flex items-center gap-3">
         <SearchInput
           value={searchText}
           onValueChange={setSearchText}
@@ -251,9 +253,9 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
           debounceMs={SEARCH_DEBOUNCE_MS}
           placeholder="Search event types"
           aria-label="Search event types"
-          className="sm:max-w-xs"
+          className="min-w-0 flex-1 sm:max-w-xs"
         />
-        <div className="flex items-center gap-2 sm:ml-auto">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <FilterMenu filters={filters} kinds={kinds} onChange={updateFilters} />
         </div>
       </div>
@@ -324,12 +326,16 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
         )}
       </section>
 
-      {selectedCount > 0 && <div aria-hidden="true" className="h-12" />}
-      <BulkActionBar count={selectedCount} onClear={() => setSelected(new Set())}>
+      {/* Room for the bar, which floats above the toast area so result toasts never cover its buttons. */}
+      {selectedCount > 0 && <div aria-hidden="true" className="h-20" />}
+      <BulkActionBar count={selectedCount} onClear={() => setSelected(new Set())} className="bottom-20">
         <button
           type="button"
           disabled={bulkBusy}
-          onClick={() => setBulkDeleteIds(selectedItems.map((e) => e.id))}
+          onClick={() => {
+            setBulkDeleteIds(selectedItems.map((e) => e.id));
+            setBulkDeleteCount(selectedItems.length);
+          }}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] font-semibold disabled:opacity-60"
         >
           <Trash2 aria-hidden="true" className="size-4" />
@@ -350,7 +356,7 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
       <ConfirmDialog
         open={bulkDeleteIds !== null}
         onOpenChange={(v) => !v && setBulkDeleteIds(null)}
-        title={bulkDeleteTitle(bulkDeleteIds?.length ?? selectedCount)}
+        title={bulkDeleteTitle(bulkDeleteCount)}
         description={DELETE_BODY}
         confirmLabel="Delete"
         cancelLabel="Cancel"

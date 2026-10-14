@@ -159,6 +159,7 @@ export async function enqueueSubscriberBatch(tx: DbOrTx, pollId: string, now: Da
 }
 
 export type PollEmailJob = {
+  /** Template id (notify.ts sendPollEmail). */
   template: string;
   pollId: string;
   participantId?: string | null;
@@ -171,7 +172,7 @@ export type PollEmailJob = {
 export async function enqueuePollEmail(tx: DbOrTx, job: PollEmailJob, key: string, now: Date, priority = 5): Promise<void> {
   await enqueueJob(tx, {
     type: POLL_JOBS.email,
-    payload: job,
+    payload: { ...job, key },
     runAt: now,
     groupKey: pollJobGroup(job.pollId),
     idempotencyKey: `poll-email:${key}`,

@@ -10,7 +10,8 @@
 // | jobs dead                                         | deleted after 90 days                                    |
 // | domain_events                                     | deleted after 30 days                                    |
 // | webhook_deliveries                                | deleted 30 days after delivery (or creation)             |
-// | external_events, calendar_sync_windows            | deleted when not refreshed for 7 days                    |
+// | external_events, calendar_sync_windows            | deleted when not refreshed for 7 days (except calendars  |
+// |                                                   | of calendly_import connections: never refetched, CAL-22) |
 // | sessions                                          | expired ones deleted; revoked ones after 7 days          |
 // | rate_limit_buckets                                | windows older than 2 days                                |
 // | files with expires_at (exports, imports)          | deleted once expired (blobs too)                         |
@@ -19,10 +20,12 @@
 // | sms_messages                                      | deleted after 90 days (same as the email outbox)         |
 // | verification_codes, trusted_devices, auth_tokens  | expired codes after 1 day, devices once expired, tokens 30 days after expiry |
 import "server-only";
-import { and, eq, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { DB } from "@/db";
 import {
   authTokens,
+  calendarConnections,
+  calendars,
   calendarSyncWindows,
   domainEvents,
   emailOutbox,
@@ -121,11 +124,27 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
       deadline,
     ),
   );
+  // Calendly import calendars (CAL-22) are written once by the importer and never refetched: their cache is the data.
+  const importedCalendarIds = () =>
+    db
+      .select({ id: calendars.id })
+      .from(calendars)
+      .innerJoin(calendarConnections, eq(calendars.connectionId, calendarConnections.id))
+      .where(eq(calendarConnections.provider, "calendly_import"));
   await step("external_events", () =>
-    chunkedDelete(db, externalEvents, externalEvents.id, lt(externalEvents.fetchedAt, ago(RETENTION.externalCacheDays)), deadline),
+    chunkedDelete(db, externalEvents, externalEvents.id,
+      and(lt(externalEvents.fetchedAt, ago(RETENTION.externalCacheDays)), notInArray(externalEvents.calendarId, importedCalendarIds()))!,
+      deadline,
+    ),
   );
   await step("calendar_sync_windows", () =>
-    chunkedDelete(db, calendarSyncWindows, calendarSyncWindows.id, lt(calendarSyncWindows.fetchedAt, ago(RETENTION.externalCacheDays)), deadline),
+    chunkedDelete(db, calendarSyncWindows, calendarSyncWindows.id,
+      and(
+        lt(calendarSyncWindows.fetchedAt, ago(RETENTION.externalCacheDays)),
+        notInArray(calendarSyncWindows.calendarId, importedCalendarIds()),
+      )!,
+      deadline,
+    ),
   );
   await step("sessions", () =>
     chunkedDelete(db, sessions, sessions.id,

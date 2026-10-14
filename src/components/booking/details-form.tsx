@@ -1,6 +1,7 @@
 // The "Enter Details" form (SPEC BK-09 to BK-12, BK-14, BK-16, BK-18, VID-03, VID-06): Name (or First and Last Name),
 // Email, "Add Guests" (chips, up to 10), the location choice with its phone or text input, custom questions in order,
-// marketing consent, the terms sentence and "Schedule Event". Inline errors use the server's messages and keys; the
+// marketing consent, the terms sentence (only with a configured Terms of Use or Privacy Notice URL) and "Schedule
+// Event". Inline errors use the server's messages and keys; the
 // hidden honeypot field `website` stays empty for people (BK-18). Phones get a sticky submit button (BK-30).
 "use client";
 
@@ -14,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
-import { chosenLocation, isEmail, MAX_GUESTS, type FieldErrors, type FormContext, type FormValues } from "./lib/form";
+import { chosenLocation, isEmail, MAX_GUESTS, showsLegalNotice, type FieldErrors, type FormContext, type FormValues } from "./lib/form";
 import { locationInput, locationOption } from "./lib/locations";
 import { bt } from "./lib/t";
 import { LocationGlyph } from "./location-icon";
@@ -294,21 +295,23 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
         <input ref={honeypotRef} id={`${base}-hp`} type="text" name={p.honeypotName} tabIndex={-1} autoComplete="off" defaultValue="" />
       </div>
 
-      <p className="text-[13px] leading-5 text-ink-2">
-        {termsParts.map((part, i) =>
-          part === TERMS ? (
-            <LegalLink key={i} href={p.termsUrl}>
-              {bt("details.termsOfUse")}
-            </LegalLink>
-          ) : part === PRIVACY ? (
-            <LegalLink key={i} href={p.privacyUrl}>
-              {bt("details.privacyNotice")}
-            </LegalLink>
-          ) : (
-            <span key={i}>{part}</span>
-          ),
-        )}
-      </p>
+      {showsLegalNotice(p.termsUrl, p.privacyUrl) && (
+        <p className="text-[13px] leading-5 text-ink-2">
+          {termsParts.map((part, i) =>
+            part === TERMS ? (
+              <LegalLink key={i} href={p.termsUrl}>
+                {bt("details.termsOfUse")}
+              </LegalLink>
+            ) : part === PRIVACY ? (
+              <LegalLink key={i} href={p.privacyUrl}>
+                {bt("details.privacyNotice")}
+              </LegalLink>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
+        </p>
+      )}
 
       {/* Empty unless Cloudflare asks for a click ("interaction-only"). */}
       {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}

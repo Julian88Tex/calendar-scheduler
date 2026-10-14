@@ -2555,7 +2555,7 @@ export const SESSION_COOKIE = "sid";
 export async function createSession(userId: string, opts?: { twoFactorPending?: boolean }): Promise<void>; // sets cookie (actions/route handlers only)
 export async function getSession(): Promise<{ session: SessionRow; user: UserRow } | null>;   // React cache() per request
 export async function requireUser(): Promise<UserRow>;               // redirect("/login?next=...") in RSC; throws AppError(401) in handlers
-export async function revokeSession(id: string): Promise<void>;
+export async function revokeSession(id: string, opts?: { userId?: string }): Promise<void>; // userId: only that user's session
 export async function revokeOtherSessions(userId: string, keepSessionId: string): Promise<void>;
 ```
 

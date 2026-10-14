@@ -1,20 +1,20 @@
-// OWNER: lifecycle-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: lifecycle-ui.
 //
-// /reschedulings/{inviteeId}/{start} placeholder (ARCHITECTURE section 3.1, SPEC CR-03): renders inside PublicPageShell and answers 404 for unknown
-// inviteeId, start. Never framed (frame-ancestors 'none'). The owner replaces it with the real page.
-import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { PublicCard } from "@/components/public/public-card";
-import { PublicPageShell } from "@/components/public/public-page-shell";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { invitees } from "@/db/schema";
-import { isUuid } from "@/lib/ids";
-import { notFound } from "next/navigation";
-import { parseStartParam } from "@/lib/url";
+// /reschedulings/{inviteeId}/{ISO start}: the "Enter Details" step of a reschedule (SPEC CR-03, BK-08, BK-09). The same
+// client flow as the calendar page renders the prefilled form with "Reason for change" and "Update Event"; a start
+// that is not bookable any more (the moved meeting itself never blocks it, SCH-24) shows the calendar with that date
+// preselected and "Sorry, that time is no longer available." Invalid starts and unknown invitees are 404; an old
+// invitee of a rescheduled booking redirects to the active invitee's page of the same start.
+import type { Metadata, Route } from "next";
+import { notFound, redirect } from "next/navigation";
+import { changePagePath, queryStringOf } from "@/components/lifecycle/lib/state";
+import { lt } from "@/components/lifecycle/lib/t";
+import { ReschedulePageView } from "@/components/lifecycle/reschedule-page-view";
+import { loadReschedulePage } from "@/components/lifecycle/server/reschedule-page";
+import { parseStartParam, startParam } from "@/lib/url";
+import { rescheduleInviteeAction } from "../actions";
 
-export const metadata: Metadata = { title: "Reschedule Event", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: lt("reschedule.title"), robots: { index: false, follow: false } };
 
 type Props = {
   params: Promise<{ inviteeId: string; start: string }>;
@@ -22,20 +22,15 @@ type Props = {
 };
 
 export default async function Page({ params, searchParams }: Props) {
-  const [{ inviteeId, start }] = await Promise.all([params, searchParams]);
-  if (!parseStartParam(start)) notFound();
-  if (!isUuid(inviteeId)) notFound();
-  const db = await getDb();
-  const [invitee] = await db.select({ id: invitees.id }).from(invitees).where(eq(invitees.id, inviteeId)).limit(1);
-  if (!invitee) notFound();
-  return (
-    <PublicPageShell>
-      <PublicCard width="narrow">
-        <div className="p-8">
-          <PageHeader title={"Reschedule Event"} />
-          <EmptyState heading="This page is being built." />
-        </div>
-      </PublicCard>
-    </PublicPageShell>
-  );
+  const [{ inviteeId, start }, sp] = await Promise.all([params, searchParams]);
+  const at = parseStartParam(start);
+  if (!at) notFound();
+  const r = await loadReschedulePage({ inviteeId, mode: "details", start: at, searchParams: sp });
+  if (r.state === "not_found") notFound();
+  if (r.state === "redirect") {
+    const path = changePagePath("reschedule", r.inviteeId).concat(`/${startParam(at)}`);
+    const q = queryStringOf(sp);
+    redirect((q ? `${path}?${q}` : path) as Route);
+  }
+  return <ReschedulePageView result={r} rescheduleAction={rescheduleInviteeAction} />;
 }

@@ -25,7 +25,7 @@ import { recordActivity } from "./activity";
 import { MANUAL_REMINDER_THROTTLE_MS, MAX_INVITE_EMAILS_PER_DAY, MAX_POLL_PARTICIPANTS, POLL_ERRORS, pollJobGroup } from "./constants";
 import { loadOptions, loadPollBySlug, lockPoll, participantCount, statusOf } from "./load";
 import { enqueuePollEmail, scheduleAnchorReminders, scheduleInviteReminders } from "./schedule";
-import { tokenHashesFor, verifyUnsubscribeToken } from "./tokens";
+import { tokenHashesFor, verifyUnsubscribeToken, warmPollKeys } from "./tokens";
 import { InviteSchema, RemindSchema } from "./validation";
 
 export type InviteResult = { invited: number; resent: number; skipped: { email: string; reason: "responded" }[] };
@@ -47,6 +47,7 @@ export async function invitePeople(actor: ActorCtx, raw: unknown): Promise<Invit
   const limit = await rateLimit(`poll-invites:user:${actor.user.id}`, MAX_INVITE_EMAILS_PER_DAY, 86_400, { nowMs: at.getTime(), cost: recipients.length });
   if (!limit.ok) throw new AppError("rate_limited", POLL_ERRORS.inviteDailyLimit);
 
+  await warmPollKeys();
   const out = await db.transaction(async (tx) => {
     const poll = await lockPoll(tx, input.pollId, "update");
     if (poll.deletedAt) throw new AppError("not_found", POLL_ERRORS.notFound);

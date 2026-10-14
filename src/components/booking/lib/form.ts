@@ -313,3 +313,11 @@ export function fieldOrder(ctx: FormContext): string[] {
 export function kindNeedsInput(kind: LocationKind): boolean {
   return kind === "outbound_call" || kind === "ask_invitee";
 }
+
+/**
+ * The "By proceeding, you confirm that you have read and agree to ..." sentence shows only when the instance configured
+ * a Terms of Use or Privacy Notice URL (instance settings terms_url, privacy_policy_url); without links it says nothing.
+ */
+export function showsLegalNotice(termsUrl: string | null | undefined, privacyUrl: string | null | undefined): boolean {
+  return Boolean(termsUrl?.trim() || privacyUrl?.trim());
+}

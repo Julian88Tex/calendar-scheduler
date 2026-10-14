@@ -8,6 +8,7 @@ import {
   emptyValues,
   guestError,
   interpretBookingResponse,
+  showsLegalNotice,
   toE164,
   validateForm,
   type FormContext,
@@ -37,7 +38,7 @@ describe("locations", () => {
     expect(list[2]).toMatchObject({ text: null, additionalInfo: null });
   });
 
-  it("shows one location's own text and several as one row per kind", () => {
+  it("shows one location's own text and several as one row per option", () => {
     expect(locationRows(toPublicLocations([loc({ kind: "google_conference" })]))).toEqual([
       { key: "google_conference-0", icon: "video", text: "Web conferencing details provided upon confirmation.", detail: null },
     ]);
@@ -51,7 +52,19 @@ describe("locations", () => {
       loc({ id: "ask", kind: "ask_invitee", position: 8, location: "Suggest a place" }),
     ]);
     expect(meal).toHaveLength(9);
-    expect(locationRows(meal).map((r) => r.text)).toEqual(["In-person meeting", "Somewhere else"]);
+    // Like Calendly: every option the invitee can pick, in order (venue names, then "Somewhere else").
+    expect(locationRows(meal).map((r) => r.text)).toEqual([...Array.from({ length: 8 }, (_, i) => `Venue ${i}`), "Somewhere else"]);
+    expect(locationRows(meal).every((r) => r.icon === "pin" && r.detail === null)).toBe(true);
+    // Venues hidden until booking show once as "In-person meeting"; other kinds keep their provider labels.
+    const hidden = toPublicLocations([
+      loc({ id: "a", kind: "physical", position: 0, location: "Cafe A", displayBeforeBooking: false }),
+      loc({ id: "b", kind: "physical", position: 1, location: "Cafe B", displayBeforeBooking: false }),
+      loc({ id: "g", kind: "google_conference", position: 2 }),
+    ]);
+    expect(locationRows(hidden).map((r) => [r.icon, r.text])).toEqual([
+      ["pin", "In-person meeting"],
+      ["video", "Google Meet"],
+    ]);
     expect(locationOption(meal[8]!).label).toBe("Somewhere else");
     expect(meal[8]!.prompt).toBe("Suggest a place");
     expect(locationInput(meal[8]!)).toBe("text");
@@ -141,6 +154,13 @@ describe("URL state (BK-08)", () => {
 });
 
 describe("details form", () => {
+  it("shows the terms sentence only when a Terms of Use or Privacy Notice URL is configured", () => {
+    expect(showsLegalNotice(null, null)).toBe(false);
+    expect(showsLegalNotice("", "  ")).toBe(false);
+    expect(showsLegalNotice("https://example.com/terms", null)).toBe(true);
+    expect(showsLegalNotice(null, "https://example.com/privacy")).toBe(true);
+  });
+
   const questions: PublicQuestion[] = [
     { id: "q1", label: "What would you like to discuss?", type: "text", required: true, answerChoices: [], includeOther: false, position: 0 },
     { id: "q2", label: "Topics", type: "multi_select", required: true, answerChoices: ["A", "B"], includeOther: true, position: 1 },
