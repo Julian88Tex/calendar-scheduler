@@ -1,23 +1,30 @@
-// OWNER: polls-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: polls-ui.
 //
-// /app/polls/[id]/edit placeholder (ARCHITECTURE section 3.1, SPEC MP-26). The owner replaces it with the real page.
+// /app/polls/{id}/edit: edit a published meeting poll (SPEC MP-27; research meeting-polls.md B14): the same full-screen
+// wizard over the poll's times and settings. Unknown polls, deleted polls and polls the user doesn't host are 404.
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-
-export const metadata: Metadata = { title: "Edit meeting poll" };
+import { notFound } from "next/navigation";
+import { cache } from "react";
+import { loadEditWizard } from "@/components/polls/server/host";
+import { PollWizard } from "@/components/polls/wizard/poll-wizard";
+import { getActorCtx } from "@/lib/authz";
 
 type Props = {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+const load = cache(async (id: string) => loadEditWizard(await getActorCtx(), id));
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const data = await load(id).catch(() => null);
+  return { title: data?.poll ? `${data.poll.title} - Edit meeting poll` : "Edit meeting poll" };
+}
+
 export default async function EditMeetingPollPage({ params, searchParams }: Props) {
-  await Promise.all([params, searchParams]);
-  return (
-    <>
-      <PageHeader title="Edit meeting poll" />
-      <EmptyState heading="This page is being built." />
-    </>
-  );
+  const [{ id }] = await Promise.all([params, searchParams]);
+  const props = await load(id);
+  if (!props) notFound();
+  return <PollWizard key={id} {...props} />;
 }

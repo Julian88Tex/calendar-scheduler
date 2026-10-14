@@ -1,20 +1,20 @@
-// OWNER: polls-ui. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: polls-ui.
 //
-// /app/polls/new placeholder (ARCHITECTURE section 3.1, SPEC MP-02..MP-05). The owner replaces it with the real page.
+// /app/polls/new: create a meeting poll (SPEC MP-01 to MP-05; research meeting-polls.md B3): the full-screen wizard
+// "Choose times to offer" -> "Meeting details" -> "Your meeting poll is ready". Reached from "+ Create" > "Meeting poll"
+// and the Meeting polls tab.
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { loadCreateWizard } from "@/components/polls/server/host";
+import { PollWizard } from "@/components/polls/wizard/poll-wizard";
+import { getActorCtx } from "@/lib/authz";
 
-export const metadata: Metadata = { title: "Create a meeting poll" };
+export const metadata: Metadata = { title: "New meeting poll" };
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function CreateAMeetingPollPage({ searchParams }: Props) {
   await searchParams;
-  return (
-    <>
-      <PageHeader title="Create a meeting poll" />
-      <EmptyState heading="This page is being built." />
-    </>
-  );
+  const actor = await getActorCtx();
+  const props = await loadCreateWizard(actor);
+  return <PollWizard {...props} />;
 }
