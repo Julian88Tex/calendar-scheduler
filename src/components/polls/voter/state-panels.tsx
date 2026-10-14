@@ -82,7 +82,7 @@ export function DonePanel(p: {
   return (
     <div className="flex flex-col items-center text-center" data-testid="vote-confirmation">
       <StateIcon kind="success" />
-      <h2 className="mt-4 text-headline-3 text-public-text" tabIndex={-1} data-autofocus>
+      <h2 className="mt-4 text-headline-3 text-public-text outline-none" tabIndex={-1} data-autofocus>
         {p.declined ? pt("voter.declinedThanks") : pt("voter.thanks")}
       </h2>
       <p className="mt-2 max-w-[420px] text-body text-ink-2">
@@ -113,7 +113,7 @@ export function BookedPanel({ booked, zone, hour12, location }: { booked: Booked
   return (
     <div className="flex flex-col items-center text-center" data-testid="poll-booked">
       <StateIcon kind={canceled ? "canceled" : "success"} />
-      <h2 className="mt-4 text-headline-3 text-public-text" tabIndex={-1} data-autofocus>
+      <h2 className="mt-4 text-headline-3 text-public-text outline-none" tabIndex={-1} data-autofocus>
         {canceled ? pt("voter.bookedCanceled") : pt("voter.bookedTitle")}
       </h2>
       <div className={cn("mt-6 w-full max-w-[440px] rounded-[var(--radius-card)] border border-line p-5 text-left", canceled && "opacity-80")}>
@@ -162,7 +162,7 @@ export function MessagePanel({ kind, title, hint, children }: { kind: "closed" |
   return (
     <div className="flex flex-col items-center text-center" data-testid={`poll-state-${kind}`}>
       <StateIcon kind={kind} />
-      <h2 className="mt-4 text-headline-3 text-public-text" tabIndex={-1} data-autofocus>
+      <h2 className="mt-4 text-headline-3 text-public-text outline-none" tabIndex={-1} data-autofocus>
         {title}
       </h2>
       {hint && <p className="mt-2 max-w-[420px] text-body text-ink-2">{hint}</p>}

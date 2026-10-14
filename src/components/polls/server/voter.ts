@@ -12,6 +12,7 @@ import { embedDisplayParams } from "@/lib/embed-events";
 import { getEnv } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { getVoterView, issuePollFormToken, readCheckCookieFromHeaders, readEditTokenFromHeaders, readVoterCalendarCheck } from "@/lib/polls/server";
+import { pt } from "../lib/t";
 import type { VoterPageProps, VoterShell } from "../types";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
@@ -121,7 +122,7 @@ export async function loadVoterPage(rawSlug: string, sp: SearchParams): Promise<
         oauthError: oauthCode
           ? isOAuthErrorCode(oauthCode)
             ? oauthErrorMessage(oauthCode, { provider: provider === "google" || provider === "microsoft" ? provider : null })
-            : "We couldn't check your calendar. Try again."
+            : pt("voter.calendarCheckFailed")
           : null,
       },
       resultsHref: view.viewerIsHost ? `/app/polls/${result.pollId}` : null,

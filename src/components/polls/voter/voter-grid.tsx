@@ -30,12 +30,12 @@ export function VoterGrid(p: VoterGridProps) {
   const ordered = groups.flatMap((g) => g.options);
   const others = p.participants.filter((x) => !x.isYou);
   return (
-    <div className="max-w-full overflow-x-auto rounded-[var(--radius-card)] border border-line scrollbar-thin" data-testid="voter-grid">
+    <div className="max-h-[min(70vh,640px)] max-w-full overflow-auto rounded-[var(--radius-card)] border border-line scrollbar-thin" data-testid="voter-grid">
       <table className="w-max min-w-full border-collapse text-body-md">
         <caption className="sr-only">{pt("voter.gridView")}</caption>
-        <thead>
+        <thead className="sticky top-0 z-20">
           <tr>
-            <th scope="col" rowSpan={2} className="sticky left-0 z-20 min-w-[140px] border-b border-line bg-white px-3 py-2 text-left text-label-sm text-ink-2">
+            <th scope="col" rowSpan={2} className="sticky left-0 z-30 min-w-[140px] border-b border-line bg-white px-3 py-2 text-left text-label-sm text-ink-2">
               {pt("results.participant")}
             </th>
             {groups.map((g) => (

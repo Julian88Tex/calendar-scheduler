@@ -95,10 +95,14 @@ export async function loadPollsList(actor: ActorCtx, sp: SearchParams): Promise<
   };
 }
 
-/** The ?book={optionId} and ?duplicate=1 deep links of the results page (unknown options are ignored). */
+/**
+ * The ?book={optionId} and ?duplicate=1 deep links of the results page. "Book this time" opens the Book dialog only
+ * while the poll can be booked (open or closed) and the time is still ahead; unknown options are ignored.
+ */
 export function resultsDeepLinks(data: ResultsPageProps["data"], sp: SearchParams): Pick<ResultsPageProps, "bookOptionId" | "offerDuplicate"> {
   const book = one(sp, "book");
-  return { bookOptionId: book && data.options.some((o) => o.id === book && !o.isPast) ? book : null, offerDuplicate: one(sp, "duplicate") === "1" };
+  const bookable = data.poll.status === "open" || data.poll.status === "closed";
+  return { bookOptionId: book && bookable && data.options.some((o) => o.id === book && !o.isPast) ? book : null, offerDuplicate: one(sp, "duplicate") === "1" };
 }
 
 /** Results page data; null for an unknown poll or one the actor can't open (the page answers 404). */

@@ -18,6 +18,7 @@ import { groupOptionsByLocalDate, optionTimeLabel } from "@/lib/polls/display";
 import type { HostParticipantView, RankedOptionView, VoteChoice } from "@/lib/polls/types";
 import { looksLikeEmail } from "@/lib/polls/validation";
 import { failureMessage, fieldErrorsOf, unwrap } from "../lib/action";
+import { futureVotes } from "../lib/answers";
 import { pt } from "../lib/t";
 
 export function VotesEditor({
@@ -80,8 +81,8 @@ export function AddParticipantDialog(p: Common & { open: boolean; onOpenChange: 
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     const next: Record<string, string> = {};
-    if (!name.trim()) next.name = "Enter a name.";
-    if (email.trim() && !looksLikeEmail(email.trim())) next.email = "Enter a valid email address.";
+    if (!name.trim()) next.name = pt("common.nameRequired");
+    if (email.trim() && !looksLikeEmail(email.trim())) next.email = pt("common.emailInvalid");
     setErrors(next);
     if (Object.keys(next).length) return;
     setBusy(true);
@@ -93,7 +94,7 @@ export function AddParticipantDialog(p: Common & { open: boolean; onOpenChange: 
           email: email.trim() || null,
           isRequired: required,
           notify: Boolean(email.trim()) && notify,
-          votes: Object.entries(votes).map(([optionId, choice]) => ({ optionId, choice })),
+          votes: futureVotes(p.options, votes),
         }),
       );
       toast.success(pt("results.participantAdded"));
@@ -154,15 +155,12 @@ export function EditVotesDialog(p: Common & { participant: HostParticipantView; 
     setBusy(true);
     setError(null);
     try {
-      const future = new Set(p.options.filter((o) => !o.isPast).map((o) => o.id));
       await unwrap(
         setParticipantVotesAction({
           pollId: p.pollId,
           participantId: p.participant.id,
           notify: Boolean(p.participant.email) && notify,
-          votes: Object.entries(votes)
-            .filter(([id]) => future.has(id))
-            .map(([optionId, choice]) => ({ optionId, choice })),
+          votes: futureVotes(p.options, votes),
         }),
       );
       toast.success(pt("results.votesSaved"));

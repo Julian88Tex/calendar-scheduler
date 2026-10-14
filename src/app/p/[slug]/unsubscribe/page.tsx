@@ -3,7 +3,8 @@
 // /p/{slug}/unsubscribe?t={token}: the per-poll unsubscribe page of participant emails (SPEC MP-23, GEN-08). Opening
 // the link changes nothing (link scanners are harmless): the page explains what stops and shows an "Unsubscribe"
 // button that POSTs to polls-core's /api/public/polls/{slug}/unsubscribe (works without JavaScript), which redirects
-// back here with done=1. Invalid tokens and deleted polls get a short explanation. Never indexed.
+// back here with done=1; the confirmation shows only once the participant really is unsubscribed. Invalid tokens and
+// deleted polls get a short explanation. Never indexed.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BookingCard, BookingMainSection } from "@/components/public/booking-card";
@@ -34,7 +35,9 @@ export default async function UnsubscribePage({ params, searchParams }: Props) {
   if (!slug) notFound();
   const token = one(sp.t)?.slice(0, 300) ?? null;
   const [ctx, operatorEmail] = await Promise.all([token ? getUnsubscribeContext(slug, token) : Promise.resolve(null), getOperatorEmail()]);
-  const done = one(sp.done) === "1" || Boolean(ctx?.unsubscribed);
+  // The stored state decides (a hand-edited ?done=1 never claims an unsubscribe that didn't happen); the form post
+  // comes back with ?done=1 after polls-core saved it.
+  const done = Boolean(ctx?.unsubscribed);
   const pollHref = `/p/${encodeURIComponent(slug)}`;
 
   return (

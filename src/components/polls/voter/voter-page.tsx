@@ -23,13 +23,13 @@ import { TimeZoneButton } from "@/components/ui/time-zone-select";
 import { toast } from "@/components/ui/toast";
 import { readFallbackCookie } from "@/lib/client/embed-cookie";
 import { isInIframe, postPageHeight } from "@/lib/embed-events";
-import { EDIT_COOKIE, POLL_COPY } from "@/lib/polls/constants";
+import { EDIT_COOKIE, POLL_COPY, POLL_ERRORS } from "@/lib/polls/constants";
 import { groupOptionsByLocalDate } from "@/lib/polls/display";
 import type { VoteChoice, VoterCalendarCheck, VoterPollView } from "@/lib/polls/types";
-import { looksLikeEmail } from "@/lib/polls/validation";
 import { friendlyZoneName } from "@/lib/time/zones";
 import { CommentsThread } from "../comments";
 import { applyChoice, attending, countAttending, selectState, votesPayload, type Answers } from "../lib/answers";
+import { looksLikeEmail } from "../lib/email";
 import { relativeTime } from "../lib/format";
 import { pt, ptCount } from "../lib/t";
 import type { VoterPageProps } from "../types";
@@ -260,11 +260,11 @@ export function VoterPage(props: VoterPageProps) {
 
   const validate = (): boolean => {
     const next: typeof errors = {};
-    if (!values.name.trim()) next.name = "Enter your name.";
+    if (!values.name.trim()) next.name = POLL_ERRORS.nameRequired;
     const email = values.email.trim();
-    if (poll.requireEmail && !email) next.email = "Enter your email.";
-    else if (email && !looksLikeEmail(email)) next.email = "Enter a valid email address.";
-    if (codeStep && values.code.length !== 6) next.code = "Enter the 6-digit code we sent to your email.";
+    if (poll.requireEmail && !email) next.email = POLL_ERRORS.emailRequired;
+    else if (email && !looksLikeEmail(email)) next.email = POLL_ERRORS.emailInvalid;
+    if (codeStep && values.code.length !== 6) next.code = pt("voter.verifyCodeRequired");
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -296,7 +296,7 @@ export function VoterPage(props: VoterPageProps) {
         try {
           turnstileToken = await turnstile.current.token(turnstileRef.current);
         } catch {
-          setErrors({ form: "We couldn't verify you're not a robot. Try again." });
+          setErrors({ form: pt("voter.robotCheckFailed") });
           return;
         }
       }
@@ -441,6 +441,35 @@ export function VoterPage(props: VoterPageProps) {
     </div>
   );
 
+  // Read only results of a closed or booked poll when the poll shows votes (MP-15).
+  const readOnlyResults = view.options.some((o) => o.counts) ? (
+    <div className="mt-8 flex flex-col gap-2" data-testid="readonly-results">
+      {groups.map((g) => (
+        <section key={g.date} aria-label={g.label} className="flex flex-col gap-2">
+          <h3 className="text-title-sm text-public-text">{g.label}</h3>
+          {g.options.map((o) => (
+            <OptionRow
+              key={o.id}
+              option={o}
+              dateLabel={g.label}
+              zone={zone}
+              hour12={hour12}
+              showDuration={showDuration}
+              value={stored[o.id]}
+              allowIfNeedBe={poll.allowIfNeedBe}
+              single={single}
+              blockedReason={() => null}
+              onChange={() => undefined}
+              readOnly
+              freeBusy={null}
+              isNew={false}
+            />
+          ))}
+        </section>
+      ))}
+    </div>
+  ) : null;
+
   let main: React.ReactNode;
   if (poll.status === "booked" && view.booked) {
     main = (
@@ -449,12 +478,14 @@ export function VoterPage(props: VoterPageProps) {
         <div className="mt-2">
           <BookedPanel booked={view.booked} zone={zone} hour12={hour12} location={poll.location} />
         </div>
-        {view.me?.submitted && (
+        {/* The read only results already show the voter's own answers. */}
+        {view.me?.submitted && !readOnlyResults && (
           <div className="mx-auto mt-8 max-w-[440px]">
             <p className="mb-2 text-eyebrow text-ink-2">{pt("voter.yourAnswers")}</p>
             <AnswerSummary options={view.options} votes={view.me.votes} zone={zone} pollZone={poll.timezone} hour12={hour12} />
           </div>
         )}
+        {readOnlyResults}
         {comments}
       </BookingMainSection>
     );
@@ -465,7 +496,7 @@ export function VoterPage(props: VoterPageProps) {
         {banners}
         <div className="mt-2">
           <MessagePanel kind={ended ? "ended" : "closed"} title={ended ? pt("voter.expiredTitle") : pt("voter.closedTitle")} hint={ended ? pt("voter.expiredHint") : pt("voter.closedHint")}>
-            {view.me?.submitted && (
+            {view.me?.submitted && (ended || !readOnlyResults) && (
               <div className="mx-auto max-w-[440px]">
                 <p className="mb-2 text-eyebrow text-ink-2">{pt("voter.yourAnswers")}</p>
                 <AnswerSummary options={view.options} votes={view.me.votes} zone={zone} pollZone={poll.timezone} hour12={hour12} />
@@ -473,33 +504,7 @@ export function VoterPage(props: VoterPageProps) {
             )}
           </MessagePanel>
         </div>
-        {!ended && view.options.some((o) => o.counts) && (
-          <div className="mt-8 flex flex-col gap-2">
-            {groups.map((g) => (
-              <section key={g.date} aria-label={g.label} className="flex flex-col gap-2">
-                <h3 className="text-title-sm text-public-text">{g.label}</h3>
-                {g.options.map((o) => (
-                  <OptionRow
-                    key={o.id}
-                    option={o}
-                    dateLabel={g.label}
-                    zone={zone}
-                    hour12={hour12}
-                    showDuration={showDuration}
-                    value={stored[o.id]}
-                    allowIfNeedBe={poll.allowIfNeedBe}
-                    single={single}
-                    blockedReason={() => null}
-                    onChange={() => undefined}
-                    readOnly
-                    freeBusy={null}
-                    isNew={false}
-                  />
-                ))}
-              </section>
-            ))}
-          </div>
-        )}
+        {!ended && readOnlyResults}
         {comments}
       </BookingMainSection>
     );
@@ -690,11 +695,6 @@ export function VoterPage(props: VoterPageProps) {
             </div>
           )}
 
-          {future.length >= 3 && selectedCount === 1 && !single && (
-            <p className="mt-4 text-body-md text-ink-2" role="status">
-              {POLL_COPY.singleSpotWarning.trim()}
-            </p>
-          )}
           {comments}
         </BookingMainSection>
 
@@ -702,6 +702,11 @@ export function VoterPage(props: VoterPageProps) {
           {answersError && (
             <p className="mb-2 text-body-sm text-danger-text" role="alert">
               {answersError}
+            </p>
+          )}
+          {future.length >= 3 && selectedCount === 1 && !single && (
+            <p className="mb-2 text-body-sm text-ink-2" role="status">
+              {POLL_COPY.singleSpotWarning.trim()}
             </p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">

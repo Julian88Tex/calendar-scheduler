@@ -93,6 +93,7 @@ export function ResultsView({ data, viewer, bookOptionId, offerDuplicate }: Resu
   const [editing, setEditing] = useState<HostParticipantView | null>(null);
   const [removing, setRemoving] = useState<HostParticipantView | null>(null);
   const [reminding, setReminding] = useState(false);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
   const [holdsBusy, setHoldsBusy] = useState(false);
   const [prefsOverride, setPrefs] = useState<Record<string, VoteChoice> | null>(null);
   const prefs = prefsOverride ?? s.hostPreferences;
@@ -508,10 +509,31 @@ export function ResultsView({ data, viewer, bookOptionId, offerDuplicate }: Resu
             ) : (
               <ul className="mt-2 flex flex-col divide-y divide-line">
                 {notResponded.map((x) => (
-                  <li key={x.id} className="py-2">
-                    <p className="truncate text-label text-ink">{x.name || x.email}</p>
-                    {x.name && x.email && <p className="truncate text-body-sm text-ink-2">{x.email}</p>}
-                    <p className="text-body-sm text-ink-2">{x.lastRemindedAt ? pt("results.reminded", { relative: relativeTime(x.lastRemindedAt, now) }) : x.invitedAt ? pt("results.invitedAt", { relative: relativeTime(x.invitedAt, now) }) : pt("results.neverReminded")}</p>
+                  <li key={x.id} className="flex items-start justify-between gap-2 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-label text-ink">{x.name || x.email}</p>
+                      {x.name && x.email && <p className="truncate text-body-sm text-ink-2">{x.email}</p>}
+                      <p className="text-body-sm text-ink-2">{x.lastRemindedAt ? pt("results.reminded", { relative: relativeTime(x.lastRemindedAt, now) }) : x.invitedAt ? pt("results.invitedAt", { relative: relativeTime(x.invitedAt, now) }) : pt("results.neverReminded")}</p>
+                    </div>
+                    {poll.status === "open" && x.email && !x.unsubscribed && (
+                      <Button
+                        size="sm"
+                        variant="tertiary"
+                        className="shrink-0"
+                        loading={remindingId === x.id}
+                        aria-label={`${pt("results.sendReminder")}: ${x.name || x.email}`}
+                        onClick={async () => {
+                          setRemindingId(x.id);
+                          try {
+                            await rowAction(x, "remind");
+                          } finally {
+                            setRemindingId(null);
+                          }
+                        }}
+                      >
+                        {pt("results.sendReminder")}
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>

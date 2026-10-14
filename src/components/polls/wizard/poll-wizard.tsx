@@ -21,19 +21,19 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Spinner } from "@/components/ui/spinner";
 import { Stepper } from "@/components/ui/stepper";
 import { toast } from "@/components/ui/toast";
 import { useMediaQuery } from "@/lib/client";
 import { cn } from "@/lib/cn";
 import { addPollOptionsAction, createPollAction, removePollOptionsAction, updatePollAction } from "@/lib/polls/actions";
-import { POLL_ERRORS } from "@/lib/polls/constants";
+import { MAX_OPTION_MINUTES, MIN_OPTION_MINUTES, POLL_ERRORS } from "@/lib/polls/constants";
+import { isMorePublic, MORE_PUBLIC_WARNING } from "@/lib/polls/validation";
 import { freeTimesForDay, localDate, weekDates } from "@/lib/polls/grid";
 import { formatDateMedium, formatDateShort } from "@/lib/time/format";
 import { addDays } from "@/lib/time/luxon";
 import { failureMessage, fieldErrorsOf, unwrap } from "../lib/action";
 import { clearDraft, draftOptions, readDraft, storedOptions, writeDraft, type DurationChoice } from "../lib/draft";
-import { addOptions, diffOptions, fromViews, replaceOption, sortOptions, toInput, toggleOption, type DraftOption } from "../lib/options";
+import { addOptions, diffOptions, durationInRange, fromViews, planOptionSave, replaceOption, savedIdsByKey, sortOptions, toInput, toggleOption, type DraftOption } from "../lib/options";
 import { deadlineIso, emptyDetails, settingsFromView, settingsPayload, updatePatch, type DetailsState } from "../lib/settings";
 import { pt } from "../lib/t";
 import type { WizardProps } from "../types";
@@ -44,6 +44,7 @@ import { AddTimeDialog, CopyDayDialog } from "./time-dialogs";
 import { TimesSidebar } from "./times-sidebar";
 import { useGridOverlay } from "./use-overlay";
 import { WeekGrid } from "./week-grid";
+import { WizardLoading } from "./wizard-loading";
 
 type Step = "times" | "details" | "share";
 
@@ -83,13 +84,7 @@ export function PollWizard(p: WizardProps) {
     () => true,
     () => false,
   );
-  if (!hydrated) {
-    return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center bg-canvas" aria-busy="true">
-        <Spinner size="lg" label={pt("common.loading")} />
-      </div>
-    );
-  }
+  if (!hydrated) return <WizardLoading />;
   return <WizardInner {...p} />;
 }
 
@@ -134,6 +129,9 @@ function WizardInner(p: WizardProps) {
     boot ? { ...initial.details, title: boot.d.title, descriptionHtml: boot.d.descriptionHtml, location: boot.d.location } : initial.details,
   );
   const [cohostIds, setCohostIds] = useState<string[]>(initial.cohostIds);
+  // The published times as the server has them (an edit saves in steps: after a partial failure this keeps the next
+  // attempt from removing or adding a time twice).
+  const [saved, setSaved] = useState<DraftOption[]>(initial.options);
   const [view, setView] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(() => {
     const today = localDate(Date.now(), initial.zone);
@@ -199,14 +197,14 @@ function WizardInner(p: WizardProps) {
   const dirty = useMemo(() => {
     if (created) return false;
     if (!edit) return options.length > 0 || Boolean(details.title.trim());
-    const diff = diffOptions(initial.options, options);
+    const diff = diffOptions(saved, options);
     if (diff.removedIds.length || diff.added.length) return true;
     const patch = updatePatch(
       { title: edit.title, descriptionHtml: edit.descriptionHtml, location: edit.location, timezone: edit.settings.timezone, defaultDurationMinutes: edit.defaultDurationMinutes, settings: edit.settings, cohostIds: edit.cohostIds },
       { details, timezone: zone, defaultDurationMinutes: durationMinutes ?? 1440, cohostIds },
     );
     return Object.keys(patch).length > 0;
-  }, [created, edit, initial.options, options, details, zone, durationMinutes, cohostIds]);
+  }, [created, edit, saved, options, details, zone, durationMinutes, cohostIds]);
 
   useEffect(() => {
     if (!dirty || !edit) return;
@@ -229,17 +227,30 @@ function WizardInner(p: WizardProps) {
   // Option edits
 
   const onToggle = (o: DraftOption) => {
+    if (!options.some((x) => x.key === o.key) && !durationInRange(o)) {
+      toast.error(pt("wizard.durationRange"));
+      return;
+    }
     const res = toggleOption(options, o);
     if (res.change === "full") toast.error(pt("wizard.tooMany"));
     if (res.change === "frozen") toast.error(pt("wizard.timesFrozen"));
     setOptions(res.list);
   };
-  const onAdd = (o: DraftOption) => {
+  const onAdd = (o: DraftOption): boolean => {
+    if (!durationInRange(o)) {
+      toast.error(pt("wizard.durationRange"));
+      return false;
+    }
     const res = addOptions(options, [o]);
     if (res.full) toast.error(pt("wizard.tooMany"));
     setOptions(res.list);
+    return res.added > 0;
   };
   const onAddMany = (list: DraftOption[]) => {
+    if (list.some((o) => !durationInRange(o))) {
+      toast.error(pt("wizard.durationRange"));
+      return 0;
+    }
     const res = addOptions(options, list);
     if (res.full) toast.error(pt("wizard.tooMany"));
     setOptions(res.list);
@@ -255,6 +266,10 @@ function WizardInner(p: WizardProps) {
       return;
     }
     if (durationMinutes === null) return;
+    if (durationMinutes < MIN_OPTION_MINUTES || durationMinutes > MAX_OPTION_MINUTES) {
+      toast.error(pt("wizard.durationRange"));
+      return;
+    }
     const free = freeTimesForDay({
       date,
       zone,
@@ -281,8 +296,8 @@ function WizardInner(p: WizardProps) {
 
   const validateDetails = (): boolean => {
     const next: Record<string, string[]> = {};
-    if (!details.title.trim()) next.title = ["Enter a meeting name."];
-    if (deadlineIso(details.settings, zone) === "invalid") next.deadline = ["Enter a valid date and time"];
+    if (!details.title.trim()) next.title = [pt("common.titleRequired")];
+    if (deadlineIso(details.settings, zone) === "invalid") next.deadline = [pt("details.deadlineInvalid")];
     setErrors(next);
     if (next.title) titleRef.current?.focus();
     return Object.keys(next).length === 0;
@@ -323,6 +338,11 @@ function WizardInner(p: WizardProps) {
 
   const save = async () => {
     if (!edit || busy) return;
+    if (!options.length) {
+      setStep("times");
+      setFormError(POLL_ERRORS.noOptions);
+      return;
+    }
     if (!validateDetails()) {
       setStep("details");
       return;
@@ -330,29 +350,52 @@ function WizardInner(p: WizardProps) {
     setBusy(true);
     setFormError(null);
     try {
-      const diff = diffOptions(initial.options, options);
-      if (diff.removedIds.length) {
-        let res = await unwrap(removePollOptionsAction({ pollId: edit.id, optionIds: diff.removedIds, confirm: false }));
-        if (!res.done) {
-          const ok = await confirmAsync({ title: pt("wizard.removeVotedTitle"), body: res.confirm.message || pt("wizard.removeVotedBody"), voters: res.confirm.voters, confirmLabel: pt("wizard.removeVotedConfirm") });
-          if (!ok) return;
-          res = await unwrap(removePollOptionsAction({ pollId: edit.id, optionIds: diff.removedIds, confirm: true }));
-        }
-      }
       const patch = updatePatch(
         { title: edit.title, descriptionHtml: edit.descriptionHtml, location: edit.location, timezone: edit.settings.timezone, defaultDurationMinutes: edit.defaultDurationMinutes, settings: edit.settings, cohostIds: edit.cohostIds },
         { details, timezone: zone, defaultDurationMinutes: durationMinutes ?? 1440, cohostIds },
       );
+      // Showing names to people who already voted is asked before anything is written (B14).
+      let confirmPublic = false;
+      if (patch.resultsVisibility && edit.respondentCount > 0 && isMorePublic(edit.settings.resultsVisibility, patch.resultsVisibility)) {
+        const ok = await confirmAsync({ title: pt("wizard.morePublicTitle"), body: MORE_PUBLIC_WARNING, voters: [], confirmLabel: pt("wizard.morePublicConfirm") });
+        if (!ok) return;
+        confirmPublic = true;
+      }
+      // Times first (MP-27): "Max choices" and the deadline are then checked against the final times. The plan keeps at
+      // least one time on the poll (replacing every time) and never more than 100.
+      const diff = diffOptions(saved, options);
+      let current = saved;
+      let removeConfirmed = false;
+      let notify = edit.respondentCount > 0 && notifyVoters;
+      for (const s of planOptionSave({ initialCount: saved.length, removedIds: diff.removedIds, added: diff.added })) {
+        if (s.kind === "remove") {
+          let res = await unwrap(removePollOptionsAction({ pollId: edit.id, optionIds: s.ids, confirm: removeConfirmed }));
+          if (!res.done) {
+            const ok = await confirmAsync({ title: pt("wizard.removeVotedTitle"), body: res.confirm.message || pt("wizard.removeVotedBody"), voters: res.confirm.voters, confirmLabel: pt("wizard.removeVotedConfirm") });
+            if (!ok) return;
+            removeConfirmed = true;
+            res = await unwrap(removePollOptionsAction({ pollId: edit.id, optionIds: s.ids, confirm: true }));
+          }
+          current = current.filter((o) => !o.id || !s.ids.includes(o.id));
+          setSaved(current);
+        } else {
+          const sent = sortOptions(s.options, zone);
+          const out = await unwrap(addPollOptionsAction({ pollId: edit.id, options: sent.map(toInput), notifyParticipants: notify }));
+          notify = false;
+          const ids = savedIdsByKey(sent, out.optionIds, new Set(current.map((o) => o.key)));
+          const withId = (o: DraftOption): DraftOption => (!o.id && ids.has(o.key) ? { ...o, id: ids.get(o.key)! } : o);
+          current = [...current, ...sent.filter((o) => ids.has(o.key)).map(withId)];
+          setSaved(current);
+          setOptions((list) => list.map(withId));
+        }
+      }
       if (Object.keys(patch).length) {
-        let res = await unwrap(updatePollAction({ pollId: edit.id, ...patch }));
+        let res = await unwrap(updatePollAction({ pollId: edit.id, ...patch, ...(confirmPublic ? { confirmPublic: true } : {}) }));
         if (!res.done) {
           const ok = await confirmAsync({ title: pt("wizard.morePublicTitle"), body: res.confirm.message, voters: [], confirmLabel: pt("wizard.morePublicConfirm") });
           if (!ok) return;
           res = await unwrap(updatePollAction({ pollId: edit.id, ...patch, confirmPublic: true }));
         }
-      }
-      if (diff.added.length) {
-        await unwrap(addPollOptionsAction({ pollId: edit.id, options: sortOptions(diff.added, zone).map(toInput), notifyParticipants: edit.respondentCount > 0 && notifyVoters }));
       }
       toast.success(pt("wizard.saved"));
       router.push(`/app/polls/${edit.id}` as Route);
@@ -384,7 +427,7 @@ function WizardInner(p: WizardProps) {
   const firstDate = dates[0]!;
   const prevDisabled = firstDate <= today;
   const nextDisabled = firstDate > addDays(today, 360);
-  const newWithVoters = Boolean(edit && edit.respondentCount > 0 && diffOptions(initial.options, options).added.length > 0);
+  const newWithVoters = Boolean(edit && edit.respondentCount > 0 && diffOptions(saved, options).added.length > 0);
 
   function shiftDay(delta: number) {
     const current = gridDates[0]!;
@@ -644,8 +687,7 @@ function WizardInner(p: WizardProps) {
           durationMinutes={durationMinutes}
           initialDate={gridDates[0]!}
           onAdd={(o) => {
-            onAdd(o);
-            toast.success(pt("wizard.added"));
+            if (onAdd(o)) toast.success(pt("wizard.added"));
           }}
         />
       )}

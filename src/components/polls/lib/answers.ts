@@ -70,3 +70,8 @@ export function applyChoice(current: Answers, optionId: string, choice: VoteChoi
 export function votesPayload(answers: Answers, futureIds: readonly string[]): { optionId: string; choice: VoteChoice }[] {
   return futureIds.map((optionId) => ({ optionId, choice: answers[optionId] ?? "no" }));
 }
+
+/** Host edits on behalf (MP-17): every future time with the answer the editor shows (No when untouched). */
+export function futureVotes(options: readonly { id: string; isPast: boolean }[], value: Answers): { optionId: string; choice: VoteChoice }[] {
+  return options.filter((o) => !o.isPast).map((o) => ({ optionId: o.id, choice: value[o.id] ?? "no" }));
+}

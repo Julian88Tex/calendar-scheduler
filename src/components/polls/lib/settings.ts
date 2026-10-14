@@ -4,10 +4,9 @@
 // off), invitees see each other in the invite (Hide invitees off), email required, no verification, no comments, no
 // deadline, no limits, each voter's own time zone, instant vote notifications, smart reminders, no auto booking.
 import type { LocationConfig } from "@/db/types";
-import { wallClockToUtc } from "@/lib/time/luxon";
 import type { NotifyMode, PollSettingsView, PollVisibility, ReminderMode, ReminderOffset, TimeZoneMode } from "@/lib/polls/types";
 import type { CreatePollInput, UpdatePollInput } from "@/lib/polls/validation";
-import { localDateOf, localMinutesOf } from "@/lib/time/luxon";
+import { localDateOf, localMinutesOf, wallClockToUtc } from "@/lib/time/luxon";
 
 export type ReminderRow = { kind: ReminderOffset["kind"]; amount: number; unit: "hours" | "days" };
 
@@ -163,7 +162,8 @@ export function updatePatch(
   if (next.defaultDurationMinutes !== initial.defaultDurationMinutes) patch.defaultDurationMinutes = next.defaultDurationMinutes;
   const before = settingsPayload(settingsFromView(initial.settings), initial.timezone);
   const after = settingsPayload(d.settings, next.timezone);
-  // A deadline entered in the old zone keeps its instant unless the host edits it.
+  // The deadline fields are wall time in the poll zone the form names ("Deadline in {zone}"): unchanged fields in the same
+  // zone send nothing; after a zone change they mean that wall time in the new zone, exactly as shown.
   const initialDeadline = initial.settings.deadline;
   const keys = Object.keys(after) as (keyof SettingsPayload)[];
   for (const k of keys) {
@@ -175,7 +175,7 @@ export function updatePatch(
       continue;
     }
     if (k === "reminderOffsets" && after.reminderMode !== "custom" && before.reminderMode !== "custom") continue;
-    if (!sameValue(after[k], before[k])) (patch as Record<string, unknown>)[k] = after[k];
+    if (!same(after[k], before[k])) (patch as Record<string, unknown>)[k] = after[k];
   }
   const a = [...next.cohostIds].sort();
   const b = [...initial.cohostIds].sort();
@@ -183,6 +183,24 @@ export function updatePatch(
   return patch;
 }
 
-function sameValue(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** Fields inside "More settings": an error on one of them opens the section so the message is visible. */
+const MORE_FIELDS = new Set([
+  "resultsVisibility",
+  "allowIfNeedBe",
+  "hideInvitees",
+  "requireEmail",
+  "verifyEmail",
+  "allowComments",
+  "deadline",
+  "maxVotesPerOption",
+  "maxChoicesPerParticipant",
+  "timeZoneMode",
+  "notifyMode",
+  "reminderMode",
+  "reminderOffsets",
+  "autoBook",
+]);
+
+export function errorInMoreSettings(errors: Record<string, string[]>): boolean {
+  return Object.entries(errors).some(([k, v]) => MORE_FIELDS.has(k.split(".")[0]!) && Boolean(v?.length));
 }

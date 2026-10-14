@@ -2,9 +2,9 @@
 // option), "Your preference" (Doodle organizer answers; counted only with "Count my preference"), respondents in
 // submission order, then invited people who haven't responded (grayed, "Invited, no response"); columns are options
 // grouped by date. Cells: check (Yes), tilde (If need be), empty (No), "?" (added after their last answer), dash (no
-// answer). A totals row with the star over the best columns. A real table with th scope, sticky first column and
-// header, horizontal scroll inside its container. Row menu: Edit votes, Copy email, Mark as required, Resend invite,
-// Send reminder, Remove. Client component.
+// answer). A totals row with the star over the best columns. A real table with th scope, a sticky first column and a
+// sticky header (it stays on top while the rows scroll inside the container, which also scrolls sideways). Row menu:
+// Edit votes, Copy email, Mark as required, Resend invite, Send reminder, Remove. Client component.
 "use client";
 
 import { MoreVertical, Star, UserPlus } from "lucide-react";
@@ -73,12 +73,12 @@ export function ResultsGrid(p: ResultsGridProps) {
           </Button>
         )}
       </div>
-      <div className="max-w-full overflow-x-auto rounded-[var(--radius-card)] border border-line bg-white scrollbar-thin">
+      <div className="max-h-[min(70vh,720px)] max-w-full overflow-auto rounded-[var(--radius-card)] border border-line bg-white scrollbar-thin">
         <table className="w-max min-w-full border-collapse text-body-md">
           <caption className="sr-only">{pt("results.gridCaption")}</caption>
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr>
-              <th scope="col" rowSpan={2} className="sticky left-0 z-20 min-w-[200px] border-b border-line bg-white px-3 py-2 text-left text-label-sm text-ink-2">
+              <th scope="col" rowSpan={2} className="sticky left-0 z-30 min-w-[200px] border-b border-line bg-white px-3 py-2 text-left text-label-sm text-ink-2">
                 {pt("results.participant")}
               </th>
               {groups.map((g) => (
@@ -89,7 +89,7 @@ export function ResultsGrid(p: ResultsGridProps) {
             </tr>
             <tr>
               {ordered.map((o) => (
-                <th key={o.id} scope="col" className={cn("min-w-[92px] border-b border-l border-line px-2 py-1.5 text-center text-body-sm font-semibold whitespace-nowrap text-ink", o.isPast && "text-ink-2")}>
+                <th key={o.id} scope="col" className={cn("min-w-[92px] border-b border-l border-line bg-white px-2 py-1.5 text-center text-body-sm font-semibold whitespace-nowrap text-ink", o.isPast && "text-ink-2")}>
                   {o.isBest && (
                     <>
                       <Star aria-hidden="true" className="mx-auto mb-0.5 size-4 fill-primary text-primary" />

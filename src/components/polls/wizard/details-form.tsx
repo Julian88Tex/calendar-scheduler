@@ -25,7 +25,7 @@ import { MAX_DESCRIPTION_LENGTH, MAX_POLL_OPTIONS, MAX_TITLE_LENGTH, MAX_VOTES_P
 import type { LocationKind } from "@/db/types";
 import { friendlyZoneName } from "@/lib/time/zones";
 import { localDateOf } from "@/lib/time/luxon";
-import type { DetailsState, ReminderRow, SettingsState } from "../lib/settings";
+import { errorInMoreSettings, type DetailsState, type ReminderRow, type SettingsState } from "../lib/settings";
 import { pt } from "../lib/t";
 
 const POLL_LOCATION_KINDS: LocationKind[] = ["google_conference", "physical"];
@@ -74,7 +74,13 @@ function first(errors: Record<string, string[]>, ...keys: string[]): string | nu
 }
 
 export function DetailsForm(p: DetailsFormProps) {
-  const [moreOpen, setMoreOpen] = useState(() => Object.keys(p.errors).some((k) => k !== "title" && k !== "location" && k !== "descriptionHtml"));
+  const [moreOpen, setMoreOpen] = useState(() => errorInMoreSettings(p.errors));
+  // New errors (a failed save) on a collapsed setting open "More settings" (state adjusted while rendering).
+  const [seenErrors, setSeenErrors] = useState(p.errors);
+  if (seenErrors !== p.errors) {
+    setSeenErrors(p.errors);
+    if (errorInMoreSettings(p.errors)) setMoreOpen(true);
+  }
   const v = p.value;
   const s = v.settings;
   const set = (patch: Partial<DetailsState>) => p.onChange({ ...v, ...patch });
@@ -113,7 +119,7 @@ export function DetailsForm(p: DetailsFormProps) {
           label={pt("details.location")}
           errors={p.errors.location ? { "": p.errors.location } : undefined}
         />
-        <p className="text-body-sm text-ink-2">{p.locationLocked ? "The location of a scheduled meeting can't be changed here." : pt("details.locationHint")}</p>
+        <p className="text-body-sm text-ink-2">{p.locationLocked ? pt("details.locationLocked") : pt("details.locationHint")}</p>
       </div>
 
       <FormField label={pt("details.description")} error={first(p.errors, "descriptionHtml")}>

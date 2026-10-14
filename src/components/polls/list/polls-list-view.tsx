@@ -40,6 +40,14 @@ export function PollsListView(props: PollsListProps) {
   const [cursor, setCursor] = useState<string | null>(props.nextCursor);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pending, startTransition] = useTransition();
+  // A refresh after a card action (close, delete, duplicate) brings a new first page: the pages loaded with "Load more"
+  // may be stale, so they go and "Load more" starts again from the new cursor (state adjusted while rendering).
+  const [firstPage, setFirstPage] = useState(props.items);
+  if (firstPage !== props.items) {
+    setFirstPage(props.items);
+    setExtra([]);
+    setCursor(props.nextCursor);
+  }
   const items = [...props.items, ...extra.filter((e) => !props.items.some((i) => i.id === e.id))];
 
   const setQuery = (patch: Record<string, string | null>) => {

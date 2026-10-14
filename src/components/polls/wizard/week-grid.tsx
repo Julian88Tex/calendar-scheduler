@@ -504,7 +504,7 @@ export function WeekGrid(p: WeekGridProps) {
         </div>
       </div>
       <p id="poll-grid-help" className="sr-only">
-        Use the arrow keys to move between times. Press Enter to add or remove a time. Press Delete to remove the times at the focused slot.
+        {pt("wizard.gridHelp")}
       </p>
     </div>
   );
@@ -672,14 +672,14 @@ function DayColumn({ refCb, ...c }: DayColumnProps) {
             title={over ? (overTitle ? pt("wizard.overlaps", { title: overTitle }) : pt("wizard.overlapsBusy")) : undefined}
             onPointerDown={c.startMove(o, date)}
             className={cn(
-              "absolute z-20 overflow-hidden rounded-[4px] px-1.5 py-0.5 text-[11px] leading-[14px] font-semibold shadow-sm",
+              "group absolute z-20 overflow-hidden rounded-[4px] px-1.5 py-0.5 text-[11px] leading-[14px] font-semibold shadow-sm",
               o.frozen ? "bg-mist text-ink-2" : "bg-brand text-white",
               over && !o.frozen && "outline-2 outline-offset-0 outline-warning",
               editable ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-default",
             )}
             style={{ top: s.top + 1, height: height - 2, left: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)` }}
           >
-            <span className="block truncate pr-4">{formatTime(iv.start, c.zone, "en", c.hour12)}</span>
+            <span className={cn("block truncate", lanes === 1 && "pr-4")}>{formatTime(iv.start, c.zone, "en", c.hour12)}</span>
             {height >= 30 && <span className="block truncate font-normal opacity-90">{formatTime(iv.end, c.zone, "en", c.hour12)}</span>}
             {over && <span className="sr-only">{overTitle ? pt("wizard.overlaps", { title: overTitle }) : pt("wizard.overlapsBusy")}</span>}
             {!o.frozen && !c.locked && (
@@ -690,7 +690,11 @@ function DayColumn({ refCb, ...c }: DayColumnProps) {
                   e.stopPropagation();
                   c.onRemove(o.key);
                 }}
-                className="absolute top-0.5 right-0.5 inline-flex size-4 items-center justify-center rounded-full hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-white"
+                className={cn(
+                  "absolute top-0.5 right-0.5 inline-flex size-4 items-center justify-center rounded-full hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-white",
+                  // Side by side blocks are narrow: the remove button shows on hover or focus so the start time fits.
+                  lanes > 1 && "bg-brand opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                )}
               >
                 <X aria-hidden="true" className="size-3" />
               </button>

@@ -19,6 +19,12 @@ function cell(page: Page, date: string, time: string) {
   return page.locator(`[data-cell^="${date}:"][aria-label$=", ${time}"]`);
 }
 
+/** Screenshots for visual review when POLLS_UI_SHOTS names a directory. */
+async function shot(page: Page, name: string) {
+  const dir = process.env.POLLS_UI_SHOTS;
+  if (dir) await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });
+}
+
 async function voterContext(browser: Browser, baseURL: string, timezoneId: string, mobile = false) {
   return browser.newContext({
     baseURL,
@@ -69,15 +75,18 @@ test.describe("meeting polls UI", () => {
     expect(dates).toHaveLength(7);
     const [tue, wed] = [dates[2]!, dates[3]!];
     await cell(page, tue, "10am").click();
-    await cell(page, tue, "10:15am").click();
+    // 10:15 lies under the 10:00 option: a click there adds an overlapping time (they sit side by side).
+    await cell(page, tue, "10:15am").click({ force: true });
     await cell(page, wed, "2pm").click();
     await expect(page.getByTestId("grid-option")).toHaveCount(3);
     await expect(page.getByTestId("selected-count")).toHaveText("3/100 times selected");
-    // Clicking the same slot again toggles it off, and back on.
-    await cell(page, wed, "2pm").click();
+    // Clicking a time's own start again toggles it off; the keyboard adds it back (Enter on the focused slot).
+    await cell(page, wed, "2pm").click({ force: true });
     await expect(page.getByTestId("grid-option")).toHaveCount(2);
-    await cell(page, wed, "2pm").click();
+    await cell(page, wed, "2pm").focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByTestId("grid-option")).toHaveCount(3);
+    await shot(page, "wizard-times");
     await page.getByTestId("wizard-next").click();
 
     // Step 2: details with If need be on (More settings; MP-04 default is off).
@@ -89,6 +98,7 @@ test.describe("meeting polls UI", () => {
     await expect(page.getByTestId("setting-hide-invitees").getByRole("switch")).toHaveAttribute("aria-checked", "false");
     await ifNeedBe.click();
     await page.getByTestId("setting-show-votes").getByRole("switch").click();
+    await shot(page, "wizard-details");
     await page.getByTestId("share-poll").click();
 
     // Share screen.
@@ -96,6 +106,7 @@ test.describe("meeting polls UI", () => {
     const link = (await page.getByTestId("poll-link").textContent())!.trim();
     expect(link).toMatch(new RegExp(`^${baseURL}/p/[a-z0-9-]+$`));
     const slug = link.split("/p/")[1]!;
+    await shot(page, "wizard-share");
     await page.getByTestId("share-done").click();
     await expect(page.getByTestId("results-title")).toHaveText("Roadmap sync", { timeout: 60_000 });
     const pollUrl = page.url();
@@ -105,10 +116,11 @@ test.describe("meeting polls UI", () => {
     const v1 = await ctx1.newPage();
     await v1.goto(link);
     await expect(v1.getByTestId("poll-label")).toHaveText("Meeting poll", { timeout: 60_000 });
-    await expect(v1.getByText("India Standard Time").first()).toBeVisible();
+    await expect(v1.getByRole("button", { name: /Time zone/ }).first()).toContainText(/India/);
     // 10:00 in Berlin is 13:30 or 14:30 in Kolkata (CEST/CET).
     await expect(v1.getByTestId("poll-option").first()).toContainText(/(1|2):30pm/);
     await expect(v1.getByTestId("answer-legend")).toBeVisible();
+    await shot(v1, "voter");
     await axe(v1);
     await vote(v1, { url: link, picks: [{ index: 0, clicks: 1 }, { index: 2, clicks: 2 }], name: "Priya Raman", email: "priya@example.com" });
     await expect(v1.getByTestId("answer-summary")).toContainText("If need be");
@@ -147,8 +159,10 @@ test.describe("meeting polls UI", () => {
     await expect(page.getByTestId("top-time").first()).toHaveAttribute("data-best", "true", { timeout: 30_000 });
     await expect(page.getByTestId("best-badge").first()).toBeVisible();
     await expect(page.getByTestId("top-time-counts").first()).toContainText("2 Yes");
+    await shot(page, "results-top");
     await page.getByRole("tab", { name: "Grid" }).click();
     await expect(page.getByTestId("grid-participant")).toHaveCount(2);
+    await shot(page, "results-grid");
     await axe(page, { include: "[data-testid=results-grid]" });
     await page.getByRole("tab", { name: "Top times" }).click();
 
@@ -156,6 +170,7 @@ test.describe("meeting polls UI", () => {
     await page.getByTestId("book-option").first().click();
     await expect(page.getByTestId("book-dialog")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("book-dialog")).toContainText("Priya Raman");
+    await shot(page, "book-dialog");
     await page.getByTestId("book-submit").click();
     await expect(page.getByText("Meeting booked. Invitations are on their way.")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("booked-banner")).toBeVisible({ timeout: 30_000 });
@@ -164,6 +179,10 @@ test.describe("meeting polls UI", () => {
     // Voters see the booked state; invitees get the join link and "Add to calendar".
     await v2.goto(link);
     await expect(v2.getByRole("heading", { name: "This meeting has been scheduled." })).toBeVisible({ timeout: 30_000 });
+    // The poll shows votes, so the results stay visible read only (MP-15), with this voter's answers in them.
+    await expect(v2.getByTestId("readonly-results").getByTestId("poll-option")).toHaveCount(3);
+    await expect(v2.getByTestId("readonly-results").getByTestId("answer-control").first()).toHaveAttribute("aria-checked", "true");
+    await shot(v2, "voter-booked");
     await expect(v2.getByRole("link", { name: /Google/ }).first()).toBeVisible();
     await ctx1.close();
     await ctx2.close();
@@ -173,6 +192,7 @@ test.describe("meeting polls UI", () => {
     await page.goto("/app/scheduling/meeting-polls?filter=booked");
     await expect(page.getByTestId("poll-card")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId("poll-card")).toContainText("Booked for");
+    await shot(page, "list");
   });
 
   test("phone vote with the sticky footer, closed voting, and the unsubscribe page", async ({ page, browser, api, loginAs, axe, baseURL }) => {
@@ -195,7 +215,12 @@ test.describe("meeting polls UI", () => {
 
     // Invite someone (for the unsubscribe link).
     await page.goto(`/app/polls/${poll.pollId}`);
-    await page.getByRole("button", { name: "Invite people" }).click();
+    await expect(page.getByTestId("results-title")).toHaveText("Lunch and learn", { timeout: 60_000 });
+    // A click before the page hydrates is lost in dev mode: retry until the dialog is open.
+    await expect(async () => {
+      await page.getByRole("button", { name: "Invite people" }).click();
+      await expect(page.getByTestId("invite-recipients")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
     await page.getByTestId("invite-recipients").fill("Mia Chen <mia@example.com>");
     await page.getByTestId("invite-send").click();
     await expect(page.getByText("Invitation sent")).toBeVisible({ timeout: 30_000 });
@@ -215,6 +240,7 @@ test.describe("meeting polls UI", () => {
     await expect(m.getByText("Reminder: Voting for multiple times helps the poll host find the best meeting time for everyone.")).toBeVisible();
     const box = await footer.boundingBox();
     expect(box && box.y + box.height).toBeLessThanOrEqual(845);
+    await shot(m, "voter-phone");
     const width = await m.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(390);
     await axe(m);
@@ -233,10 +259,44 @@ test.describe("meeting polls UI", () => {
     await expect(u.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
     await u.getByRole("button", { name: "Unsubscribe" }).click();
     await expect(u.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible({ timeout: 30_000 });
+    // A hand-made ?done=1 link never claims an unsubscribe: the page reads the stored state.
+    const fake = new URL(unsubscribe!);
+    fake.searchParams.set("t", "not-a-token");
+    fake.searchParams.set("done", "1");
+    await u.goto(fake.toString());
+    await expect(u.getByTestId("unsubscribe-invalid")).toBeVisible({ timeout: 30_000 });
+
+    // The voter page is never indexed (MP-30).
+    await expect(m.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+
+    // The host replaces every time of the poll (one has Sam's vote) in the edit wizard: the new time is saved before
+    // the old ones go, so the poll never runs out of times (it used to fail with "A poll needs at least one time.").
+    await page.goto(`/app/polls/${poll.pollId}/edit`);
+    await expect(page.getByRole("heading", { level: 1, name: "Choose times to offer" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("selected-count")).toHaveText("3/100 times selected");
+    await page.getByTestId("selected-count").click();
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Clear all" }).click();
+    await expect(page.getByTestId("selected-count")).toHaveText("0/100 times selected");
+    await page.keyboard.press("Escape"); // the times list popover, if it is still open
+    const firstDay = new Intl.DateTimeFormat("en-CA", { timeZone: POLL_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(start);
+    await cell(page, firstDay, "9am").click();
+    await expect(page.getByTestId("selected-count")).toHaveText("1/100 times selected");
+    await page.getByTestId("wizard-save").click();
+    const removeDialog = page.getByRole("alertdialog");
+    await expect(removeDialog).toContainText("Sam Ortiz", { timeout: 30_000 });
+    await removeDialog.getByRole("button", { name: "Remove times" }).click();
+    await expect(page.getByTestId("results-title")).toHaveText("Lunch and learn", { timeout: 60_000 });
+    await expect(page.getByTestId("top-time")).toHaveCount(1, { timeout: 30_000 });
+    // Sam's answers on the removed times are gone; the new time has none yet.
+    await expect(page.getByTestId("top-time").first()).toContainText("No answers yet");
 
     // Close voting: the voter page turns read only.
     await page.reload();
-    await page.getByTestId("close-voting").click();
+    await expect(async () => {
+      await page.getByTestId("close-voting").click();
+      await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
     await page.getByRole("alertdialog").getByRole("button", { name: "Close voting" }).click();
     await expect(page.getByTestId("poll-status")).toHaveText("Closed", { timeout: 30_000 });
     await m.goto(poll.link);

@@ -28,7 +28,7 @@ async function call<T extends Json>(method: "GET" | "POST" | "DELETE", path: str
       cache: "no-store",
     });
   } catch {
-    return { ok: false, code: "network", message: "We couldn't reach the server. Check your connection and try again.", status: 0 };
+    return { ok: false, code: "network", message: pt("voter.networkError"), status: 0 };
   }
   let data: Json = {};
   try {

@@ -61,7 +61,7 @@ export function DetailsStep({ honeypotRef, turnstileRef, ...p }: DetailsStepProp
         >
           <ArrowLeft aria-hidden="true" className="size-5" />
         </button>
-        <h2 className="text-[20px] leading-7 font-bold text-public-text min-[600px]:text-[22px]" tabIndex={-1} data-autofocus>
+        <h2 className="text-[20px] leading-7 font-bold text-public-text outline-none min-[600px]:text-[22px]" tabIndex={-1} data-autofocus>
           {p.declining ? pt("voter.declineHeading") : pt("voter.detailsHeading")}
         </h2>
       </div>

@@ -248,7 +248,7 @@ export function TimesSidebar(p: TimesSidebarProps) {
         )}
         {p.cohostIds.length >= MAX_POLL_COHOSTS && <p className="text-body-sm text-ink-2">{pt("wizard.hostsLimit")}</p>}
       </div>
-      <ul className="flex flex-col gap-1.5 text-body-sm text-ink-2" aria-label="Legend">
+      <ul className="flex flex-col gap-1.5 text-body-sm text-ink-2" aria-label={pt("wizard.legendLabel")}>
         <li className="flex items-center gap-2">
           <span aria-hidden="true" className="h-3 w-5 rounded-[3px] border border-line-medium bg-[repeating-linear-gradient(135deg,var(--mist)_0,var(--mist)_3px,var(--white)_3px,var(--white)_6px)]" />
           {pt("wizard.legendYours")}

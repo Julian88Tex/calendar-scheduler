@@ -3,7 +3,7 @@
 // Timed options are absolute instants (epoch ms); all-day options are a local date shown the same for everyone.
 // Existing options of a published poll carry their id; started ones are frozen (MP-27: past options can't change).
 // Exact duplicates toggle instead of adding (MP-02).
-import { MAX_POLL_OPTIONS } from "@/lib/polls/constants";
+import { MAX_OPTION_MINUTES, MAX_POLL_OPTIONS, MIN_OPTION_MINUTES } from "@/lib/polls/constants";
 import { dayStart } from "@/lib/polls/grid";
 import type { PollOptionInput, PollOptionView } from "@/lib/polls/types";
 
@@ -25,6 +25,13 @@ export function timed(start: number, end: number): DraftOption {
 
 export function allDay(date: string): DraftOption {
   return { kind: "date", key: dateKey(date), date };
+}
+
+/** A timed option lasts 5 minutes to 24 hours (MP-02); date-only options always qualify. */
+export function durationInRange(o: DraftOption): boolean {
+  if (o.kind === "date") return true;
+  const minutes = (o.end - o.start) / 60_000;
+  return Number.isInteger(minutes) && minutes >= MIN_OPTION_MINUTES && minutes <= MAX_OPTION_MINUTES;
 }
 
 /** Epoch ms when an option starts (all-day: local midnight in `zone`). */
@@ -94,12 +101,63 @@ export function fromViews(options: readonly Pick<PollOptionView, "id" | "start" 
   });
 }
 
-/** Edit page changes: removed existing option ids and the new options. */
+/**
+ * Edit page changes: removed existing option ids and the new options. A published time that was removed and then put
+ * back (same start and end, or the same date) is neither removed nor added, so it keeps its id and its votes.
+ */
 export function diffOptions(initial: readonly DraftOption[], current: readonly DraftOption[]): { removedIds: string[]; added: DraftOption[] } {
   const currentIds = new Set(current.map((o) => o.id).filter(Boolean));
-  const removedIds = initial.filter((o) => o.id && !currentIds.has(o.id)).map((o) => o.id!);
-  const added = current.filter((o) => !o.id);
-  return { removedIds, added };
+  const removed = initial.filter((o) => o.id && !currentIds.has(o.id));
+  const fresh = current.filter((o) => !o.id);
+  const restored = new Set(fresh.filter((o) => removed.some((r) => r.key === o.key)).map((o) => o.key));
+  return { removedIds: removed.filter((o) => !restored.has(o.key)).map((o) => o.id!), added: fresh.filter((o) => !restored.has(o.key)) };
+}
+
+export type SaveStep = { kind: "remove"; ids: string[] } | { kind: "add"; options: DraftOption[] };
+
+/**
+ * The order of the option writes of an edit (MP-27): a poll always keeps at least one time and never holds more than
+ * `max`. Removals go first (they free room under the cap); when every published time is replaced, one removal waits
+ * until the first new times exist, and new times beyond the cap wait for that removal.
+ */
+export function planOptionSave(p: { initialCount: number; removedIds: readonly string[]; added: readonly DraftOption[]; max?: number }): SaveStep[] {
+  const max = p.max ?? MAX_POLL_OPTIONS;
+  const steps: SaveStep[] = [];
+  const removed = [...p.removedIds];
+  const added = [...p.added];
+  const remaining = p.initialCount - removed.length;
+  if (remaining >= 1 || !added.length) {
+    if (removed.length) steps.push({ kind: "remove", ids: removed });
+    if (added.length) steps.push({ kind: "add", options: added });
+    return steps;
+  }
+  const held = removed.pop()!;
+  if (removed.length) steps.push({ kind: "remove", ids: removed });
+  const room = Math.max(1, max - 1);
+  steps.push({ kind: "add", options: added.slice(0, room) });
+  steps.push({ kind: "remove", ids: [held] });
+  if (added.length > room) steps.push({ kind: "add", options: added.slice(room) });
+  return steps;
+}
+
+/**
+ * The ids the server gave the times of an "add" step, by option key: it inserts the sent times in order, skipping
+ * exact duplicates and times the poll already has (`existingKeys`).
+ */
+export function savedIdsByKey(sent: readonly DraftOption[], ids: readonly string[], existingKeys: ReadonlySet<string>): Map<string, string> {
+  const seen = new Set<string>();
+  const fresh: string[] = [];
+  for (const o of sent) {
+    if (existingKeys.has(o.key) || seen.has(o.key)) continue;
+    seen.add(o.key);
+    fresh.push(o.key);
+  }
+  const out = new Map<string, string>();
+  fresh.forEach((key, i) => {
+    const id = ids[i];
+    if (id) out.set(key, id);
+  });
+  return out;
 }
 
 /** Options that are not in the past (new options must start in the future). */

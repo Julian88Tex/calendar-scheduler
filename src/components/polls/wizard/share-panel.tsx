@@ -5,7 +5,7 @@
 "use client";
 
 import { CheckCircle2, ExternalLink, Link as LinkIcon, Pencil, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,12 @@ export function SharePanel(p: SharePanelProps) {
   const [saving, setSaving] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const prefix = p.link.slice(0, p.link.length - p.slug.length);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // "Share meeting poll" is gone once the poll exists: move focus to the new heading (screen readers hear the step).
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   const candidate = ending.trim().toLowerCase();
   const status: "idle" | "checking" | "available" | "taken" | "invalid" = !editing || candidate === p.slug
@@ -105,7 +111,7 @@ export function SharePanel(p: SharePanelProps) {
       <span aria-hidden="true" className="inline-flex size-14 items-center justify-center rounded-full bg-success-soft text-success">
         <CheckCircle2 className="size-8" />
       </span>
-      <h2 className="mt-4 text-headline-3 text-ink" tabIndex={-1} data-autofocus>
+      <h2 ref={headingRef} className="mt-4 text-headline-3 text-ink outline-none" tabIndex={-1}>
         {pt("share.title")}
       </h2>
       <p className="mt-2 text-body text-ink-2">{pt("share.body")}</p>

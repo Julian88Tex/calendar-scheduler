@@ -114,7 +114,7 @@ export function BookDialog(p: BookDialogProps) {
     const errs: Record<number, string> = {};
     for (const e of extras) {
       if (!e.email.trim() && !e.name.trim()) continue;
-      if (!looksLikeEmail(e.email.trim())) errs[e.id] = "Enter a valid email address.";
+      if (!looksLikeEmail(e.email.trim())) errs[e.id] = pt("common.emailInvalid");
     }
     setExtraErrors(errs);
     if (Object.keys(errs).length) return;
