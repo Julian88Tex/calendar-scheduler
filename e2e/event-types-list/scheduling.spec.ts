@@ -1,8 +1,9 @@
 // Scheduling page, Event types tab (SPEC ET-02 to ET-09, ET-12, ET-33; walkthrough 5.1 and 5.2; docs/SCOPE.md) on the
 // seeded owner (30 Minute Virtual, 60 Minute Virtual, In-Person Meal or Coffee): the card parts and Copy link, the
 // kebab menu order, create from the "+ Create" menu, turn off, make secret, internal note, duplicate and delete,
-// keyboard and mouse reorder reflected on the landing page, search and filters in the URL, bulk toggle and bulk delete
-// with one confirmation, the empty state, and the phone layout.
+// keyboard, mouse and touch reorder reflected on the landing page, search and filters in the URL, bulk toggle and bulk
+// delete with one confirmation, focus after deletes, stale lists (a change made in another tab), the empty state, and
+// the phone layout.
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 
@@ -183,6 +184,8 @@ test.describe("scheduling: event types", () => {
     await confirm.getByRole("button", { name: "Delete" }).click();
     await expect(confirm).toBeHidden();
     await expect(card(page, "In-Person Meal or Coffee (copy)")).toHaveCount(0);
+    // Focus moves to the closest remaining card instead of falling back to the page (GEN-05).
+    await expect(card(page, "In-Person Meal or Coffee").getByRole("link", { name: "In-Person Meal or Coffee", exact: true })).toBeFocused();
     await page.reload();
     expect(await cardNames(page)).toEqual(NAMES);
   });
@@ -218,8 +221,26 @@ test.describe("scheduling: event types", () => {
     }, SLOW).toEqual(["In-Person Meal or Coffee", "30 Minute Virtual", "60 Minute Virtual"]);
     expect(await landingNames(page)).toEqual(["In-Person Meal or Coffee", "30 Minute Virtual", "60 Minute Virtual"]);
 
-    // Mouse: drag 60 Minute Virtual onto the top half of the first card.
+    // Mouse: Escape during a drag puts the card back.
     await open(page);
+    await card(page, "30 Minute Virtual").hover();
+    const grip = (await page.getByRole("button", { name: "Reorder 30 Minute Virtual" }).boundingBox())!;
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y - 120, { steps: 4 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    expect(await cardNames(page)).toEqual(["In-Person Meal or Coffee", "30 Minute Virtual", "60 Minute Virtual"]);
+    // A short drag released over its own card neither moves it nor opens the editor.
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 60, grip.y + grip.height / 2 + 10, { steps: 3 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await expect(page).toHaveURL(/\/app\/scheduling$/);
+    expect(await cardNames(page)).toEqual(["In-Person Meal or Coffee", "30 Minute Virtual", "60 Minute Virtual"]);
+
+    // Mouse: drag 60 Minute Virtual onto the top half of the first card.
     await card(page, "60 Minute Virtual").hover();
     const first = card(page, "In-Person Meal or Coffee");
     const box = (await first.boundingBox())!;
@@ -291,8 +312,9 @@ test.describe("scheduling: event types", () => {
     await confirm.getByRole("button", { name: "Delete" }).click();
     await expect(page.getByText("3 event types deleted").first()).toBeVisible();
 
-    // ET-33 empty state.
+    // ET-33 empty state, with focus on its call to action.
     await expect(page.getByRole("heading", { name: "Create scheduling links with event types" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "New event type" })).toBeFocused();
     await expect(page.getByText("Event types are templates for meetings you'll want to schedule regularly, like product demos, customer calls, or office hours.")).toBeVisible();
     await page.reload();
     await page.waitForLoadState("networkidle");
@@ -302,27 +324,119 @@ test.describe("scheduling: event types", () => {
     await expect(page).toHaveURL(/\/app\/event-types\/new\?kind=one_on_one$/, SLOW);
   });
 
-  test("phone layout: cards stack without horizontal scrolling", async ({ page }) => {
+  test("phone layout: cards stack without horizontal scrolling, with 40px tap targets and keyboard reorder", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page);
     expect(await cardNames(page)).toEqual(NAMES);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
     const thirty = card(page, "30 Minute Virtual");
-    await expect(thirty.getByRole("button", { name: "Copy link" })).toBeVisible();
-    await expect(thirty.getByRole("button", { name: "Share 30 Minute Virtual" })).toBeVisible();
-    // The drag handle is a desktop affordance.
-    await expect(page.getByRole("button", { name: /^Reorder / })).toHaveCount(0);
+    const targets = [
+      thirty.getByRole("button", { name: "Copy link" }),
+      thirty.getByRole("button", { name: "Share 30 Minute Virtual" }),
+      thirty.getByRole("button", { name: "30 Minute Virtual actions" }),
+      thirty.getByRole("button", { name: "Reorder 30 Minute Virtual" }),
+      thirty.locator("label").filter({ has: page.getByRole("checkbox", { name: "Select 30 Minute Virtual" }) }),
+    ];
+    for (const target of targets) {
+      const b = (await target.boundingBox())!;
+      expect(Math.min(b.width, b.height)).toBeGreaterThanOrEqual(40);
+    }
     const box = (await thirty.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
     const menu = await menuOf(page, "30 Minute Virtual");
     await expect(menu.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
     await page.keyboard.press("Escape");
+
+    // The reorder handle is reachable at phone widths too (keyboard).
+    const handle = page.getByRole("button", { name: "Reorder 30 Minute Virtual" });
+    await handle.focus();
+    await page.keyboard.press("Space");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Space");
+    expect(await cardNames(page)).toEqual(["60 Minute Virtual", "30 Minute Virtual", "In-Person Meal or Coffee"]);
+
     await thirty.getByRole("checkbox", { name: "Select 30 Minute Virtual" }).click();
     const bar = page.getByRole("toolbar", { name: "Bulk actions" });
     await expect(bar).toBeVisible();
     const barBox = (await bar.boundingBox())!;
     expect(barBox.x + barBox.width).toBeLessThanOrEqual(390);
+    await expect.poll(async () => {
+      await open(page);
+      return cardNames(page);
+    }, SLOW).toEqual(["60 Minute Virtual", "30 Minute Virtual", "In-Person Meal or Coffee"]);
+  });
+
+  test("a list made stale by another tab: refused changes reload it and bulk actions skip what is gone", async ({ page }) => {
+    await open(page);
+    const deleteInOtherTab = async (name: string) => {
+      const other = await page.context().newPage();
+      await open(other);
+      const m = await menuOf(other, name);
+      await m.getByRole("menuitem", { name: "Delete" }).click();
+      const confirm = other.getByRole("alertdialog", { name: "Delete event type?" });
+      await confirm.getByRole("button", { name: "Delete" }).click();
+      await expect(confirm).toBeHidden();
+      await expect(card(other, name)).toHaveCount(0);
+      await other.close();
+    };
+
+    // This tab still shows a type deleted elsewhere: turning it off is refused and the list reloads without it.
+    await deleteInOtherTab("60 Minute Virtual");
+    expect(await cardNames(page)).toEqual(NAMES);
+    const menu = await menuOf(page, "60 Minute Virtual");
+    await menu.getByRole("menuitemcheckbox", { name: "On/Off" }).click();
+    await expect(page.getByText("This event type could not be found.").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect.poll(() => cardNames(page), SLOW).toEqual(["30 Minute Virtual", "In-Person Meal or Coffee"]);
+
+    // A bulk delete whose selection includes a type deleted elsewhere still deletes the rest.
+    await deleteInOtherTab("In-Person Meal or Coffee");
+    for (const name of ["30 Minute Virtual", "In-Person Meal or Coffee"]) await card(page, name).getByRole("checkbox", { name: `Select ${name}` }).click();
+    const bar = page.getByRole("toolbar", { name: "Bulk actions" });
+    await bar.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("alertdialog", { name: "Delete 2 event types?" }).getByRole("button", { name: "Delete" }).click();
+    await expect(page.getByText("2 event types deleted").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create scheduling links with event types" })).toBeVisible();
+  });
+
+  test.describe("touch screen", () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test("drags a card by its handle with a finger; the landing page follows", async ({ page }) => {
+      await open(page);
+      const expected = ["60 Minute Virtual", "30 Minute Virtual", "In-Person Meal or Coffee"];
+      const handle = page.getByRole("button", { name: "Reorder 60 Minute Virtual" });
+      // No hover on touch screens: the handle always shows.
+      await expect(handle).toHaveCSS("opacity", "1");
+      await card(page, "30 Minute Virtual").evaluate((el) => el.scrollIntoView({ block: "start" }));
+      const from = (await handle.boundingBox())!;
+      const first = (await card(page, "30 Minute Virtual").boundingBox())!;
+      const x = from.x + from.width / 2;
+      const y = from.y + from.height / 2;
+      const toY = first.y + 6;
+      expect(y).toBeLessThan(844);
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      for (let i = 1; i <= 6; i++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + ((toY - y) * i) / 6 }] });
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect.poll(() => cardNames(page)).toEqual(expected);
+      await expect(page.getByText("60 Minute Virtual dropped at position 1 of 3.")).toBeAttached();
+      await expect.poll(async () => {
+        await open(page);
+        return cardNames(page);
+      }, SLOW).toEqual(expected);
+      expect(await landingNames(page)).toEqual(expected);
+    });
+
+    test("a tap on the handle is not a drag", async ({ page }) => {
+      await open(page);
+      await page.getByRole("button", { name: "Reorder 60 Minute Virtual" }).tap();
+      expect(await cardNames(page)).toEqual(NAMES);
+      await expect(page).toHaveURL(/\/app\/scheduling$/);
+    });
   });
 });

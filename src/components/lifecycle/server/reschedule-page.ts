@@ -9,6 +9,7 @@
 //   - the slots request flagged with the invitee (SCH-24: the meeting being moved does not block itself); a rebook
 //     after "Share new times to meet" (CR-08) starts from a canceled meeting, which blocks nothing
 //   - the deep link check of /reschedulings/{id}/{start} with the same exclusion (BK-08)
+//   - the cancellation policy of the meeting (CR-05: shown on the cancel and reschedule pages)
 import "server-only";
 import { getAvailability, loadEventType, type BookingTarget } from "@/lib/booking";
 import { loadBookingPage } from "@/components/booking/server/booking-page";
@@ -121,6 +122,7 @@ export async function loadReschedulePage(input: LoadReschedulePageInput): Promis
       guests,
       formCtx,
     ),
+    cancellationPolicy: view.cancellationPolicy,
     inviteeZone: isValidTimeZone(inv.timezone) ? inv.timezone : null,
     inviteeTimeFormat: inv.timeFormat === "24h" || inv.timeFormat === "12h" ? inv.timeFormat : null,
     serverNow: now().getTime(),

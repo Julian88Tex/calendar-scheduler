@@ -280,6 +280,17 @@ describe("loadReschedulePage", () => {
     expect(flow.hostName).toBe("Ana Lima");
   });
 
+  it("carries the meeting's cancellation policy to the reschedule page (CR-05)", async () => {
+    const owner = await host();
+    const et = await eventType(owner, { overrides: { cancellationPolicy: "Cancel or reschedule 24 hours ahead." } });
+    const b = await booking(owner, { et });
+    const res = await loadReschedulePage({ inviteeId: b.invitee.id, mode: "calendar", searchParams: {} });
+    expect(res.state === "flow" && res.flow.cancellationPolicy).toBe("Cancel or reschedule 24 hours ahead.");
+    const plain = await booking(owner, { et: await eventType(owner, { slug: "intro-plain" }), start: la("2030-10-09 10:00") });
+    const none = await loadReschedulePage({ inviteeId: plain.invitee.id, mode: "calendar", searchParams: {} });
+    expect(none.state === "flow" && none.flow.cancellationPolicy).toBeNull();
+  });
+
   it("checks a deep linked start with the moved meeting ignored (SCH-24, BK-08)", async () => {
     const owner = await host();
     const b = await booking(owner);

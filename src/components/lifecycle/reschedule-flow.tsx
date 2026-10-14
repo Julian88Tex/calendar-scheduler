@@ -23,7 +23,6 @@ import { BookingCard, BookingMainSection, BookingPanelHeading } from "@/componen
 import { BackButton } from "@/components/public/back-button";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { TimeSlotList, type TimeSlot } from "@/components/public/time-slot-list";
-import { BRAND_BUTTON } from "@/components/booking/details-form";
 import { buildBookingBody, fieldOrder, validateForm, type FieldErrors, type FormContext, type FormValues } from "@/components/booking/lib/form";
 import { availableDatesOf, monthsBetween, nextMonthOf, type MonthSlots, type SlotsRequest } from "@/components/booking/lib/slots";
 import { bt } from "@/components/booking/lib/t";
@@ -42,6 +41,7 @@ import type { ActionResult } from "@/lib/actions";
 import { cn } from "@/lib/cn";
 import { formatMeetingWhen, formatTime, isoDateInZone } from "@/lib/time/format";
 import { currentLocalTime, friendlyZoneName } from "@/lib/time/zones";
+import { BRAND_PILL } from "./lib/brand";
 import type { RescheduleOutcome } from "./lib/outcome";
 import { lt } from "./lib/t";
 import { RescheduleDetailsForm, RESCHEDULE_REASON_MAX } from "./reschedule-details-form";
@@ -414,6 +414,7 @@ export function RescheduleFlow(p: RescheduleFlowComponentProps) {
       onDurationChange={step === "calendar" ? changeDuration : undefined}
       formerText={formerText}
       when={step === "details" && whenText ? { text: whenText, zoneName: friendlyZoneName(dataZone) } : null}
+      zoneName={event.lockedTimeZone ? friendlyZoneName(event.lockedTimeZone) : null}
       notice={notice}
       footer={footer}
     />
@@ -438,7 +439,7 @@ export function RescheduleFlow(p: RescheduleFlowComponentProps) {
                   <p className="text-[14px] font-bold">{bt("slotTaken.title")}</p>
                   <p className="text-[13px]">{bt("slotTaken.body")}</p>
                 </div>
-                <Button type="button" size="sm" onClick={viewTimes} className={cn(BRAND_BUTTON, "shrink-0")}>
+                <Button type="button" size="sm" onClick={viewTimes} className={cn(BRAND_PILL, "shrink-0")}>
                   {bt("slotTaken.viewTimes")}
                 </Button>
               </div>
@@ -475,6 +476,7 @@ export function RescheduleFlow(p: RescheduleFlowComponentProps) {
                   onSubmit={() => void submit()}
                   collectMarketing={p.collectMarketing}
                   hostName={p.hostName}
+                  cancellationPolicy={p.cancellationPolicy}
                   appName={p.appName}
                   termsUrl={p.termsUrl}
                   privacyUrl={p.privacyUrl}

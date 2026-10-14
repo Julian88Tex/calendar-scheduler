@@ -4,7 +4,7 @@
 // "Override available times" swaps the calendar for a free date and start time. Client component.
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -66,8 +66,11 @@ export function HostTimePicker({ meeting, invitee, allowOverride, now, value, on
   const inviteeZone = invitee.timezone && invitee.timezone !== hostZone ? invitee.timezone : null;
   const [useInviteeZone, setUseInviteeZone] = useState(false);
   const zone = useInviteeZone && inviteeZone ? inviteeZone : hostZone;
+  // The clock is unknown (0) while hydrating: the month follows "today" until the host picks one.
+  const clockKnown = now > 0;
   const today = isoDateInZone(now, zone);
-  const [month, setMonth] = useState(today.slice(0, 7));
+  const [monthChoice, setMonth] = useState<string | null>(null);
+  const month = monthChoice && monthChoice >= today.slice(0, 7) ? monthChoice : today.slice(0, 7);
   const [date, setDate] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, Loaded>>({});
   const [retry, setRetry] = useState(0);
@@ -77,24 +80,24 @@ export function HostTimePicker({ meeting, invitee, allowOverride, now, value, on
   const loaded = results[key];
 
   useEffect(() => {
-    if (override || loadedKeys.current.has(key)) return;
+    if (override || !clockKnown || loadedKeys.current.has(key)) return;
     loadedKeys.current.add(key);
     hostRescheduleSlotsAction({ inviteeId: invitee.id, month, zone })
       .then((r) => setResults((prev) => ({ ...prev, [key]: r.ok ? { status: "ready", data: r.data } : { status: "error", message: r.error.message } })))
       .catch(() => setResults((prev) => ({ ...prev, [key]: { status: "error", message: lt("host.reschedule.loadError") } })));
-  }, [key, override, invitee.id, month, zone]);
+  }, [key, override, clockKnown, invitee.id, month, zone]);
 
   const data = loaded?.status === "ready" ? loaded.data : null;
-  const availableDates = useMemo(
-    () =>
-      data
-        ? Object.entries(data.days)
-            .filter(([d, list]) => d.startsWith(`${month}-`) && list.length > 0)
-            .map(([d]) => d)
-            .sort()
-        : [],
-    [data, month],
-  );
+  const availableDates = data
+    ? Object.entries(data.days)
+        .filter(([d, list]) => d.startsWith(`${month}-`) && list.length > 0)
+        .map(([d]) => d)
+        .sort()
+    : [];
+  const maxMonth = shiftMonth(today.slice(0, 7), 24);
+  // "View next month" only while the booking window reaches into it (like the booking page, BK-04).
+  const nextMonth = shiftMonth(month, 1);
+  const nextAllowed = month < maxMonth && (!data?.windowEnd || Date.parse(data.windowEnd) > Date.parse(`${nextMonth}-01T00:00:00Z`) - 14 * 3_600_000);
   const effectiveDate = date && availableDates.includes(date) ? date : null;
   const daySlots = effectiveDate && data ? (data.days[effectiveDate] ?? []) : [];
   const selectedStart = value?.kind === "slot" && value.zone === zone ? value.start : null;
@@ -119,7 +122,11 @@ export function HostTimePicker({ meeting, invitee, allowOverride, now, value, on
         )}
       </div>
 
-      {override ? (
+      {!clockKnown ? (
+        <div className="flex h-24 items-center justify-center">
+          <Spinner />
+        </div>
+      ) : override ? (
         <div className="grid gap-4 min-[520px]:grid-cols-2">
           <FormField label={lt("host.reschedule.overrideDate")}>
             {(c) => (
@@ -162,7 +169,7 @@ export function HostTimePicker({ meeting, invitee, allowOverride, now, value, on
               availableDates={availableDates}
               today={today}
               minMonth={today.slice(0, 7)}
-              maxMonth={shiftMonth(today.slice(0, 7), 24)}
+              maxMonth={maxMonth}
               locale={LOCALE}
               loading={!loaded}
               aria-label={lt("host.reschedule.selectDate")}
@@ -170,9 +177,19 @@ export function HostTimePicker({ meeting, invitee, allowOverride, now, value, on
             {loaded?.status === "ready" && availableDates.length === 0 && (
               <div role="status" className="mt-2 flex flex-col items-center gap-2 text-center">
                 <p className="text-[14px] font-semibold text-ink">{lt("host.reschedule.noTimesInMonth", { month: monthName(month, LOCALE) })}</p>
-                <Button type="button" variant="secondary" size="sm" onClick={() => setMonth(shiftMonth(month, 1))}>
-                  {lt("host.reschedule.viewNextMonth")}
-                </Button>
+                {nextAllowed && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setMonth(nextMonth);
+                      setDate(null);
+                    }}
+                  >
+                    {lt("host.reschedule.viewNextMonth")}
+                  </Button>
+                )}
               </div>
             )}
             {loaded?.status === "error" && (

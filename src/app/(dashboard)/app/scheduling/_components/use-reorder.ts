@@ -2,7 +2,8 @@
 // card.
 // Pointer (mouse, touch or pen, through Pointer Events so it works the same in every browser and on touch screens):
 // press the handle and move; the card follows the pointer, a blue line shows where it lands, the page scrolls near the
-// top and bottom edges, releasing drops it and Escape cancels. A press that does not move is not a drag.
+// top and bottom edges, releasing drops it and Escape puts it back. A press that does not move is not a drag, and the
+// click that ends a drag never opens the editor of the card under the pointer.
 // Keyboard: focus the handle, Space (or Enter) lifts the card, the arrow keys move it (Home and End to the ends), Space
 // drops it and Escape puts it back; moving focus away drops it where it is. Every step is announced in a polite live
 // region. `onCommit(order)` receives the complete new order of ids once a card is dropped somewhere new. Client only.
@@ -35,6 +36,19 @@ export type ReorderApi = {
 };
 
 type PointerDrag = { started: boolean; stop: () => void };
+
+/**
+ * The click that follows releasing a drag must not reach the card under the pointer (a click on a card opens the
+ * editor): swallow it, if it comes within a short window.
+ */
+function swallowNextClick(): void {
+  const swallow = (ev: MouseEvent) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  window.setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 300);
+}
 
 export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: string; onCommit: (order: string[]) => void }): ReorderApi {
   const { ids, enabled, idPrefix, onCommit } = opts;
@@ -118,6 +132,8 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
     const startScroll = window.scrollY;
     let lastY = startY;
     let target: Drop | null = null;
+    // Escape during a drag: the card is back in place, the press is ignored until the pointer is released.
+    let canceled = false;
     try {
       handle.setPointerCapture(pointerId);
     } catch {
@@ -126,6 +142,13 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
     const userSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
     const row = () => rows.current.get(id);
+    const resetRow = () => {
+      const el = row();
+      if (el) {
+        el.style.transform = "";
+        el.style.zIndex = "";
+      }
+    };
 
     const update = (y: number) => {
       lastY = y;
@@ -136,7 +159,7 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       setDropTarget((cur) => (cur?.id === next?.id && cur?.position === next?.position ? cur : next));
     };
     const onMove = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return;
+      if (ev.pointerId !== pointerId || canceled) return;
       if (!state.started) {
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
         state.started = true;
@@ -150,12 +173,16 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       else if (ev.clientY > window.innerHeight - SCROLL_EDGE) window.scrollBy(0, SCROLL_STEP);
     };
     const onScroll = () => {
-      if (state.started) update(lastY);
+      if (state.started && !canceled) update(lastY);
     };
-    const end = (commit: boolean) => {
+    /** Ends the drag (no commit when canceled); the click that follows a real drag never reaches a card. */
+    const finishDrag = (ev: PointerEvent, commit: boolean) => {
+      if (ev.pointerId !== pointerId) return;
       const started = state.started;
       state.stop();
       if (!started) return;
+      swallowNextClick();
+      if (canceled) return;
       setDraggingId(null);
       setDropTarget(null);
       const current = idsRef.current;
@@ -168,17 +195,17 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
       setAnnouncement(say.dropped(name, next.indexOf(id) + 1, next.length));
       commitRef.current(next);
     };
-    const onUp = (ev: PointerEvent) => {
-      if (ev.pointerId === pointerId) end(true);
-    };
-    const onCancel = (ev: PointerEvent) => {
-      if (ev.pointerId === pointerId) end(false);
-    };
+    const onUp = (ev: PointerEvent) => finishDrag(ev, true);
+    const onCancel = (ev: PointerEvent) => finishDrag(ev, false);
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape") return;
+      if (ev.key !== "Escape" || !state.started || canceled) return;
       ev.preventDefault();
       ev.stopPropagation();
-      end(false);
+      canceled = true;
+      resetRow();
+      setDraggingId(null);
+      setDropTarget(null);
+      setAnnouncement(say.canceled(name, idsRef.current.indexOf(id) + 1));
     };
 
     const state: PointerDrag = {
@@ -190,11 +217,7 @@ export function useReorder(opts: { ids: string[]; enabled: boolean; idPrefix: st
         window.removeEventListener("keydown", onKey, true);
         window.removeEventListener("scroll", onScroll);
         document.body.style.userSelect = userSelect;
-        const el = row();
-        if (el) {
-          el.style.transform = "";
-          el.style.zIndex = "";
-        }
+        resetRow();
         try {
           if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
         } catch {

@@ -14,7 +14,6 @@ import { useId, useRef, useState } from "react";
 import type * as React from "react";
 import { BookingCard, BookingMainSection, BookingPanelHeading } from "@/components/public/booking-card";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
-import { BRAND_BUTTON } from "@/components/booking/details-form";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +21,7 @@ import type { ActionResult } from "@/lib/actions";
 import lifecycleMessages from "@/lib/i18n/messages/en/lifecycle";
 import { cn } from "@/lib/cn";
 import { ChangeStatePanel } from "./change-state-panel";
+import { BRAND_PILL } from "./lib/brand";
 import { changePagePath, guestsNotice } from "./lib/state";
 import { lt } from "./lib/t";
 import { MeetingSummaryPanel } from "./meeting-summary-panel";
@@ -184,7 +184,7 @@ export function CancelPage({ view, cancelAction }: CancelPageProps) {
             </section>
           )}
           <div className="max-[599px]:sticky max-[599px]:bottom-0 max-[599px]:-mx-5 max-[599px]:border-t max-[599px]:border-line max-[599px]:bg-public-bg max-[599px]:px-5 max-[599px]:py-3">
-            <Button type="submit" size="lg" loading={submitting} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>
+            <Button type="submit" size="lg" loading={submitting} className={cn(BRAND_PILL, "max-[599px]:w-full")}>
               {lt("cancel.submit")}
             </Button>
           </div>

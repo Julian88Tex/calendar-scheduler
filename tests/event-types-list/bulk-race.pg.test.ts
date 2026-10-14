@@ -1,6 +1,7 @@
 // Scheduling list bulk actions under concurrency on real Postgres (SPEC ET-08; run with npm run test:pg): every bulk
-// action locks its rows in id order inside one transaction, so overlapping selections sent in any order never
-// deadlock, and an overlapping bulk delete is all or nothing (one wins, the other changes nothing).
+// action takes the owner's schedule lock and then locks its rows in id order inside one transaction, so overlapping
+// selections sent in any order never deadlock, and overlapping deletes (bulk or single) delete and audit each row once:
+// a bulk delete skips the actor's rows that a concurrent delete already removed instead of failing.
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,7 +12,7 @@ vi.mock("@/lib/conferencing", () => ({ getConferencingOptions: vi.fn(async () =>
 const { auditLog, eventTypes } = await import("@/db/schema");
 const { loadActorCtx } = await import("@/lib/authz");
 const { isAppError } = await import("@/lib/errors");
-const { reorderEventTypes } = await import("@/lib/event-types");
+const { deleteEventType, reorderEventTypes } = await import("@/lib/event-types");
 const { bulkDeleteEventTypes, bulkSetEventTypesActive } = await import("@/app/(dashboard)/app/scheduling/_components/bulk");
 const f = await import("../factories");
 const { createTestDb } = await import("../helpers/db");
@@ -50,24 +51,39 @@ describe.runIf(process.env.TEST_DATABASE_URL)("bulk actions on real Postgres", (
     }
   });
 
-  it("overlapping bulk deletes: one selection wins whole, the other changes nothing", async () => {
+  it("overlapping bulk deletes both succeed: the shared row is deleted (and audited) once, nothing deadlocks", async () => {
     const t = await createTestDb({ kind: "postgres", poolSize: 16 });
     try {
       const { actor, ids } = await setup(t, 5);
       const a = [ids[0]!, ids[1]!, ids[2]!];
       const b = [ids[4]!, ids[3]!, ids[2]!];
-      const [ra, rb] = await Promise.allSettled([bulkDeleteEventTypes(t.db, actor, a), bulkDeleteEventTypes(t.db, actor, b)]);
-      const outcomes = [ra, rb].map((r) => r!.status);
-      expect(outcomes.sort()).toEqual(["fulfilled", "rejected"]);
-      const rejected = [ra, rb].find((r): r is PromiseRejectedResult => r!.status === "rejected")!;
-      expect(isDeadlock(rejected.reason)).toBe(false);
-      expect(isAppError(rejected.reason) && rejected.reason.code).toBe("not_found");
-
-      const winner = ra!.status === "fulfilled" ? a : b;
+      const results = await Promise.allSettled([bulkDeleteEventTypes(t.db, actor, a), bulkDeleteEventTypes(t.db, actor, b)]);
+      expect(results.filter((r) => r.status === "rejected")).toEqual([]);
       const live = await t.db.select({ id: eventTypes.id }).from(eventTypes).where(and(inArray(eventTypes.id, ids), isNull(eventTypes.deletedAt)));
-      expect(new Set(live.map((r) => r.id))).toEqual(new Set(ids.filter((id) => !winner.includes(id))));
+      expect(live).toEqual([]);
       const audits = await t.db.select({ targetId: auditLog.targetId }).from(auditLog).where(eq(auditLog.action, "event_type.deleted"));
-      expect(audits.map((x) => x.targetId).sort()).toEqual([...winner].sort());
+      expect(audits.map((x) => x.targetId).sort()).toEqual([...ids].sort());
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("a single delete racing a bulk delete of the same rows: both succeed, each row is deleted once", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 16 });
+    try {
+      const { actor, ids } = await setup(t, 4);
+      const results = await Promise.allSettled([
+        deleteEventType(t.db, actor, ids[1]!),
+        bulkDeleteEventTypes(t.db, actor, ids),
+        deleteEventType(t.db, actor, ids[3]!),
+      ]);
+      // A single delete that lost the race reports not found (the row is already gone); the bulk delete never fails.
+      expect(results[1]!.status).toBe("fulfilled");
+      for (const r of results) if (r.status === "rejected") expect(isAppError(r.reason) && r.reason.code).toBe("not_found");
+      const live = await t.db.select({ id: eventTypes.id }).from(eventTypes).where(and(inArray(eventTypes.id, ids), isNull(eventTypes.deletedAt)));
+      expect(live).toEqual([]);
+      const audits = await t.db.select({ targetId: auditLog.targetId }).from(auditLog).where(eq(auditLog.action, "event_type.deleted"));
+      expect(audits.map((x) => x.targetId).sort()).toEqual([...ids].sort());
     } finally {
       await t.close();
     }

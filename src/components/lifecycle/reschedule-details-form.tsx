@@ -1,14 +1,14 @@
 // The reschedule "Enter Details" form (SPEC CR-03, BK-09 to BK-12, BK-14; walkthrough 11.7): the booking form's fields in
 // the same order and look (Name or First and Last Name, Email, "Add Guests", the location choice with its phone or
 // text input, the custom questions, marketing consent), prefilled from the stored invitee and all editable, then the
-// optional "Reason for change" (never required, Calendly parity), the terms sentence and the "Update Event" pill. No
-// email verification and no bot challenge: the invitee id is the capability. Inline errors use the booking server's
-// keys and messages (the booking form model is shared). Phones get a sticky submit button (BK-30).
+// optional "Reason for change" (never required, Calendly parity), the cancellation policy (CR-05), the terms sentence
+// and the "Update Event" pill. No email verification and no bot challenge: the invitee id is the capability. Inline
+// errors use the booking server's keys and messages (the booking form model is shared). Phones get a sticky submit
+// button (BK-30).
 "use client";
 
 import type * as React from "react";
 import { useId, useState } from "react";
-import { BRAND_BUTTON } from "@/components/booking/details-form";
 import { chosenLocation, isEmail, MAX_GUESTS, showsLegalNotice, type FieldErrors, type FormContext, type FormValues } from "@/components/booking/lib/form";
 import { locationInput, locationOption } from "@/components/booking/lib/locations";
 import { bt } from "@/components/booking/lib/t";
@@ -23,6 +23,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { BRAND_PILL } from "./lib/brand";
 import { lt } from "./lib/t";
 
 export const RESCHEDULE_REASON_MAX = 2000;
@@ -39,6 +40,8 @@ export type RescheduleDetailsFormProps = {
   onSubmit: () => void;
   collectMarketing: boolean;
   hostName: string;
+  /** CR-05: the cancellation policy (display only), under "Reason for change". */
+  cancellationPolicy?: string | null;
   appName: string;
   termsUrl: string | null;
   privacyUrl: string | null;
@@ -281,26 +284,35 @@ export function RescheduleDetailsForm(p: RescheduleDetailsFormProps) {
         )}
       </TextField>
 
+      {p.cancellationPolicy && (
+        <section aria-labelledby={`${base}-policy`} className="flex flex-col gap-1" data-testid="cancellation-policy">
+          <h3 id={`${base}-policy`} className="text-[14px] font-bold text-ink">
+            {lt("cancel.policy")}
+          </h3>
+          <p className="text-[14px] leading-[22px] break-words whitespace-pre-line text-ink-2">{p.cancellationPolicy}</p>
+        </section>
+      )}
+
       {showsLegalNotice(p.termsUrl, p.privacyUrl) && (
-      <p className="text-[13px] leading-5 text-ink-2">
-        {termsParts.map((part, i) =>
-          part === TERMS ? (
-            <LegalLink key={i} href={p.termsUrl}>
-              {bt("details.termsOfUse")}
-            </LegalLink>
-          ) : part === PRIVACY ? (
-            <LegalLink key={i} href={p.privacyUrl}>
-              {bt("details.privacyNotice")}
-            </LegalLink>
-          ) : (
-            <span key={i}>{part}</span>
-          ),
-        )}
-      </p>
+        <p className="text-[13px] leading-5 text-ink-2">
+          {termsParts.map((part, i) =>
+            part === TERMS ? (
+              <LegalLink key={i} href={p.termsUrl}>
+                {bt("details.termsOfUse")}
+              </LegalLink>
+            ) : part === PRIVACY ? (
+              <LegalLink key={i} href={p.privacyUrl}>
+                {bt("details.privacyNotice")}
+              </LegalLink>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
+        </p>
       )}
 
       <div className="max-[599px]:sticky max-[599px]:bottom-0 max-[599px]:-mx-5 max-[599px]:border-t max-[599px]:border-line max-[599px]:bg-public-bg max-[599px]:px-5 max-[599px]:py-3">
-        <Button type="submit" size="lg" loading={p.submitting} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>
+        <Button type="submit" size="lg" loading={p.submitting} className={cn(BRAND_PILL, "max-[599px]:w-full")}>
           {lt("reschedule.submit")}
         </Button>
       </div>

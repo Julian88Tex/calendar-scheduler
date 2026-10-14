@@ -20,7 +20,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Illustration } from "@/components/ui/illustration";
 import { SearchInput } from "@/components/ui/search-input";
 import { toast } from "@/components/ui/toast";
-import { DeleteEventTypeDialog, InternalNoteDialog } from "@/components/event-types";
+// Direct imports (not the @/components/event-types barrel) keep the location editor out of this page's bundle.
+import { DeleteEventTypeDialog } from "@/components/event-types/delete-event-type-dialog";
+import { InternalNoteDialog } from "@/components/event-types/internal-note-dialog";
 import type { ActionError } from "@/lib/actions";
 import { duplicateEventTypeAction, reorderEventTypesAction, setEventTypeActiveAction, setEventTypeSecretAction } from "@/lib/event-types/actions";
 import { DELETE_BODY } from "@/lib/event-types/constants";
@@ -113,6 +115,7 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
     id: string | null;
   } | null>(null);
   const shareTrigger = useRef<HTMLElement | null>(null);
+  const deletedRef = useRef(false);
   const itemsRef = useRef(items);
   useLayoutEffect(() => {
     itemsRef.current = items;
@@ -318,9 +321,18 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
       {deleteTarget && (
         <DeleteEventTypeDialog
           open
-          onOpenChange={(v) => !v && setDeleteTarget(null)}
+          onOpenChange={(v) => {
+            if (v) return;
+            // Closed without deleting: the delete may have been refused because the list is stale, so reload it.
+            if (!deletedRef.current) router.refresh();
+            deletedRef.current = false;
+            setDeleteTarget(null);
+          }}
           eventType={deleteTarget}
-          onDeleted={(id) => removeItems([id])}
+          onDeleted={(id) => {
+            deletedRef.current = true;
+            removeItems([id]);
+          }}
         />
       )}
       <InternalNoteDialog

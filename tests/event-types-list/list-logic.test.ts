@@ -23,7 +23,15 @@ import {
   eventTypesCount,
   metaLine,
 } from "@/app/(dashboard)/app/scheduling/_components/list-text";
-import { applyOrder, dropOrder, moveId, reorderAnnouncements, sameOrder } from "@/app/(dashboard)/app/scheduling/_components/reorder";
+import {
+  applyOrder,
+  dropOrder,
+  focusAfterRemoval,
+  moveId,
+  pointerDropTarget,
+  reorderAnnouncements,
+  sameOrder,
+} from "@/app/(dashboard)/app/scheduling/_components/reorder";
 import { BULK_MAX, zBulkActiveInput, zBulkIdsInput } from "@/app/(dashboard)/app/scheduling/_components/schemas";
 import type { UiKind } from "@/lib/event-types/constants";
 import { formatDuration } from "@/lib/time/format";
@@ -173,6 +181,36 @@ describe("reorder helpers (ET-07)", () => {
     expect(sameOrder(order, ["a", "b", "c"])).toBe(false);
     const list = order.map((id) => ({ id }));
     expect(applyOrder(list, ["c", "a"]).map((x) => x.id)).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("finds where a pointer drag lands from the cards' boxes (mouse and touch)", () => {
+    // Four 100px cards with 12px gaps: a 0-100, b 112-212, c 224-324, d 336-436.
+    const boxes = order.map((id, i) => ({ id, top: i * 112, bottom: i * 112 + 100 }));
+    // Dragging d upward: above a's middle lands before a; between a's and b's middles before b.
+    expect(pointerDropTarget(order, boxes, 10, "d")).toEqual({ id: "a", position: "before" });
+    expect(pointerDropTarget(order, boxes, 120, "d")).toEqual({ id: "b", position: "before" });
+    // Below every middle: after the last other card, which for d is where it already is (no change, no line).
+    expect(pointerDropTarget(order, boxes, 999, "d")).toBeNull();
+    expect(pointerDropTarget(order, boxes, 999, "a")).toEqual({ id: "d", position: "after" });
+    // Dragging b down over c's lower half lands before d; just above its own neighbor changes nothing.
+    expect(pointerDropTarget(order, boxes, 300, "b")).toEqual({ id: "d", position: "before" });
+    expect(pointerDropTarget(order, boxes, 230, "b")).toBeNull();
+    // The dragged card's own (moving) box is ignored; a list of one has nowhere to go.
+    expect(pointerDropTarget(order, [...boxes, { id: "b", top: -500, bottom: -400 }], 10, "b")).toEqual({ id: "a", position: "before" });
+    expect(pointerDropTarget(["a"], [{ id: "a", top: 0, bottom: 100 }], 300, "a")).toBeNull();
+    const landing = pointerDropTarget(order, boxes, 120, "d")!;
+    expect(dropOrder(order, "d", landing.id, landing.position)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("moves focus to the next card after a delete, else the previous one (GEN-05)", () => {
+    expect(focusAfterRemoval(order, new Set(["b"]))).toBe("c");
+    expect(focusAfterRemoval(order, new Set(["b", "c"]))).toBe("d");
+    expect(focusAfterRemoval(order, new Set(["d"]))).toBe("c");
+    expect(focusAfterRemoval(order, new Set(["c", "d"]))).toBe("b");
+    expect(focusAfterRemoval(order, new Set(["a", "c"]))).toBe("b");
+    expect(focusAfterRemoval(order, new Set(order))).toBeNull();
+    expect(focusAfterRemoval(order, new Set(["zz"]))).toBe("a");
+    expect(focusAfterRemoval([], new Set(["a"]))).toBeNull();
   });
 
   it("announces each keyboard step", () => {

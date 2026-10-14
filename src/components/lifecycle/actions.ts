@@ -179,10 +179,15 @@ export async function setNoShowAction(raw: unknown) {
 
 const NotesInput = z.object({ scheduledEventId: z.uuid(), html: z.string().max(120_000, lifecycleMessages.errors.notesTooLong) });
 
+/**
+ * Saves the notes (lifecycle-core authorizes and sanitizes) and returns them as stored, so the editor shows exactly the
+ * sanitized HTML the Meetings page will render (null when emptied).
+ */
 export async function saveMeetingNotesAction(raw: unknown) {
-  return runAction(NotesInput, raw, async (input, { actor }) => {
+  return runAction(NotesInput, raw, async (input, { actor, db }) => {
     await updateMeetingNotes({ scheduledEventId: input.scheduledEventId, html: input.html, actor: { type: "user", ctx: actor } });
+    const [row] = await db.select({ html: scheduledEvents.meetingNotesHtml }).from(scheduledEvents).where(eq(scheduledEvents.id, input.scheduledEventId)).limit(1);
     refresh();
-    return { scheduledEventId: input.scheduledEventId };
+    return { scheduledEventId: input.scheduledEventId, html: row?.html ?? null };
   });
 }

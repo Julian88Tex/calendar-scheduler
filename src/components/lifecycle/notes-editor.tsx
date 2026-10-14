@@ -52,7 +52,8 @@ export function NotesEditor({ scheduledEventId, initialHtml, onSaved, defaultEdi
         setError(r.error.fieldErrors?.html?.[0] ?? r.error.message);
         return;
       }
-      const next = html || null;
+      // The stored notes (sanitized by the server), not the local draft.
+      const next = isBlank(r.data.html) ? null : r.data.html;
       setSaved(next);
       setEditing(false);
       toast.success(lt("host.notes.saved"));

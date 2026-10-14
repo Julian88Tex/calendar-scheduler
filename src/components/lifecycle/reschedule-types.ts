@@ -39,6 +39,8 @@ export type RescheduleFlowProps = {
   };
   /** The details form prefilled from the stored invitee (CR-03). */
   values: FormValues;
+  /** CR-05: the event type's cancellation policy (display only), shown on the details step. */
+  cancellationPolicy: string | null;
   /** The invitee's stored zone and time format (used until the browser's are known). */
   inviteeZone: string | null;
   inviteeTimeFormat: "12h" | "24h" | null;

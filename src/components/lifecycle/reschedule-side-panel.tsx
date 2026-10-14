@@ -34,7 +34,7 @@ export type RescheduleSidePanelProps = {
   formerText: string | null;
   /** Details step: the new time and the zone name. */
   when?: { text: string; zoneName: string } | null;
-  /** Calendar step: the zone name under the former time. */
+  /** A locked time zone's name (SCH-22), shown with a globe like the booking page's panel. */
   zoneName?: string | null;
   notice?: string | null;
   footer?: React.ReactNode;
@@ -94,7 +94,7 @@ export function RescheduleSidePanel({ event, host, brandHeader, duration, onDura
           ))}
           {formerText && (
             <div className="flex flex-col gap-1 max-[999px]:items-center" data-testid="former-time">
-              <span className="text-[11px] leading-4 font-bold tracking-[0.04em] text-ink-2 uppercase">{lt("reschedule.formerTime")}</span>
+              <span className="text-[11px] leading-4 font-bold text-ink-2">{lt("reschedule.formerTime")}</span>
               <BookingDetailRow icon={<CalendarDays />}>
                 <s className="decoration-ink-2" data-testid="former-when">
                   {formerText}

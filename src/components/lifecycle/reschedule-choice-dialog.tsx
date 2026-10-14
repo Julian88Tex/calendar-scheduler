@@ -75,6 +75,7 @@ export function RescheduleChoiceDialog({ open, onOpenChange, meeting, inviteeId,
 
   const reset = () => {
     setStep(initialStep);
+    setChoice(initialStep === "share" && shareAllowed ? "share" : "now");
     setPick(null);
     setMessage("");
     setReminder("");

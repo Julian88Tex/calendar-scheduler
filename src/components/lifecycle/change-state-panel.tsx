@@ -9,12 +9,9 @@ import { BookingMainSection, BookingPanelHeading } from "@/components/public/boo
 import { buttonClassName } from "@/components/ui/button";
 import { Illustration } from "@/components/ui/illustration";
 import { cn } from "@/lib/cn";
+import { BRAND_PILL } from "./lib/brand";
 import type { BlockedCopy } from "./lib/state";
 import { lt } from "./lib/t";
-
-// The booking pages' brand pill (details-form.tsx BRAND_BUTTON), repeated here: this panel also renders in Server
-// Components, which can't read constants from a client module.
-const BRAND_PILL = "bg-brand text-white hover:bg-brand hover:brightness-90 active:bg-brand active:brightness-75";
 
 export type ChangeStatePanelProps = {
   copy: BlockedCopy;

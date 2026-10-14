@@ -169,10 +169,48 @@ describe("bulk services (ET-08)", () => {
     expect(rows.every((r) => r.active)).toBe(true);
   });
 
-  it("rejects an empty or oversized selection", async () => {
+  it("rejects an empty, oversized or malformed selection", async () => {
     const f = await owner();
     await expectError(bulkDeleteEventTypes(t.db, f.actor, []), "validation");
     await expectError(bulkSetEventTypesActive(t.db, f.actor, Array.from({ length: BULK_MAX + 1 }, () => newId()), true), "validation");
+    await expectError(bulkDeleteEventTypes(t.db, f.actor, [f.ids.thirty, "not-a-uuid"]), "validation");
+    expect(await listEventTypes(f.actor, t.db)).toHaveLength(3);
+  });
+
+  it("a stale selection (one type already deleted in another tab) still deletes the rest, without a second audit entry", async () => {
+    const f = await owner();
+    await bulkDeleteEventTypes(t.db, f.actor, [f.ids.thirty]);
+    expect(await bulkDeleteEventTypes(t.db, f.actor, [f.ids.thirty, f.ids.sixty])).toEqual({ deleted: [f.ids.thirty, f.ids.sixty].sort() });
+    expect((await listEventTypes(f.actor, t.db)).map((e) => e.slug)).toEqual(["meal"]);
+    const logs = await t.db
+      .select({ targetId: auditLog.targetId })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "event_type.deleted"), inArray(auditLog.targetId, Object.values(f.ids))));
+    expect(logs.map((l) => l.targetId).sort()).toEqual([f.ids.thirty, f.ids.sixty].sort());
+  });
+
+  it("a stale selection toggles only the live event types", async () => {
+    const f = await owner();
+    await bulkDeleteEventTypes(t.db, f.actor, [f.ids.sixty]);
+    expect(await bulkSetEventTypesActive(t.db, f.actor, [f.ids.sixty, f.ids.meal], false)).toEqual({ updated: [f.ids.meal], active: false });
+    const rows = await rowsOf([f.ids.sixty, f.ids.meal]);
+    expect(Object.fromEntries(rows.map((r) => [r.slug, r.active]))).toEqual({ "60min": true, meal: false });
+    expect(await bulkSetEventTypesActive(t.db, f.actor, [f.ids.sixty], true)).toEqual({ updated: [], active: true });
+  });
+
+  it("someone else's deleted event type is still not found (nothing about other accounts leaks) and nothing changes", async () => {
+    const f = await owner();
+    const other = await owner();
+    const colleague = await createUser(t.db, { organizationId: f.user.organizationId });
+    const { eventType: colleagueType } = await createEventType(t.db, { owner: colleague, name: "Colleague", slug: "colleague" });
+    await bulkDeleteEventTypes(t.db, other.actor, [other.ids.thirty]);
+    await bulkDeleteEventTypes(t.db, await loadActorCtx(t.db, colleague), [colleagueType.id]);
+    for (const foreign of [other.ids.thirty, colleagueType.id]) {
+      await expectError(bulkDeleteEventTypes(t.db, f.actor, [f.ids.thirty, foreign]), "not_found");
+      await expectError(bulkSetEventTypesActive(t.db, f.actor, [f.ids.meal, foreign], false), "not_found");
+    }
+    const rows = await rowsOf([f.ids.thirty, f.ids.meal]);
+    expect(rows.every((r) => r.deletedAt === null && r.active)).toBe(true);
   });
 
   it("a team member with view access cannot bulk change team event types", async () => {
