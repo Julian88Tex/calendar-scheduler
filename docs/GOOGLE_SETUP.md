@@ -1,9 +1,10 @@
 # Google Calendar setup
 
 Kairos uses one Google OAuth client for everything Google: "Continue with Google" sign in, checking your Google
-Calendar for conflicts, adding booked meetings to your calendar with a Google Meet link, and picking up meetings you
-move or delete in Google Calendar. This guide creates that client in Google Cloud and connects it to Kairos, locally
-and on Vercel. It takes about 15 minutes.
+Calendar for conflicts, adding booked meetings to your calendar with a Google Meet link, picking up meetings you move
+or delete in Google Calendar, and sending your booking emails (confirmations, reschedules, cancellations and
+reminders) from your own Gmail address, so you need no Resend or SMTP account. This guide creates that client in Google
+Cloud and connects it to Kairos, locally and on Vercel. It takes about 15 minutes.
 
 You need:
 
@@ -19,13 +20,17 @@ You need:
 3. Name it (for example "Kairos"), leave the organization as is, and click **Create**.
 4. Make sure the new project is selected in the project picker before you continue.
 
-## 2. Enable the Google Calendar API
+## 2. Enable the Google Calendar API and the Gmail API
 
 1. Open **APIs & Services > Library** (or <https://console.cloud.google.com/apis/library>).
 2. Search for **Google Calendar API**, open it and click **Enable**.
+3. Go back to the library, search for **Gmail API**, open it and click **Enable**
+   (<https://console.cloud.google.com/apis/library/gmail.googleapis.com>).
 
-Google Meet links are created through the Calendar API, so no other API is needed. If you skip this step, connected
-calendars show "Error" with the message that the Google Calendar API is not enabled.
+Google Meet links are created through the Calendar API, so no Meet API is needed. The Gmail API sends your booking
+emails. If you skip the Calendar API, connected calendars show "Error" with the message that the Google Calendar API
+is not enabled. If you skip the Gmail API, emails stay in the outbox with the message "The Gmail API is not enabled in
+this server's Google Cloud project"; enable it and they are sent on the next retry.
 
 ## 3. Configure the OAuth consent screen
 
@@ -43,22 +48,29 @@ Open **Google Auth Platform** (APIs & Services > OAuth consent screen). If Googl
    - User type **External** lets any Google account sign in (needed for Gmail accounts).
    - User type **Internal** is available only inside a Google Workspace organization and limits access to its members;
      it needs no verification.
-3. **Data access**: click **Add or remove scopes** and add exactly these:
+3. **Data access**: click **Add or remove scopes** and add exactly these (paste the full URLs into **Manually add
+   scopes** if the list does not show them):
    - `openid`
    - `.../auth/userinfo.email`
    - `.../auth/userinfo.profile`
    - `https://www.googleapis.com/auth/calendar.events` (see, edit, share and delete events)
    - `https://www.googleapis.com/auth/calendar.readonly` (see your calendars)
+   - `https://www.googleapis.com/auth/gmail.send` (send email on your behalf)
 
-   Save. The two calendar scopes are "sensitive" scopes.
+   Save. The two calendar scopes and `gmail.send` are "sensitive" scopes. `gmail.send` only lets Kairos send messages:
+   it cannot read, change or delete your mail, and it is not one of Google's "restricted" Gmail scopes (those need a
+   paid security assessment; this one does not).
 4. **Test users** (Audience page, while the app is in Testing): add every Google account that will sign in or connect a
    calendar, starting with your own.
 5. **Publishing status** (Audience page). Important:
    - While the app is in **Testing**, Google expires its refresh tokens after 7 days. Your calendar connection would
-     then show "Action required" every week until you reconnect.
-   - For your own deployment, click **Publish app** to move it to **In production**. Without Google's verification,
-     the consent screen shows "Google hasn't verified this app"; choose **Advanced > Go to {app name} (unsafe)** to
-     continue. Unverified apps with sensitive scopes are limited to 100 users, which is plenty for personal use.
+     then show "Action required" every week, and booking emails would wait in the outbox, until you reconnect.
+   - For your own deployment, click **Publish app** to move it to **In production**: refresh tokens then stop expiring
+     after 7 days. You do not need Google's verification for that.
+   - Without verification, Google shows a warning screen once, when you connect: "Google hasn't verified this app".
+     That is expected for your own private app. Click **Advanced**, then **Go to {app name} (unsafe)**, then allow the
+     permissions. You see it again only if you disconnect and connect again. Unverified apps with sensitive scopes are
+     limited to 100 users, which is plenty for personal use.
    - If other people will use your deployment, submit the app for verification from the same page.
 
 ## 4. Create the OAuth client
@@ -122,8 +134,9 @@ Preview to your branch URL (for example `https://your-project-git-main-you.verce
 - **Or connect it later**: open **Availability > Calendar settings**, click **+ Connect calendar account**, then
   **Google Calendar**. You can connect several Google accounts this way.
 
-On Google's consent screen, keep both calendar permissions checked. If you uncheck them, Kairos explains what is
-missing and asks you to connect again.
+On Google's consent screen, keep both calendar permissions and **Send email on your behalf** checked. If you uncheck
+a calendar permission, Kairos explains what is missing and asks you to connect again. If you uncheck the Gmail one,
+your calendar still connects, and Integrations > Google Calendar offers **Allow Gmail sending** to add it later.
 
 Then, on **Availability > Calendar settings**:
 
@@ -135,6 +148,37 @@ Then, on **Availability > Calendar settings**:
   "Buffer: ..." busy events; "Automatically sync cancellations and reschedules" (on by default) makes deleting a
   meeting's event in Google Calendar cancel the meeting and moving it reschedule the meeting, with the usual emails to
   your invitees.
+
+## Send emails from your Gmail
+
+Kairos sends every booking email (invitee confirmations, reschedules, cancellations, reminders, and your own "New
+event" and cancellation notices) from the Gmail address of the account owner (the first account created on your
+Kairos), through the Gmail API. Nothing to configure beyond the steps above:
+
+1. Sign in with Google, or connect your Google Calendar, as the owner, and keep **Send email on your behalf** checked.
+2. Open **Integrations > Google Calendar**. The **Send emails from your Gmail** card shows "Sending emails from
+   you@gmail.com". Its switch turns Gmail sending off (emails are then kept in the outbox and not sent) and on again.
+   When several of your Google accounts allowed sending, choose the one to send from.
+
+What your invitees see: the email comes from "Your Name <you@gmail.com>", replies go to your inbox, and the calendar
+invitation is attached as usual. Every email also appears in your Gmail **Sent** folder. Gmail lets a personal account
+send about 500 emails a day (2,000 with Google Workspace); a Kairos booking sends two or three.
+
+If Gmail stops accepting the emails:
+
+- **Access revoked or expired** (you removed Kairos at <https://myaccount.google.com/permissions>, changed your Google
+  password, or the app is still in Testing after 7 days): the dashboard shows "There is a problem with your calendar
+  connection", and the card says "Action required". Emails wait in the outbox, marked "Waiting for Gmail", and are sent
+  automatically once you click **Reconnect Google** (or **Reconnect** on Calendar settings). Emails that are no longer
+  useful by then are not sent: anything older than 24 hours, reminders and notices about meetings that already
+  started, and sign in codes or links older than 10 minutes. The outbox shows why each one was not sent.
+- **Rate limits or a Google outage** (HTTP 429 or 5xx): Kairos retries with increasing delays, about 8 times over an
+  hour or more, and never sends the same email twice.
+- **A rejected message** (for example an invalid recipient address): it fails for good with Google's reason.
+
+Other ways to send: when `RESEND_API_KEY` or `SMTP_HOST` is set, that service sends instead of Gmail. Set
+`EMAIL_PROVIDER=gmail` to send from Gmail anyway, or `EMAIL_PROVIDER=outbox` to keep every email in the outbox (see
+`.env.example`).
 
 ## How Kairos reads your Google Calendar
 
@@ -176,6 +220,11 @@ Kairos notices moved and deleted meeting events in two ways:
 | The calendar shows "Action required" about a week after connecting | The app is still in Testing (7 day refresh tokens). Publish it (step 3.5), then click **Reconnect**. |
 | The calendar shows "Error" and mentions the Google Calendar API | Enable the API (step 2). The connection recovers on its own at the next successful check. |
 | "Kairos needs permission to see and edit events on your Google Calendar" | The calendar permissions were unchecked on Google's consent screen. Connect again and keep them checked. |
+| "Gmail sending wasn't allowed" or the card says "Not allowed yet" | "Send email on your behalf" was unchecked on Google's consent screen. Click **Allow Gmail sending** and keep it checked. |
+| Emails stay in the outbox with "The Gmail API is not enabled in this server's Google Cloud project" | Enable the Gmail API (step 2). The waiting emails are sent on the next retry. |
+| Emails stay in the outbox marked "Waiting for Gmail" | Your Google access was revoked or expired. Click **Reconnect Google** on Integrations > Google Calendar; the emails go out automatically. If it happens every week, publish the app (step 3.5). |
+| The consent screen does not list "Send email on your behalf" | Add the `gmail.send` scope on the Data access page (step 3.3), then connect again. |
+| Emails say they are sent with Resend or SMTP instead of Gmail | `RESEND_API_KEY` or `SMTP_HOST` is set on this deployment. Remove it, or set `EMAIL_PROVIDER=gmail`. |
 | "Sign in with Google is not configured on this server" or the tile says "Not configured on this server" | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing on this deployment. Add both and redeploy. |
 | All calendars need a reconnect after a redeploy | `ENCRYPTION_KEY` changed. Set it back, or reconnect each calendar. |
 | No Google Meet link on new meetings | The event type's location must be Google Meet, the calendar to add events to must be a Google calendar, and a Google Workspace admin may have turned Meet off for your account. |
@@ -184,6 +233,7 @@ Kairos notices moved and deleted meeting events in two ways:
 ## Security
 
 - Google access and refresh tokens are stored encrypted (AES-256-GCM) and used only on the server.
-- Kairos requests the two calendar scopes above and nothing else besides your name, email and profile picture.
+- Kairos requests the two calendar scopes and `gmail.send` above, and nothing else besides your name, email and
+  profile picture. `gmail.send` can only send messages; Kairos never reads your mailbox.
 - Disconnecting a calendar deletes its stored tokens and cached events and revokes the token at Google. Events already
   added to your calendar stay there.

@@ -37,7 +37,11 @@ export type EmailMessage = {
 
 export type SendEmailResult = { id: string; status: "sent" | "stored" | "queued" | "failed"; deduplicated: boolean };
 
-export type EmailTransportName = "resend" | "smtp" | "outbox";
+/**
+ * Which transport delivers email: Resend, SMTP, the owner's Gmail (users.messages.send through their Google
+ * connection, src/lib/email/gmail-transport.ts) or the database outbox (stored, not sent).
+ */
+export type EmailTransportName = "resend" | "smtp" | "gmail" | "outbox";
 
 export type EmailBrand = {
   /** Absolute URL of the account logo (shown instead of the avatar when present). */

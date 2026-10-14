@@ -19,6 +19,7 @@ import { getDb } from "@/db";
 import { invitees, meetingPollParticipants, meetingPolls, scheduledEvents } from "@/db/schema";
 import type { ActorCtx } from "@/lib/authz";
 import { createBooking } from "@/lib/booking";
+import { MAX_POLL_DURATION_MINUTES } from "@/lib/booking/rules";
 import { AppError } from "@/lib/errors";
 import { publishEvent } from "@/lib/events";
 import { enqueueJob, runJobsAfterResponse } from "@/lib/jobs";
@@ -39,7 +40,18 @@ import { locationView } from "./views";
 import { BookPollSchema, type BookPollInput } from "./validation";
 import type { BookingPreview, BookingPreviewInvitee, BookPollResult } from "./types";
 
-const MAX_MOVE_MINUTES = MAX_BOOKABLE_MINUTES;
+/** The longest poll meeting lifecycle moves in place (moveScheduledEvent gives poll meetings a whole local day). */
+const MAX_MOVE_MINUTES = MAX_POLL_DURATION_MINUTES;
+
+/**
+ * True when an option is longer than a meeting can be. Date-only options always book (an all-day meeting); timed
+ * options last at most MAX_OPTION_MINUTES, which equals MAX_BOOKABLE_MINUTES, so this only refuses data from before
+ * that limit.
+ */
+function beyondBookable(option: Pick<OptionRow, "startsAt" | "endsAt" | "allDayDate">, zone: string): boolean {
+  if (option.allDayDate) return false;
+  return (endOf(option, zone) - startOf(option, zone)) / 60_000 > MAX_BOOKABLE_MINUTES;
+}
 
 type Viewer = { userId: string; organizationId: string };
 
@@ -104,7 +116,7 @@ export async function bookingPreview(actor: ActorCtx, pollId: string, optionId: 
     rebook: meeting ? { scheduledEventId: meeting.id, start: meeting.startAt.toISOString(), end: meeting.endAt.toISOString(), sameOption: poll.bookedOptionId === option.id } : null,
     sendMeetingReminders: poll.sendMeetingReminders,
     unbookableReason:
-      range.start <= at.getTime() ? POLL_ERRORS.optionPast : (range.end - range.start) / 60_000 > MAX_BOOKABLE_MINUTES ? POLL_ERRORS.bookTooLong : null,
+      range.start <= at.getTime() ? POLL_ERRORS.optionPast : beyondBookable(option, poll.timezone) ? POLL_ERRORS.bookTooLong : null,
   };
 }
 
@@ -208,7 +220,7 @@ async function bookPollAs(
   const option = options.find((o) => o.id === input.optionId);
   if (!option) throw new AppError("not_found", POLL_ERRORS.optionNotFound);
   if (startOf(option, poll0.timezone) <= at.getTime()) throw new AppError("validation", POLL_ERRORS.optionPast);
-  if ((endOf(option, poll0.timezone) - startOf(option, poll0.timezone)) / 60_000 > MAX_BOOKABLE_MINUTES) throw new AppError("validation", POLL_ERRORS.bookTooLong);
+  if (beyondBookable(option, poll0.timezone)) throw new AppError("validation", POLL_ERRORS.bookTooLong);
   const status = statusOf(poll0, options, at);
   if (!bookable(status)) {
     if (status === "booked") {

@@ -10,15 +10,17 @@
 //   (scheduled_events.ics_sequence), ORGANIZER the organizer host, ATTENDEE the invitee, guests and co-hosts (RSVP),
 //   SUMMARY the invitee-facing title (template, else "{event} with {host}"; host copies: the host calendar title of
 //   CAL-11), DESCRIPTION and LOCATION as NT-01 (calendar invitation mode: the host's invitation description template),
-//   URL the confirmation page, METHOD REQUEST, CANCEL or PUBLISH with STATUS CONFIRMED or CANCELLED.
+//   URL the confirmation page, METHOD REQUEST, CANCEL or PUBLISH with STATUS CONFIRMED or CANCELLED. A meeting poll
+//   booked from a date-only option is an all-day event (DTSTART;VALUE=DATE) on that date (meetingAllDayDate).
 import "server-only";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
-import { inviteeGuests, invitees, scheduledEventHosts, scheduledEvents, users } from "@/db/schema";
+import { inviteeGuests, invitees, meetingPollOptions, meetingPolls, scheduledEventHosts, scheduledEvents, users } from "@/db/schema";
 import { DEFAULT_NOTIFICATION_PREFS } from "@/db/types";
 import { appName } from "../brand";
 import { getT, resolveLocale } from "../i18n";
 import { renderTemplate } from "../template";
+import { addDays, isValidZone, localDateOf, startOfLocalDay } from "../time/luxon";
 import { buildMeetingTemplateContext, isConferenceKind, locationText } from "../template-context";
 import { appHost, fileAbsoluteUrl, inviteeUrls, joinUrl } from "../url";
 import { htmlToText } from "./html";
@@ -102,7 +104,40 @@ function templateToPlainText(template: string, ctx: Record<string, string | numb
   return renderTemplate(template, ctx).replace(/\r\n?/g, "\n").trim();
 }
 
-export type MeetingIcs = { content: string; uid: string; sequence: number; method: "REQUEST" | "CANCEL" | "PUBLISH"; filename: string };
+export type MeetingIcs = {
+  content: string;
+  uid: string;
+  sequence: number;
+  method: "REQUEST" | "CANCEL" | "PUBLISH";
+  filename: string;
+  /** The date of an all-day meeting (a poll booked from a date-only option), for "Add to calendar" links; else null. */
+  allDayDate: string | null;
+};
+
+/**
+ * The local date ("YYYY-MM-DD") of a meeting poll booked from a date-only option (MP-18: an all-day meeting), else
+ * null. The meeting must still span exactly that day of the poll zone (local midnight to the next one), so a meeting
+ * moved to a timed option, and the CANCEL of a former timed time, keep their own times.
+ */
+export async function meetingAllDayDate(
+  event: Pick<typeof scheduledEvents.$inferSelect, "source" | "pollId" | "startAt" | "endAt">,
+  db?: DbOrTx,
+): Promise<string | null> {
+  if (event.source !== "poll" || !event.pollId) return null;
+  const d = db ?? (await getDb());
+  const [poll] = await d.select({ timezone: meetingPolls.timezone }).from(meetingPolls).where(eq(meetingPolls.id, event.pollId)).limit(1);
+  if (!poll || !isValidZone(poll.timezone)) return null;
+  const date = localDateOf(event.startAt, poll.timezone);
+  const dayStart = startOfLocalDay(date, poll.timezone).getTime();
+  const dayEnd = startOfLocalDay(addDays(date, 1), poll.timezone).getTime();
+  if (event.startAt.getTime() !== dayStart || event.endAt.getTime() !== dayEnd) return null;
+  const [option] = await d
+    .select({ id: meetingPollOptions.id })
+    .from(meetingPollOptions)
+    .where(and(eq(meetingPollOptions.pollId, event.pollId), eq(meetingPollOptions.allDayDate, date)))
+    .limit(1);
+  return option ? date : null;
+}
 
 /** The ICS of one meeting following NT-06 (see the file header); null when the meeting does not exist. */
 export async function buildMeetingIcs(p: BuildMeetingIcsInput): Promise<MeetingIcs | null> {
@@ -219,12 +254,14 @@ export async function buildMeetingIcs(p: BuildMeetingIcsInput): Promise<MeetingI
   }
 
   const sequence = Math.max(0, p.sequence ?? event.icsSequence ?? 0);
+  const allDayDate = await meetingAllDayDate(event, db);
   const content = buildIcs({
     method: p.method,
     uid,
     sequence,
     start: event.startAt,
     end: event.endAt,
+    allDayDate: allDayDate ?? undefined,
     summary,
     description,
     location: (conference ? (event.location?.joinUrl ?? stableJoin) : loc) || null,
@@ -237,5 +274,5 @@ export async function buildMeetingIcs(p: BuildMeetingIcsInput): Promise<MeetingI
     ],
     status: canceled ? "CANCELLED" : "CONFIRMED",
   });
-  return { content, uid, sequence, method: p.method, filename: "invite.ics" };
+  return { content, uid, sequence, method: p.method, filename: "invite.ics", allDayDate };
 }

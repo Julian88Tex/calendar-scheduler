@@ -280,7 +280,7 @@ test.describe("advanced settings and troubleshoot", () => {
     await expect(card.getByText(/Outside your working hours/).first()).toBeVisible();
     await expect(card.getByRole("button", { name: /^12:30pm, unavailable: Your 15 min buffer after this time overlaps "Dentist" \(1:00pm - 2:00pm\)\./ })).toBeVisible();
     await expect(card.getByRole("button", { name: /^2:00pm, unavailable: Your 15 min buffer before this time overlaps "Dentist"/ })).toBeVisible();
-    await expect(card.getByRole("button", { name: /TOOSOON Too soon: invitees must schedule at least 4 hours in advance/ })).toBeVisible();
+    await expect(card.getByRole("button", { name: /TOO SOON Too soon: invitees must schedule at least 4 hours in advance/ })).toBeVisible();
     // The starts the event covers collapse into one CALENDAR row; expanding it lists each start.
     const calendarRun = card.getByRole("button", { name: /^12:45pm to 1:45pm CALENDAR Conflicts with "Dentist" on your calendar \(1:00pm - 2:00pm\)\./ });
     await expect(calendarRun).toBeVisible();

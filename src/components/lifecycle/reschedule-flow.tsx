@@ -18,7 +18,6 @@ import type { Route } from "next";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type * as React from "react";
 import { BookingCard, BookingMainSection, BookingPanelHeading } from "@/components/public/booking-card";
 import { BackButton } from "@/components/public/back-button";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
@@ -61,7 +60,6 @@ const VerificationPanel = dynamic(() => import("@/components/booking/verificatio
 const LOCALE = "en-US";
 const MAX_JUMP_MONTHS = 12;
 const MAX_MONTHS_AHEAD = 24;
-const FLOW_STYLE = { "--slot-selected": "rgba(10, 37, 64, 0.65)" } as React.CSSProperties;
 const SLOT_LIST_TALL = "min-[1000px]:[@media(min-height:860px)]:[&_ul]:max-h-[596px]";
 const NO_CARRY: [string, string][] = [];
 
@@ -422,7 +420,7 @@ export function RescheduleFlow(p: RescheduleFlowComponentProps) {
 
   if (step === "details" && start) {
     return (
-      <div data-booking-flow="reschedule-details" style={FLOW_STYLE}>
+      <div data-booking-flow="reschedule-details">
         <BookingCard side={side} ribbon={p.ribbon}>
           <BookingMainSection>
             <div className="mb-5">
@@ -526,7 +524,7 @@ export function RescheduleFlow(p: RescheduleFlowComponentProps) {
   ) : null;
 
   return (
-    <div data-booking-flow="reschedule-calendar" style={FLOW_STYLE}>
+    <div data-booking-flow="reschedule-calendar">
       <BookingCard side={side} times={times} expanded={Boolean(effectiveDate)} mobileView={effectiveDate ? phoneView : "main"} ribbon={p.ribbon}>
         <BookingMainSection className="pb-[32px]">
           <BookingPanelHeading>{bt("page.selectDateTime")}</BookingPanelHeading>

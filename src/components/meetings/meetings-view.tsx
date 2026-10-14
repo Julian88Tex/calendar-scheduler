@@ -1,9 +1,9 @@
 // The Meetings page body (SPEC MT-01, MT-02, MT-05, MT-08, MT-11, MT-15; walkthrough 10.1): the counter "Displaying 1
 // - 25 of 42 Events", a white card with the tabs Upcoming | Past | Date Range, "Export" (CSV of the tab and filters)
-// and "Filter" (opens the filter row), the date range picker on the Date Range tab, the meetings grouped under date
-// headers, "Previous" / "Next" pages and the empty states with "Share your link". The state lives in the URL: tabs,
-// filters and pages navigate (keeping the current view until the next one arrives); "Details" only rewrites
-// ?event={id} in place. docs/SCOPE.md: one person, so no "My {AppName}" switch, no Unconfirmed or Pending tabs and no
+// and "Filter" (opens the filter row), the date range picker on the Date Range tab (choosing the tab opens its calendar
+// right away, like Calendly), the meetings grouped under date headers, "Previous" / "Next" pages and the empty states
+// with "Share your link". The state lives in the URL: tabs, filters and pages navigate (keeping the current view until
+// the next one arrives); "Details" only rewrites ?event={id} in place. docs/SCOPE.md: one person, so no "My {AppName}" switch, no Unconfirmed or Pending tabs and no
 // buffers toggle. Client component.
 "use client";
 
@@ -92,6 +92,8 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
   const change = (patch: QueryPatch, opts: { replace?: boolean } = {}) => navigate(meetingsHref(query, { event: null, ...patch }), opts.replace);
 
   const restoreFocusSoon = useFocusAfterRefresh(data);
+  // A click on the Date Range tab opens its calendar: the picker mounts open once the range data arrives.
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const toggle = (id: string, open: boolean) => {
     const next = open ? id : null;
@@ -186,6 +188,7 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
                   onClick={(e) => {
                     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
                     e.preventDefault();
+                    setRangeOpen(t.tab === "range");
                     if (!active) navigate(href);
                   }}
                   className={cn(
@@ -225,6 +228,8 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 sm:px-6" data-testid="meetings-range">
             <DateRangePicker
               aria-label={C.rangeLabel}
+              open={rangeOpen}
+              onOpenChange={setRangeOpen}
               value={{ start: query.start, end: query.end }}
               onChange={(r) => {
                 if (r.start && r.end) change({ tab: "range", start: r.start, end: r.end });

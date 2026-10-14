@@ -4,12 +4,12 @@
 
 import Link from "next/link";
 import type { Route } from "next";
+import { ReasonChip, reasonChipLabel } from "@/components/availability/reason-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import type { TroubleshootEntry } from "@/lib/booking/types";
 import { formatDateLong, formatTimeRange } from "@/lib/time/format";
-import { reasonLabel } from "@/lib/slots/reasons";
 import { ADVANCED_SETTINGS_PATH, scheduleHref } from "@/lib/availability/links";
 import type { TroubleshootDay } from "@/lib/availability/types";
 import { blockerTitle, blockerWhen, fixTarget, statusHint, type CandidateView } from "@/lib/availability/troubleshoot-view";
@@ -64,17 +64,9 @@ export function CandidateSheet({ view, entry, day, onOpenChange }: CandidateShee
             <Badge variant="success">Available</Badge>
           ) : (
             view.codes.length > 0 &&
-            view.codes.map((c) => (
-              <span key={c} className="inline-flex items-center rounded-full border border-dashed border-ink-3 bg-pebble px-2 py-0.5 text-[11px] leading-4 font-bold tracking-[0.04em] text-ink uppercase">
-                {reasonLabel(c)}
-              </span>
-            ))
+            view.codes.map((c) => <ReasonChip key={c}>{reasonChipLabel(c)}</ReasonChip>)
           )}
-          {view.status === "outside_hours" && (
-            <span className="inline-flex items-center rounded-full border border-dashed border-line-medium px-2 py-0.5 text-[11px] leading-4 font-bold tracking-[0.04em] text-ink-2 uppercase">
-              Outside hours
-            </span>
-          )}
+          {view.status === "outside_hours" && <ReasonChip tone="outside">Outside hours</ReasonChip>}
         </div>
 
         {view.status === "available" ? (
@@ -117,7 +109,7 @@ export function CandidateSheet({ view, entry, day, onOpenChange }: CandidateShee
                     <span className="text-body-sm text-ink-2">
                       {blockerWhen(b, day)} ·{" "}
                       {b.source === "calendar" ? "Calendar event" : b.source === "reserved" ? "Held" : "Meeting"}
-                      {b.code ? ` · ${reasonLabel(b.code)}` : ""}
+                      {b.code ? ` · ${reasonChipLabel(b.code)}` : ""}
                     </span>
                     {b.core && (b.core.start !== b.start || b.core.end !== b.end) && (
                       <span className="text-body-sm text-ink-2">

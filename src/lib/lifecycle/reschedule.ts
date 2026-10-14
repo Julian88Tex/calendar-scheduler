@@ -10,13 +10,15 @@
 //   requestReschedule   CR-08: cancels with the host's message and emails "{Host} would like to reschedule" with a
 //                       "Pick a new time" link (valid 30 days) and an optional reminder after 1, 3 or 7 days.
 //   moveScheduledEvent  MP-21 in-place move: same row and UID, SEQUENCE + 1, the provider event and conference updated
-//                       and "Updated" emails, by the lifecycle.meeting_moved job.
+//                       and "Updated" emails, by the lifecycle.meeting_moved job. Meetings last at most 12 hours, poll
+//                       meetings a whole day (long and all-day poll options, MAX_POLL_DURATION_MINUTES).
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { isUniqueViolation } from "@/db/helpers";
 import { eventTypes, invitees, scheduledEventHosts, scheduledEvents } from "@/db/schema";
 import { createBooking, lockHostsInTx, type CreateBookingInput, type CreateBookingResult } from "@/lib/booking";
+import { MAX_DURATION_MINUTES, MAX_POLL_DURATION_MINUTES } from "@/lib/booking/rules";
 import { AppError } from "@/lib/errors";
 import { eventJobPattern, publishEvent } from "@/lib/events";
 import messages from "@/lib/i18n/messages/en/lifecycle";
@@ -34,6 +36,14 @@ type Failure = Extract<CreateBookingResult, { ok: false }>;
 const fail = (code: Failure["code"], message: string): Failure => ({ ok: false, code, message });
 
 export const requestReminderGroup = (inviteeId: string) => `lifecycle:rr:${inviteeId}`;
+
+/** A poll meeting moved past MAX_POLL_DURATION_MINUTES (poll options last at most a day). */
+const POLL_MOVE_TOO_LONG = "A meeting poll time can last at most one day.";
+
+/** The longest a meeting of this source may last after an in-place move: poll meetings may fill a whole day. */
+export function maxMoveMinutes(source: (typeof scheduledEvents.$inferSelect)["source"]): number {
+  return source === "poll" ? MAX_POLL_DURATION_MINUTES : MAX_DURATION_MINUTES;
+}
 
 /** Whether the event type still offers a meeting's duration (its default or one of its duration options). */
 export function durationStillOffered(eventType: { durationMinutes: number; durationOptions: number[] | null } | null, minutes: number): boolean {
@@ -221,11 +231,15 @@ export async function moveScheduledEvent(p: { scheduledEventId: string; start: D
   const end = new Date(p.end);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) throw new AppError("validation", messages.errors.moveInvalid);
   const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
-  if (minutes > 720) throw new AppError("validation", messages.errors.moveTooLong);
   const db = await getDb();
-  const [m0] = await db.select({ id: scheduledEvents.id }).from(scheduledEvents).where(eq(scheduledEvents.id, p.scheduledEventId)).limit(1);
+  const [m0] = await db
+    .select({ id: scheduledEvents.id, source: scheduledEvents.source })
+    .from(scheduledEvents)
+    .where(eq(scheduledEvents.id, p.scheduledEventId))
+    .limit(1);
   if (!m0) throw new AppError("not_found", messages.errors.notFound);
   await assertCanManageMeeting(db, p.actor, m0.id);
+  if (minutes > maxMoveMinutes(m0.source)) throw new AppError("validation", m0.source === "poll" ? POLL_MOVE_TOO_LONG : messages.errors.moveTooLong);
   const hostIds = await meetingHostIds(db, [m0.id]);
   const at = now();
   try {

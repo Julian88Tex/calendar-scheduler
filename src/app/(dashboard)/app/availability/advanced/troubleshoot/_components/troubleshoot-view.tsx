@@ -2,7 +2,7 @@
 // types" or one), duration (when the event type offers several) and the date (previous / next day, a date picker,
 // "Today"). Left: the day summary (time zone, the hours of each schedule that day, busy times with titles, host meeting
 // limits with this period's counts). Right: one card per event type listing every candidate start: available ones in
-// blue, unavailable ones with a dashed border, the reason chip (CALENDAR, BUFFER, TOOSOON, ... or OUTSIDE HOURS) and
+// blue, unavailable ones with a dashed border, the reason chip (CALENDAR, BUFFER, TOO SOON, ... or OUTSIDE HOURS) and
 // the exact reason; runs of identical outcomes collapse into one range row. A row opens the details sheet with the
 // meaning, the fix and a link to the setting.
 "use client";
@@ -12,6 +12,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { ReasonChip, reasonChipLabel } from "@/components/availability/reason-chip";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
@@ -394,16 +395,8 @@ function EntryCard({ entry, day, filter, onOpen }: { entry: TroubleshootEntry; d
 
 function StatusChip({ view }: { view: Pick<CandidateView, "status" | "chip" | "tone"> }) {
   if (view.status === "available") return <Badge variant="success" size="sm">{view.chip}</Badge>;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border border-dashed px-2 py-0.5 text-[11px] leading-4 font-bold tracking-[0.04em] uppercase",
-        view.tone === "outside" ? "border-line-medium text-ink-2" : "border-ink-3 bg-pebble text-ink",
-      )}
-    >
-      {view.chip}
-    </span>
-  );
+  if (view.status === "outside_hours") return <ReasonChip tone="outside">{view.chip}</ReasonChip>;
+  return <ReasonChip>{reasonChipLabel(view.status)}</ReasonChip>;
 }
 
 function TimePill({ view }: { view: CandidateView }) {

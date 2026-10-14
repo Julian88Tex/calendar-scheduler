@@ -44,7 +44,7 @@ import type {
 } from "@/lib/slots/types";
 import { isIsoDate } from "@/lib/slots/zone";
 import { now as clockNow } from "@/lib/time/now";
-import { buildRules, dateRangeRuleOf, needsWholeFuture, rangeOutsideWindow, resolveDuration } from "./rules";
+import { buildRules, dateRangeRuleOf, maxDurationOf, needsWholeFuture, rangeOutsideWindow, resolveDuration } from "./rules";
 import type { AvailabilityResult, BookingTarget, EventTypeRow, GetAvailabilityParams } from "./types";
 
 const MIN = 60_000;
@@ -84,7 +84,10 @@ export type AvailabilityInternals = {
   externalBusy?: ExternalBusyByUser;
   /** Shared cache across several event types (troubleshoot: one provider fetch per host). */
   externalBusyCache?: Map<string, Promise<ExternalBusyByUser>>;
-  /** Any duration from 1 to 720 minutes (host "Customize this meeting" bookings, OO-13). */
+  /**
+   * Any duration from 1 to 720 minutes (host "Customize this meeting" bookings, OO-13), or up to a whole day
+   * (MAX_POLL_DURATION_MINUTES) in poll mode, so long and all-day poll options can be booked (MP-18).
+   */
   allowAnyDuration?: boolean;
 };
 
@@ -529,10 +532,12 @@ export async function prepareAvailability(
   if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) throw new AppError("validation", "Invalid range.");
 
   const requested = params.durationMinutes ?? null;
+  const poll = mode.type === "poll";
+  const anyMax = maxDurationOf(target, { poll });
   const durationMinutes =
-    internals.allowAnyDuration && requested !== null && Number.isInteger(requested) && requested >= 1 && requested <= 720
+    internals.allowAnyDuration && requested !== null && Number.isInteger(requested) && requested >= 1 && requested <= anyMax
       ? requested
-      : resolveDuration(target, requested);
+      : resolveDuration(target, requested, { poll });
   if (durationMinutes === null) throw new AppError("validation", "This duration isn't available.", { fieldErrors: { duration: ["This duration isn't available."] } });
   const durationMs = durationMinutes * MIN;
 

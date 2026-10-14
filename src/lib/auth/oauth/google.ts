@@ -5,8 +5,12 @@
 // token: callers keep the stored one when refreshToken is null), revoke, and the profile from the id token.
 // Sign-in and calendar connect share one client and one redirect URI; the voter free/busy check (poll_freebusy) asks
 // for the free/busy scope only and no offline access.
+// gmail.send is requested with the calendar scopes (owner decision: booking emails are sent from the owner's own Gmail,
+// src/lib/email/gmail-transport.ts); include_granted_scopes keeps earlier grants, and a grant without it (the box
+// unchecked on Google's consent screen) still connects the calendar.
 import "server-only";
 import { AppError } from "@/lib/errors";
+import { GMAIL_SEND_SCOPE } from "@/lib/integrations/google/scopes";
 import { getGoogleClient } from "./clients";
 import { decodeJwtClaims, mapArcticErrors, str, toOAuthTokens } from "./tokens";
 import type { OAuthIntent, OAuthProfile, OAuthTokens } from "./types";
@@ -17,6 +21,7 @@ export const GOOGLE_SCOPES = [
   "profile",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
+  GMAIL_SEND_SCOPE,
 ] as const;
 
 /** MP-13 "Check my calendar": free/busy only, tokens kept in memory. */
@@ -65,11 +70,15 @@ export async function exchangeGoogleCode(code: string, codeVerifier: string, int
   return toOAuthTokens(t, googleScopesFor(intent));
 }
 
-/** Refreshes an access token. refreshToken in the result is null when Google did not rotate it (keep the old one). */
+/**
+ * Refreshes an access token. refreshToken in the result is null when Google did not rotate it (keep the old one).
+ * scopes is empty when the response omits `scope`: the refresh never widens a grant, so callers keep the stored scopes
+ * (assuming the requested list would claim gmail.send for accounts that never granted it).
+ */
 export async function refreshGoogleAccessToken(refreshToken: string): Promise<OAuthTokens> {
   const c = client();
   const t = await mapArcticErrors(() => c.refreshAccessToken(refreshToken));
-  return toOAuthTokens(t, GOOGLE_SCOPES);
+  return toOAuthTokens(t, []);
 }
 
 /** Revokes a token at Google (best effort callers catch OAuthProviderError). */

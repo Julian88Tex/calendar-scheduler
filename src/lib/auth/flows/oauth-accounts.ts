@@ -3,7 +3,9 @@
 //
 // resolveOAuthLogin (intents login and signup), in this order:
 //   1. an oauth_accounts row for (provider, provider account id): log in (the stored email follows the provider);
-//   2. else a live user with the same verified email: link the provider and log in;
+//   2. else a live user with the same verified email: link the provider and log in; an account without a picture
+//      (no uploaded avatar, no provider avatar) adopts the provider's profile picture, so an account created without
+//      one (the owner bootstrap, src/lib/setup/bootstrap.ts, or an email signup) shows the Google photo;
 //   3. else create the account under the signup policy (advisory lock, first user is instance admin), with the name,
 //      avatar and verified email from the provider and the AU-13 default location (Google Meet for Google).
 // Unverified provider emails can only log in to an already linked account (step 1).
@@ -167,6 +169,22 @@ async function claimForVerifiedEmail(db: DbOrTx, stale: UserRow): Promise<{ user
   };
 }
 
+/**
+ * Step 2 of resolveOAuthLogin: an account linked to the provider without any picture adopts the provider's (https
+ * only, like every provider avatar the app shows). Call inside the linking transaction, after claimForVerifiedEmail
+ * (which holds the row lock); an avatar set concurrently is never replaced.
+ */
+async function adoptProviderAvatar(db: DbOrTx, user: UserRow, profile: OAuthProfile): Promise<UserRow> {
+  const picture = profile.avatarUrl?.trim();
+  if (!picture || !/^https:\/\//i.test(picture) || user.avatarUrl || user.avatarFileId) return user;
+  const [updated] = await db
+    .update(users)
+    .set({ avatarUrl: picture, updatedAt: now() })
+    .where(and(eq(users.id, user.id), isNull(users.avatarUrl), isNull(users.avatarFileId)))
+    .returning();
+  return updated ?? user;
+}
+
 /** Intents login and signup (see the file header). */
 export async function resolveOAuthLogin(p: {
   provider: OAuthProviderId;
@@ -189,7 +207,7 @@ export async function resolveOAuthLogin(p: {
     return withTx(db, async (tx) => {
       const oauthAccountId = await insertOAuthAccount(tx, existing.id, provider, profile);
       const { user, secured } = await claimForVerifiedEmail(tx, existing);
-      return { user, oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
+      return { user: await adoptProviderAvatar(tx, user, profile), oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
     });
   }
 
@@ -208,7 +226,7 @@ export async function resolveOAuthLogin(p: {
         return withTx(db, async (tx) => {
           const oauthAccountId = await insertOAuthAccount(tx, winner.id, provider, profile);
           const { user, secured } = await claimForVerifiedEmail(tx, winner);
-          return { user, oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
+          return { user: await adoptProviderAvatar(tx, user, profile), oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
         });
       }
     }

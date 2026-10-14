@@ -91,11 +91,21 @@ test.describe("meetings page", () => {
     await expect(page.getByRole("heading", { name: "No Past Events" })).toBeVisible(SLOW);
     await expect(page.getByRole("button", { name: "Share your link" })).toBeVisible();
 
+    // Choosing the Date Range tab opens the range calendar right away (Calendly); Escape closes it and the trigger
+    // opens it again.
     await page.getByTestId("meetings-tab-range").click();
     await expect(page).toHaveURL(/tab=range/);
     await expect(page.getByTestId("meetings-range")).toBeVisible(SLOW);
     await expect(page.getByTestId("meetings-counter")).toHaveText("Displaying 1 - 3 of 3 Events");
-    await page.getByRole("button", { name: /^Date range/ }).click();
+    const presets = page.getByRole("list", { name: "Presets" });
+    await expect(presets).toBeVisible();
+    await expect(page.getByRole("table", { name: "Choose the start date" })).toBeVisible();
+    await axe(page);
+    await page.keyboard.press("Escape");
+    await expect(presets).toHaveCount(0);
+    const trigger = page.getByRole("button", { name: /^Date range/ });
+    await expect(trigger).toBeFocused();
+    await trigger.click();
     await page.getByRole("button", { name: "Next week" }).click();
     await expect(page).toHaveURL(/start=2030-10-13&end=2030-10-19/);
     await expect(page.getByTestId("meetings-counter")).toHaveText("Displaying 1 - 2 of 2 Events", SLOW);

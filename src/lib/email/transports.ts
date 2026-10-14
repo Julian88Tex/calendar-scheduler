@@ -8,8 +8,11 @@
 // - SMTP (SMTP_HOST): nodemailer without pooling (serverless friendly), the ICS as a `text/calendar; method=...`
 //   alternative part plus an attachment (nodemailer `icalEvent`), which is what Gmail and Outlook need for native
 //   invitation cards.
+// - Gmail (the owner's Google connection with gmail.send): src/lib/email/gmail-transport.ts, the same MIME structure
+//   as SMTP built with nodemailer's MailComposer (gmail-mime.ts), sent with users.messages.send.
 // Each call returns { ok } or a classified failure: retryable (network, rate limits, 5xx, auth or sender
-// configuration that an admin can fix) or permanent (the provider rejected the message itself).
+// configuration that an admin can fix), permanent (the provider rejected the message itself) or, for Gmail, held
+// (the owner's Google connection needs a reconnect: the email waits in the outbox until it is fixed).
 import "server-only";
 import { getEnv } from "../env";
 import { formatAddress } from "./address";
@@ -34,7 +37,18 @@ export type OutgoingEmail = {
 export type DeliveryResult =
   /** alreadySent: the provider had already accepted this message (an earlier attempt with the same idempotency key). */
   | { ok: true; providerMessageId: string | null; alreadySent?: boolean }
-  | { ok: false; retryable: boolean; error: string };
+  | {
+      ok: false;
+      retryable: boolean;
+      error: string;
+      /**
+       * Gmail only: the sender's Google connection needs a reconnect. The email waits in the outbox (failed, with the
+       * error as its reason) and is sent once Gmail can send again; it is neither retried with backoff nor given up.
+       */
+      hold?: boolean;
+      /** The provider asked to wait this long before retrying (Retry-After). */
+      retryAfterMs?: number;
+    };
 
 const RESEND_TIMEOUT_MS = 15_000;
 

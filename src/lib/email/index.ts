@@ -1,7 +1,9 @@
 // OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // Email core public API (ARCHITECTURE section 13.1, SPEC GEN-15, NT-05, NT-06, NT-20):
-// - sendEmail(msg): outbox row by idempotency key, then Resend, SMTP or "stored" (send.ts)
+// - sendEmail(msg): outbox row by idempotency key, then Resend, SMTP, the owner's Gmail or "stored" (send.ts)
+// - resolveEmailTransport: which transport delivers (EMAIL_PROVIDER, Resend, SMTP, the owner's Gmail, outbox) and,
+//   for Gmail, the sending account and whether it can send right now (gmail-sender.ts)
 // - renderEmailLayout / renderEmailText: the shared responsive layout and its text footer (layout.ts)
 // - composeEmail / renderEmail: Calendly-style content blocks rendered to HTML and text together (blocks.ts)
 // - buildIcs: invitations and cancellations in UTC (ical.ts); buildMeetingIcs applies the NT-06 rules from the schema
@@ -15,13 +17,20 @@ import "server-only";
 export type { EmailBrand, EmailCategory, EmailMessage, EmailTransportName, IcsMethod, RenderedEmail, SendEmailResult } from "./types";
 export {
   EMAIL_MAX_ATTEMPTS,
+  EMAIL_OUTBOX_PATH,
   EMAIL_STALE_SENDING_MS,
+  GMAIL_HOLD_MAX_MS,
+  GMAIL_HOLD_PREFIX,
   cleanHeaders,
+  countHeldEmails,
   defaultFromAddress,
   emailHeaders,
   emailTransportName,
   icsMethodOf,
+  isHeldForGmail,
   listUnsubscribeHeaders,
+  outboxMessageId,
+  releaseHeldEmails,
   resendOutboxEmail,
   retryEmailDelivery,
   sendEmail,
@@ -30,6 +39,19 @@ export {
   type OutboxRow,
   type RetryEmailOutcome,
 } from "./send";
+export {
+  EMAIL_PROVIDER_SETTING_KEY,
+  GMAIL_SENDER_SETTING_KEY,
+  describeEmailTransport,
+  emailProviderFromEnv,
+  getGmailSender,
+  getInstanceOwner,
+  resolveEmailTransport,
+  type EmailProviderChoice,
+  type EmailTransportResolution,
+  type EmailTransportSource,
+  type GmailSender,
+} from "./gmail-sender";
 export {
   EMAIL_COLORS,
   EMAIL_FONT_STACK,

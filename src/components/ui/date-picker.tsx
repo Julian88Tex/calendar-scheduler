@@ -3,7 +3,8 @@
 // DatePicker and DateRangePicker (ARCHITECTURE 20.2): an input-style trigger with a calendar icon that opens a popover
 // with the MonthCalendar (36px days). Values are local "YYYY-MM-DD" strings. DateRangePicker: the first click sets the
 // start, the second the end (earlier dates restart the range), optional presets and a maximum length (analytics: 366
-// days).
+// days). Its calendar opens on a click of the trigger, or from the owner: `defaultOpen` opens it on mount and
+// `open` with `onOpenChange` controls it (Meetings opens it right away when the "Date Range" tab is chosen).
 "use client";
 
 import { CalendarDays, X } from "lucide-react";
@@ -132,6 +133,12 @@ export type DateRangePickerProps = {
   id?: string;
   className?: string;
   "aria-label"?: string;
+  /** Controlled open state of the calendar popover (use with onOpenChange). */
+  open?: boolean;
+  /** Uncontrolled: the calendar starts open when the picker mounts (default false). */
+  defaultOpen?: boolean;
+  /** Called whenever the calendar opens or closes (trigger click, Escape, outside click, a chosen range or preset). */
+  onOpenChange?: (open: boolean) => void;
 };
 
 /** Applies a click to a range selection: start, then end (an earlier click restarts). */
@@ -147,11 +154,42 @@ export function formatRangeLabel(range: DateRange, locale = "en"): string | null
   return `${shortDateLabel(range.start, locale)} - ${shortDateLabel(range.end, locale)}`;
 }
 
-export function DateRangePicker({ value, onChange, min, max, maxDays, presets, weekStart = 0, locale = "en", disabled, id, className, ...aria }: DateRangePickerProps) {
-  const [open, setOpen] = useState(false);
+export function DateRangePicker({
+  value,
+  onChange,
+  min,
+  max,
+  maxDays,
+  presets,
+  weekStart = 0,
+  locale = "en",
+  disabled,
+  id,
+  className,
+  open: openProp,
+  defaultOpen = false,
+  onOpenChange,
+  ...aria
+}: DateRangePickerProps) {
+  const controlled = openProp !== undefined;
+  const [openState, setOpenState] = useState(defaultOpen);
+  const open = !disabled && (controlled ? openProp : openState);
   const [today] = useState(() => todayIn());
   const [draft, setDraft] = useState<DateRange>(value);
   const [month, setMonth] = useState(() => monthOf(value.start ?? today));
+  // Every opening (the trigger, or the owner through `open`) starts from the current value and its month.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setDraft(value);
+      setMonth(monthOf(value.start ?? today));
+    }
+  }
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOpenState(next);
+    onOpenChange?.(next);
+  };
   const label = formatRangeLabel(value, locale);
   const picking = Boolean(draft.start && !draft.end);
   const limitMax = picking && maxDays && draft.start ? addDays(draft.start, maxDays - 1) : undefined;
@@ -161,13 +199,7 @@ export function DateRangePicker({ value, onChange, min, max, maxDays, presets, w
     <div id={id} role="group" aria-label={name} className={cn("flex min-w-0 flex-wrap items-center gap-2", className)}>
       <Popover
         open={open}
-        onOpenChange={(v) => {
-          setOpen(v);
-          if (v) {
-            setDraft(value);
-            setMonth(monthOf(value.start ?? today));
-          }
-        }}
+        onOpenChange={setOpen}
         align="start"
         className="flex w-auto max-w-[calc(100vw-16px)] flex-col gap-3 p-3 sm:flex-row"
         trigger={

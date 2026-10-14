@@ -62,13 +62,13 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 |---|---|---|
 | lifecycle-core | Booking emails, cancel, reschedule, host changes synced back to the calendar | done |
 | lifecycle-ui | Cancel and reschedule pages for invitees, host meeting dialogs | done |
-| meetings-dashboard | Meetings page: upcoming, past, filters, details, no-show, export | building |
+| meetings-dashboard | Meetings page: upcoming, past, filters, details, no-show, export | done |
 
 ### Milestone 5: meeting polls (the Doodle replacement)
 | Module | What it gives you | Status |
 |---|---|---|
 | polls-core | Poll logic: proposing times, voting, booking the winner, emails | done |
-| polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | building |
+| polls-ui | Create a poll on a week grid, voter page, results grid, book the final time | done |
 
 ### Milestone 6: the rest of what you use today
 | Module | What it gives you | Status |

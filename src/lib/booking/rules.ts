@@ -1,9 +1,29 @@
-// Event type to slot engine rules (ARCHITECTURE section 8), durations (SCH-18) and the booking window short circuit
-// (BK-31 step 0). Pure: no I/O.
+// Event type to slot engine rules (ARCHITECTURE section 8), durations (SCH-18; meeting polls MP-18) and the booking
+// window short circuit (BK-31 step 0). Pure: no I/O.
 import type { BookingWindow } from "@/lib/slots";
 import type { DateRangeRule, EventTypeRules, Interval, MeetingStart } from "@/lib/slots/types";
 import { isIsoDate } from "@/lib/slots/zone";
 import type { BookingTarget, EventTypeRow } from "./types";
+
+/** The longest meeting of an event type booking (SCH-18) and of a host "Customize this meeting" booking (OO-13). */
+export const MAX_DURATION_MINUTES = 12 * 60;
+
+/**
+ * The longest meeting poll booking (MP-18): a timed poll option lasts at most 24 hours, and a date-only option books
+ * one whole local day of the poll zone, which runs past 24 hours on a daylight saving fall-back day (25 hours in most
+ * zones, 26 in Antarctica/Troll).
+ */
+export const MAX_POLL_DURATION_MINUTES = 26 * 60;
+
+/** True for the adhoc event type a meeting poll books through (decision C2: booking method "poll"). */
+export function isPollEventType(et: Pick<EventTypeRow, "type" | "bookingMethod">): boolean {
+  return et.type === "adhoc" && et.bookingMethod === "poll";
+}
+
+/** The longest duration a booking of this target may use: poll bookings (the poll's adhoc type) get a whole day. */
+export function maxDurationOf(target: Pick<BookingTarget, "eventType">, opts: { poll?: boolean } = {}): number {
+  return opts.poll === true || isPollEventType(target.eventType) ? MAX_POLL_DURATION_MINUTES : MAX_DURATION_MINUTES;
+}
 
 /** The event type's date range rule (SCH-02 to SCH-05), or the single-use override. */
 export function dateRangeRuleOf(et: EventTypeRow, overrides?: BookingTarget["overrides"]): DateRangeRule {
@@ -38,13 +58,21 @@ export function allowedDurationsOf(target: Pick<BookingTarget, "eventType" | "ov
         ? et.durationOptions
         : [et.durationMinutes];
   const out = [def, ...options.filter((d) => d !== def)];
-  return out.filter((d, i) => Number.isInteger(d) && d >= 1 && d <= 720 && out.indexOf(d) === i);
+  return out.filter((d, i) => Number.isInteger(d) && d >= 1 && d <= MAX_DURATION_MINUTES && out.indexOf(d) === i);
 }
 
-/** The duration to use: the requested one when allowed (adhoc types accept any 1 to 720), else the default. */
-export function resolveDuration(target: Pick<BookingTarget, "eventType" | "overrides">, requested?: number | null): number | null {
+/**
+ * The duration to use: the requested one when allowed, else the default. Adhoc types accept any duration from 1 to 720
+ * minutes; bookings made through a meeting poll (`poll`, set by callers with a poll context, or the poll's own adhoc
+ * type) up to MAX_POLL_DURATION_MINUTES, so long and all-day poll options can be booked.
+ */
+export function resolveDuration(
+  target: Pick<BookingTarget, "eventType" | "overrides">,
+  requested?: number | null,
+  opts: { poll?: boolean } = {},
+): number | null {
   if (requested === undefined || requested === null) return defaultDurationOf(target);
-  if (!Number.isInteger(requested) || requested < 1 || requested > 720) return null;
+  if (!Number.isInteger(requested) || requested < 1 || requested > maxDurationOf(target, opts)) return null;
   if (target.eventType.type === "adhoc") return requested;
   return allowedDurationsOf(target).includes(requested) ? requested : null;
 }
