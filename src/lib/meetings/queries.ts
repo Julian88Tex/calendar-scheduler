@@ -156,7 +156,7 @@ export async function loadBundles(db: DbOrTx, ctx: ViewerContext, rows: RawMeeti
       .select({ inviteeId: inviteeGuests.inviteeId, email: inviteeGuests.email })
       .from(inviteeGuests)
       .where(and(inArray(inviteeGuests.scheduledEventId, ids), isNull(inviteeGuests.canceledAt)))
-      .orderBy(asc(inviteeGuests.createdAt), asc(inviteeGuests.id)),
+      .orderBy(asc(inviteeGuests.createdAt)),
     db
       .select({
         scheduledEventId: scheduledEventHosts.scheduledEventId,

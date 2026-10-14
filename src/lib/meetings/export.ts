@@ -53,7 +53,7 @@ export async function* exportCsvLines(actor: ActorCtx, input: MeetingsQuery, opt
         .select({ inviteeId: inviteeGuests.inviteeId, email: inviteeGuests.email })
         .from(inviteeGuests)
         .where(and(inArray(inviteeGuests.scheduledEventId, ids), isNull(inviteeGuests.canceledAt)))
-        .orderBy(asc(inviteeGuests.createdAt), asc(inviteeGuests.id)),
+        .orderBy(asc(inviteeGuests.createdAt)),
       db.select({ scheduledEventId: scheduledEventHosts.scheduledEventId, userId: scheduledEventHosts.userId }).from(scheduledEventHosts).where(inArray(scheduledEventHosts.scheduledEventId, ids)),
       db.select({ id: eventTypes.id, teamId: eventTypes.teamId }).from(eventTypes).where(inArray(eventTypes.id, etIds)),
     ]);
