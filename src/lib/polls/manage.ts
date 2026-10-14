@@ -16,7 +16,7 @@ import { requirePollAccess, requirePollOwner } from "./access";
 import { recordActivity } from "./activity";
 import { POLL_ERRORS, pollJobGroup } from "./constants";
 import { lastOptionStart, loadOptions, lockPoll, statusOf, type PollRow } from "./load";
-import { cancelMeetingReminders, cancelPollTimers, cancelReminders, enqueueHoldsSync, enqueuePollEmail, scheduleAnchorReminders, scheduleTimedJobs } from "./schedule";
+import { cancelMeetingReminders, cancelPollTimers, cancelReminders, enqueueHoldsSync, enqueuePollEmail, rescheduleReminders, scheduleTimedJobs } from "./schedule";
 import { canTransition, isPastDeadline } from "./state";
 import { DeletePollSchema, ReopenPollSchema, deadlineProblem } from "./validation";
 
@@ -88,7 +88,7 @@ export async function reopenVoting(actor: ActorCtx, raw: unknown): Promise<void>
     await tx.update(meetingPolls).set({ status: "open", deadlineAt, votingClosedAt: null, updatedAt: at }).where(eq(meetingPolls.id, poll.id));
     await recordActivity(tx, { pollId: poll.id, type: "voting_reopened", actorUserId: actor.user.id, at });
     await scheduleTimedJobs(tx, updated, options, at);
-    await scheduleAnchorReminders(tx, updated, options, at);
+    await rescheduleReminders(tx, updated, options, at);
   });
   runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
 }
@@ -114,7 +114,7 @@ export async function reopenPoll(actor: ActorCtx, raw: unknown): Promise<void> {
     await recordActivity(tx, { pollId: poll.id, type: "reopened", actorUserId: actor.user.id, at });
     await publishEvent(tx, "poll.reopened", { pollId: poll.id }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
     await scheduleTimedJobs(tx, updated, options, at);
-    await scheduleAnchorReminders(tx, updated, options, at);
+    await rescheduleReminders(tx, updated, options, at);
     if (poll.reserveTimes) await enqueueHoldsSync(tx, poll.id, at);
     if (input.notify) await notifyRespondents(tx, poll, "reopened", actor.user.id, at);
   });

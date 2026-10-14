@@ -14,7 +14,7 @@ import { isUniqueViolation } from "@/db/helpers";
 import { eventTypeHosts, eventTypes, meetingPollOptions, meetingPollParticipants, meetingPolls, meetingPollVotes, pollSlugRedirects, scheduledEvents } from "@/db/schema";
 import { assertLocationConnectionsOwnedBy, assertSameOrgUsers, type ActorCtx } from "@/lib/authz";
 import { AppError } from "@/lib/errors";
-import { publishEvent } from "@/lib/events";
+import { eventJobPattern, publishEvent } from "@/lib/events";
 import { runJobsAfterResponse } from "@/lib/jobs";
 import { now as clockNow } from "@/lib/time/now";
 import { canRemoveCohosts, requirePollAccess } from "./access";
@@ -23,7 +23,7 @@ import { MAX_POLL_OPTIONS, POLL_ERRORS, SLUG_REDIRECT_DAYS, pollJobGroup } from 
 import { cleanCohostIds, cleanDescription, eventTypeFields, isPollSlugAvailable, optionValues } from "./create";
 import { dayStart } from "./grid";
 import { lastOptionStart, loadOptions, loadPollHosts, lockPoll, startOf, statusOf, type OptionRow, type PollRow } from "./load";
-import { enqueueHoldsSync, enqueuePollEmail, scheduleAnchorReminders, scheduleTimedJobs } from "./schedule";
+import { enqueueHoldsSync, enqueuePollEmail, rescheduleReminders, scheduleTimedJobs } from "./schedule";
 import { AddOptionsSchema, MORE_PUBLIC_WARNING, RemoveOptionsSchema, UpdatePollSchema, deadlineProblem, isMorePublic, maxVotesProblem, normalizeOptions } from "./validation";
 
 const DAY = 86_400_000;
@@ -209,14 +209,17 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
         })
         .where(eq(eventTypes.id, poll.eventTypeId));
 
-      // A booked meeting follows title changes (the provider event is rewritten).
-      if (status === "booked" && patch.title && poll.bookedScheduledEventId) {
+      // A booked meeting follows title and description changes: the meeting row takes the new name and the provider
+      // event is rewritten from the meeting and its event type (lifecycle provisioning on meeting.updated).
+      if (status === "booked" && poll.bookedScheduledEventId && ("title" in patch || "descriptionHtml" in patch)) {
         const rows = await tx
           .update(scheduledEvents)
-          .set({ name: patch.title, updatedAt: at })
+          .set({ ...(patch.title ? { name: patch.title } : {}), updatedAt: at })
           .where(and(eq(scheduledEvents.id, poll.bookedScheduledEventId), eq(scheduledEvents.status, "active")))
           .returning({ id: scheduledEvents.id });
-        if (rows.length) await publishEvent(tx, "meeting.updated", { scheduledEventId: rows[0]!.id, fields: ["location"] }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
+        if (rows.length) {
+          await publishEvent(tx, "meeting.updated", { scheduledEventId: rows[0]!.id, fields: ["location"] }, { organizationId: poll.organizationId, actor: { type: "user", userId: actor.user.id } });
+        }
       }
 
       const fields = [...new Set(changed)];
@@ -225,15 +228,17 @@ export async function updatePoll(actor: ActorCtx, raw: unknown): Promise<UpdateP
       const timing = ["deadlineAt", "reminderMode", "reminderOffsets", "status"].some((k) => k in patch) || closeNow;
       if (timing) {
         await scheduleTimedJobs(tx, next, options, at);
-        await scheduleAnchorReminders(tx, next, options, at);
+        await rescheduleReminders(tx, next, options, at);
       }
-      if (next.reserveTimes && (hostsChanged || "title" in patch || "reserveTimes" in patch) || (!next.reserveTimes && "reserveTimes" in patch)) {
-        await enqueueHoldsSync(tx, poll.id, at);
-      }
-      return { pollId: poll.id, slug: next.slug, fields };
+      if (next.reserveTimes && (hostsChanged || "reserveTimes" in patch)) await enqueueHoldsSync(tx, poll.id, at);
+      else if (!next.reserveTimes && "reserveTimes" in patch) await enqueueHoldsSync(tx, poll.id, at);
+      // A new title rewrites the holds already on the calendars ("Reserved: {Poll title}").
+      if (next.reserveTimes && ("title" in patch || "locale" in patch)) await enqueueHoldsSync(tx, poll.id, at, { refresh: true });
+      return { pollId: poll.id, slug: next.slug, fields, meetingUpdated: status === "booked" && ("title" in patch || "descriptionHtml" in patch) };
     });
     runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
-    return out;
+    if (out.meetingUpdated) runJobsAfterResponse({ types: [eventJobPattern("meeting.updated")] });
+    return { pollId: out.pollId, slug: out.slug, fields: out.fields };
   } catch (e) {
     if (isUniqueViolation(e, "polls_slug_uq")) throw field("slug", POLL_ERRORS.slugTaken);
     throw e;
@@ -288,7 +293,7 @@ export async function addOptions(actor: ActorCtx, raw: unknown): Promise<AddOpti
     }
     await recordActivity(tx, { pollId: poll.id, type: "options_added", actorUserId: actor.user.id, data: { count: rows.length, optionIds: rows.map((r) => r.id) }, at });
     await scheduleTimedJobs(tx, next, all, at);
-    await scheduleAnchorReminders(tx, next, all, at);
+    await rescheduleReminders(tx, next, all, at);
     if (poll.reserveTimes) await enqueueHoldsSync(tx, poll.id, at);
     let notified = 0;
     if (input.notifyParticipants) {
@@ -344,7 +349,7 @@ export async function removeOptions(actor: ActorCtx, raw: unknown): Promise<Remo
     await tx.update(meetingPolls).set({ hostPreferences: prefs, maxChoicesPerParticipant: maxChoices, updatedAt: at }).where(eq(meetingPolls.id, poll.id));
     await recordActivity(tx, { pollId: poll.id, type: "options_removed", actorUserId: actor.user.id, data: { count: ids.length, optionIds: ids, votesRemoved: deleted.length }, at });
     await scheduleTimedJobs(tx, poll, rest, at);
-    await scheduleAnchorReminders(tx, poll, rest, at);
+    await rescheduleReminders(tx, poll, rest, at);
     if (poll.reserveTimes) await enqueueHoldsSync(tx, poll.id, at);
     return { removed: ids.length, votesRemoved: deleted.length };
   });

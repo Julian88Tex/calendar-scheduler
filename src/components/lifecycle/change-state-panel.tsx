@@ -1,7 +1,8 @@
 // The main panel of a refused change (SPEC CR-02, CR-03, SCH-23): "This event has already been canceled.", "This event
 // has already occurred.", the cutoff sentence with the host's email, or "This event can no longer be rescheduled."
-// with the reason and, while canceling still works, a link to the cancel page; then "Schedule another event". Server
-// and client safe.
+// with the reason and, while canceling still works, a link to the cancel page; then "Schedule another event". A
+// meeting the host canceled with "Share new times to meet" (CR-08) also offers "Pick a new time" on the cancel page.
+// Server and client safe.
 import type { Route } from "next";
 import Link from "next/link";
 import { BookingMainSection, BookingPanelHeading } from "@/components/public/booking-card";
@@ -11,14 +12,20 @@ import { cn } from "@/lib/cn";
 import type { BlockedCopy } from "./lib/state";
 import { lt } from "./lib/t";
 
+// The booking pages' brand pill (details-form.tsx BRAND_BUTTON), repeated here: this panel also renders in Server
+// Components, which can't read constants from a client module.
+const BRAND_PILL = "bg-brand text-white hover:bg-brand hover:brightness-90 active:bg-brand active:brightness-75";
+
 export type ChangeStatePanelProps = {
   copy: BlockedCopy;
   /** The cancel page of this invitee (shown when copy.cancelAvailable). */
   cancelHref?: string | null;
   scheduleAnotherHref?: string | null;
+  /** CR-08: the host asked for a new time; the reschedule page of this invitee books again. */
+  rebook?: { href: string; hostName: string } | null;
 };
 
-export function ChangeStatePanel({ copy, cancelHref, scheduleAnotherHref }: ChangeStatePanelProps) {
+export function ChangeStatePanel({ copy, cancelHref, scheduleAnotherHref, rebook }: ChangeStatePanelProps) {
   return (
     <BookingMainSection>
       <div data-testid={`change-blocked-${copy.reason}`} className="flex flex-col items-start gap-4">
@@ -41,7 +48,19 @@ export function ChangeStatePanel({ copy, cancelHref, scheduleAnotherHref }: Chan
             </Link>
           </p>
         )}
-        {scheduleAnotherHref && (
+        {rebook && (
+          <>
+            <p className="text-[15px] leading-[22px] text-ink-2">{lt("cancel.rebookNotice", { hostName: rebook.hostName })}</p>
+            <Link
+              href={rebook.href as Route}
+              className={cn(buttonClassName({ size: "lg" }), BRAND_PILL, "mt-2")}
+              data-testid="pick-new-time"
+            >
+              {lt("cancel.pickNewTime")}
+            </Link>
+          </>
+        )}
+        {scheduleAnotherHref && !rebook && (
           <Link
             href={scheduleAnotherHref as Route}
             className={cn(buttonClassName({ variant: "secondary", size: "lg" }), "mt-2 border-brand text-brand-strong")}

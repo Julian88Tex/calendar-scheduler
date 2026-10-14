@@ -102,7 +102,8 @@ export async function seedDemo(tx: DbOrTx, ctx: SeedDemoContext): Promise<void> 
   const at = clockNow();
   const createdAt = new Date(at.getTime() - 2 * 86_400_000);
   const dates = demoDates(zone, at);
-  const location = { id: newId(), kind: "jitsi_conference" as const, position: 0 };
+  // Google Meet, like the owner's virtual event types (docs/SCOPE.md: conferencing is Google Meet only).
+  const location = { id: newId(), kind: "google_conference" as const, position: 0 };
 
   const eventTypeId = newId();
   await tx.insert(eventTypes).values({

@@ -117,6 +117,29 @@ test.describe("host meeting dialogs", () => {
     await expect(page.getByText("Julian Joseph asked you to pick a new time for this meeting.")).toBeVisible(SLOW);
     await expect(page.getByTestId("former-when")).toHaveText("8:30pm - 10:30pm, Wednesday, October 16, 2030");
     await expect(page.getByRole("heading", { name: "Select a Date & Time" })).toBeVisible();
+
+    // The old cancel link says the meeting is canceled and offers "Pick a new time".
+    const [, , thirdInvitee] = seeded.demoData.inviteeIds;
+    await page.goto(`/cancellations/${thirdInvitee}`, SLOW);
+    await expect(page.getByRole("heading", { name: "This event has already been canceled." })).toBeVisible(SLOW);
+    await page.getByRole("link", { name: "Pick a new time" }).click();
+    await expect(page).toHaveURL(new RegExp(`/reschedulings/${thirdInvitee}`));
+
+    // Booking again: any available time, the prefilled details, "Update Event".
+    const day = page.getByRole("button", { name: /Times available$/ }).first();
+    await expect(day).toBeEnabled(SLOW);
+    await day.click();
+    await page.getByRole("list", { name: "Select a time" }).getByRole("button").first().click();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Enter Details" })).toBeVisible(SLOW);
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Maya Patel");
+    await page.getByRole("button", { name: "Update Event" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: /You are (scheduled|rescheduled)/ })).toBeVisible(SLOW);
+    const rebookedId = /\/booking\/([0-9a-f-]{36})$/.exec(page.url())?.[1];
+    expect(rebookedId).toBeTruthy();
+    // The request's links now lead to the new booking.
+    await page.goto(new URL(link!).pathname, SLOW);
+    await expect(page).toHaveURL(new RegExp(`/reschedulings/${rebookedId}$`));
   });
 
   test("marks a no-show only after the start, with undo, and keeps notes host-only (CR-11, CR-14)", async ({ page, api }) => {

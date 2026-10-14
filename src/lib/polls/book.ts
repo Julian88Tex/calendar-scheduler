@@ -28,7 +28,7 @@ import { now as clockNow } from "@/lib/time/now";
 import { normalizeEmail } from "@/lib/validation";
 import { requirePollAccess } from "./access";
 import { recordActivity } from "./activity";
-import { POLL_COPY, POLL_ERRORS, POLL_JOBS, pollJobGroup } from "./constants";
+import { MAX_BOOKABLE_MINUTES, POLL_COPY, POLL_ERRORS, POLL_JOBS, pollJobGroup } from "./constants";
 import { hostBusyForPoll, optionHostStatus, optionStatuses } from "./conflicts";
 import { runWithBookingIntent } from "./intent";
 import { endOf, hostViews, loadOptions, loadParticipants, loadPoll, loadPollHosts, loadVotes, lockPoll, optionView, startOf, statusOf, votesByParticipant, type OptionRow, type PollHostRow, type PollRow } from "./load";
@@ -39,7 +39,7 @@ import { locationView } from "./views";
 import { BookPollSchema, type BookPollInput } from "./validation";
 import type { BookingPreview, BookingPreviewInvitee, BookPollResult } from "./types";
 
-const MAX_MOVE_MINUTES = 720;
+const MAX_MOVE_MINUTES = MAX_BOOKABLE_MINUTES;
 
 type Viewer = { userId: string; organizationId: string };
 
@@ -103,6 +103,8 @@ export async function bookingPreview(actor: ActorCtx, pollId: string, optionId: 
     hideInvitees: poll.hideInvitees,
     rebook: meeting ? { scheduledEventId: meeting.id, start: meeting.startAt.toISOString(), end: meeting.endAt.toISOString(), sameOption: poll.bookedOptionId === option.id } : null,
     sendMeetingReminders: poll.sendMeetingReminders,
+    unbookableReason:
+      range.start <= at.getTime() ? POLL_ERRORS.optionPast : (range.end - range.start) / 60_000 > MAX_BOOKABLE_MINUTES ? POLL_ERRORS.bookTooLong : null,
   };
 }
 
@@ -206,10 +208,14 @@ async function bookPollAs(
   const option = options.find((o) => o.id === input.optionId);
   if (!option) throw new AppError("not_found", POLL_ERRORS.optionNotFound);
   if (startOf(option, poll0.timezone) <= at.getTime()) throw new AppError("validation", POLL_ERRORS.optionPast);
+  if ((endOf(option, poll0.timezone) - startOf(option, poll0.timezone)) / 60_000 > MAX_BOOKABLE_MINUTES) throw new AppError("validation", POLL_ERRORS.bookTooLong);
   const status = statusOf(poll0, options, at);
   if (!bookable(status)) {
     if (status === "booked") {
-      if (poll0.bookedOptionId === option.id && poll0.bookedScheduledEventId) return { scheduledEventId: poll0.bookedScheduledEventId, mode: "unchanged" };
+      // A second click on the booked time answers the same meeting; once that meeting was canceled (from Meetings),
+      // the host reopens the poll first (MP-21 "Meeting canceled" with "Reopen poll").
+      const current = await activeMeeting(poll0);
+      if (current && poll0.bookedOptionId === option.id) return { scheduledEventId: current.id, mode: "unchanged" };
       throw new AppError("conflict", POLL_ERRORS.rebookReopen);
     }
     throw new AppError("conflict", status === "expired" ? POLL_ERRORS.pollEnded : POLL_ERRORS.notFound);
@@ -224,6 +230,8 @@ async function bookPollAs(
   const meeting = await activeMeeting(poll0);
   if (!meeting) {
     const scheduledEventId = await bookFresh(poll0, option, people, booker, intent);
+    // booking-core runs the booking.created jobs; the poll's own side effects (holds, reminders, emails) run here.
+    runJobsAfterResponse({ groupKeys: [pollJobGroup(poll0.id)] });
     return { scheduledEventId, mode: "booked" };
   }
   if (!opts.actorCtx) throw new AppError("conflict", POLL_ERRORS.pollBooked); // auto-book never rebooks

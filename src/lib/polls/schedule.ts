@@ -3,7 +3,9 @@
 // time and revived when a key comes back (enqueueOrReviveJob), and reschedules cancel the pending ones first. Handlers
 // re-read the state and no-op when no longer applicable, so cron latency never affects correctness. Server only.
 import "server-only";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import type { DbOrTx } from "@/db";
+import { meetingPollParticipants } from "@/db/schema";
 import { cancelJobs, enqueueJob, enqueueOrReviveJob } from "@/lib/jobs";
 import { DEADLINE_WARNING_MS, MEETING_REMINDER_OFFSETS_MINUTES, POLL_JOBS, SUBSCRIBER_BATCH_MS, pollJobGroup } from "./constants";
 import { firstFutureOptionStart, lastOptionStart, type OptionRow, type PollRow } from "./load";
@@ -96,16 +98,53 @@ export async function scheduleInviteReminders(
     invitedAt: batch.invitedAt,
     now,
   });
+  const ids = [...batch.participantIds].sort();
   for (const r of plan) {
-    await enqueueJob(tx, {
+    // Keyed by the batch and the due time: a recompute revives a canceled reminder instead of losing it, and a moved
+    // reminder (another due time) is a new job.
+    await enqueueOrReviveJob(tx, {
       type: POLL_JOBS.reminder,
-      payload: { pollId: poll.id, kind: "after_invite", index: r.index, participantIds: batch.participantIds },
+      payload: { pollId: poll.id, kind: "after_invite", index: r.index, participantIds: ids },
       runAt: r.runAt,
       groupKey: inviteReminderGroup(poll.id),
-      idempotencyKey: `poll:${poll.id}:reminder:invite:${r.index}:${batch.invitedAt.getTime()}:${batch.participantIds[0]}`,
+      idempotencyKey: `poll:${poll.id}:reminder:invite:${r.index}:${batch.invitedAt.getTime()}:${r.runAt.getTime()}:${ids[0]}`,
     });
   }
   return plan.length;
+}
+
+/**
+ * Recomputes every automatic reminder of a poll (MP-24: "Jobs are recomputed when deadline, options or invites
+ * change"): the anchor reminders, and the after-invitation reminders of every batch of invited people who have not
+ * responded (grouped by their invitation time). Pending reminders are canceled first; nothing is planned unless the
+ * poll is open. The send-time checks (still open, still invited, subscribed, at most 3) stay in the job.
+ */
+export async function rescheduleReminders(tx: DbOrTx, poll: PollTimes, options: readonly OptionRow[], now: Date): Promise<number> {
+  await cancelReminders(tx, poll.id);
+  if (poll.status !== "open") return 0;
+  let planned = await scheduleAnchorReminders(tx, poll, options, now);
+  if (poll.reminderMode === "off") return planned;
+  const rows = await tx
+    .select({ id: meetingPollParticipants.id, invitedAt: meetingPollParticipants.invitedAt })
+    .from(meetingPollParticipants)
+    .where(
+      and(
+        eq(meetingPollParticipants.pollId, poll.id),
+        eq(meetingPollParticipants.status, "invited"),
+        isNull(meetingPollParticipants.deletedAt),
+        isNull(meetingPollParticipants.unsubscribedAt),
+        isNotNull(meetingPollParticipants.invitedAt),
+      ),
+    );
+  const batches = new Map<number, string[]>();
+  for (const r of rows) {
+    const key = r.invitedAt!.getTime();
+    batches.set(key, [...(batches.get(key) ?? []), r.id]);
+  }
+  for (const [invitedAt, participantIds] of batches) {
+    planned += await scheduleInviteReminders(tx, poll, options, { invitedAt: new Date(invitedAt), participantIds }, now);
+  }
+  return planned;
 }
 
 /** Cancels every pending reminder (booked, closed, canceled or expired polls). */
@@ -121,8 +160,22 @@ export async function cancelPollTimers(tx: DbOrTx, pollId: string): Promise<void
   await cancelReminders(tx, pollId);
 }
 
-/** Brings the calendar holds in line with the poll (Reserve times, MP-25). */
-export async function enqueueHoldsSync(tx: DbOrTx, pollId: string, now: Date): Promise<void> {
+/**
+ * Brings the calendar holds in line with the poll (Reserve times, MP-25). `refresh` also rewrites the holds that are
+ * already on the calendars (the poll title changed), as its own job so a pending plain sync never swallows it.
+ */
+export async function enqueueHoldsSync(tx: DbOrTx, pollId: string, now: Date, opts: { refresh?: boolean } = {}): Promise<void> {
+  if (opts.refresh) {
+    await enqueueJob(tx, {
+      type: POLL_JOBS.holdsSync,
+      payload: { pollId, refresh: true },
+      runAt: now,
+      groupKey: pollJobGroup(pollId),
+      idempotencyKey: `poll:${pollId}:holds:refresh:${now.getTime()}`,
+      priority: 5,
+    });
+    return;
+  }
   await enqueueOrReviveJob(tx, {
     type: POLL_JOBS.holdsSync,
     payload: { pollId },

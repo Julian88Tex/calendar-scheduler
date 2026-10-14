@@ -24,7 +24,7 @@ import { requirePollAccess } from "./access";
 import { recordActivity } from "./activity";
 import { MANUAL_REMINDER_THROTTLE_MS, MAX_INVITE_EMAILS_PER_DAY, MAX_POLL_PARTICIPANTS, POLL_ERRORS, pollJobGroup } from "./constants";
 import { loadOptions, loadPollBySlug, lockPoll, participantCount, statusOf } from "./load";
-import { enqueuePollEmail, scheduleAnchorReminders, scheduleInviteReminders } from "./schedule";
+import { enqueuePollEmail, rescheduleReminders } from "./schedule";
 import { tokenHashesFor, verifyUnsubscribeToken, warmPollKeys } from "./tokens";
 import { InviteSchema, RemindSchema } from "./validation";
 
@@ -116,9 +116,8 @@ export async function invitePeople(actor: ActorCtx, raw: unknown): Promise<Invit
       const firstInviteSentAt = poll.firstInviteSentAt ?? at;
       if (!poll.firstInviteSentAt) await tx.update(meetingPolls).set({ firstInviteSentAt, updatedAt: at }).where(eq(meetingPolls.id, poll.id));
       await recordActivity(tx, { pollId: poll.id, type: "invited", actorUserId: actor.user.id, data: { count: sendTo.length, participantIds: sendTo }, at });
-      const timed = { ...poll, firstInviteSentAt };
-      await scheduleAnchorReminders(tx, timed, options, at);
-      await scheduleInviteReminders(tx, timed, options, { invitedAt: at, participantIds: sendTo }, at);
+      // The first send starts the smart reminders; every send recomputes the reminder plan (MP-24).
+      await rescheduleReminders(tx, { ...poll, firstInviteSentAt }, options, at);
     }
     return result;
   });

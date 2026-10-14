@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { wholeNumberIn } from "@/lib/event-types/draft";
 import type { EventTypeDraft } from "@/lib/event-types/types";
+import { formatDuration } from "@/lib/time/format";
 
 export type SectionErrors = Record<string, string[]>;
 
@@ -38,14 +39,15 @@ export type SectionProps = {
   disabled: boolean;
 };
 
-/** "0 min", "15 min", "1 hr", "1.5 hrs", "2 hrs" (Calendly's buffer and increment labels). */
+/**
+ * "0 min", "15 min", "1 hr", "1.5 hr", "2 hr", "1 hr 15 min" (Calendly's buffer and increment labels; "hr" is never
+ * plural, as in formatDuration).
+ */
 export function minutesLabel(m: number): string {
   if (m < 60) return `${m} min`;
   const h = m / 60;
-  if (h === 1) return "1 hr";
-  if (Number.isInteger(h * 2)) return `${h} hrs`;
-  const whole = Math.floor(h);
-  return `${whole} ${whole === 1 ? "hr" : "hrs"} ${m % 60} min`;
+  if (Number.isInteger(h * 2)) return `${h} hr`;
+  return formatDuration(m);
 }
 
 export type MinutesSelectProps = {

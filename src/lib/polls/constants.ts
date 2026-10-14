@@ -21,6 +21,8 @@ export const MAX_INVITE_EMAILS_PER_DAY = 200;
 /** Option durations: 5 minutes to 24 hours; all-day options are date-only (MP-02). */
 export const MIN_OPTION_MINUTES = 5;
 export const MAX_OPTION_MINUTES = 24 * 60;
+/** The longest meeting a poll can book (the bookings service's limit; longer and all-day options can be voted on). */
+export const MAX_BOOKABLE_MINUTES = 12 * 60;
 /** Options start within the next 365 days. */
 export const OPTION_HORIZON_DAYS = 365;
 /** Custom reminders: up to 3; at most 3 automatic reminders per participant (MP-24). */
@@ -171,6 +173,7 @@ export const POLL_ERRORS = {
   reminderThrottled: "A reminder was sent recently. Try again later.",
   formExpired: "This page has expired. Refresh and try again.",
   moveTooLong: "Meetings longer than 12 hours can't be moved. Cancel the meeting and book the new time.",
+  bookTooLong: "Meetings can be at most 12 hours long, so this time can't be booked. Add a shorter time and book that one.",
   rebookReopen: "Reopen the poll to choose a different time.",
   unsubscribeInvalid: "This unsubscribe link is invalid or has expired.",
   editLinkInvalid: "This link is invalid or has expired.",

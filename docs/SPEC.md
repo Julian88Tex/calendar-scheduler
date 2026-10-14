@@ -830,9 +830,9 @@ the host). The REST API and webhooks (API domain) are the integration surface fo
 ### ET-21 Limits and buffers section (P0)
 
 - **Behavior**: "Buffer time" ("+ Set buffer time" reveals "Before event" and "After event" selects: 0 min, 5, 10,
-  15, 30, 45 min, 1 hr, 1.5 hrs, 2 hrs, 2.5 hrs, 3 hrs, plus "Custom" minutes 0 to 720), helper "Add time before or after
-  booked events". "Meeting limits" ("+ Set limit" adds a row "Max number of meetings [n] per [day | week | month]";
-  at most one row per period; n from 1 to 999). Semantics in SCH-07, SCH-08.
+  15, 30, 45 min, 1 hr, 1.5 hr, 2 hr, 2.5 hr, 3 hr, plus "Custom" minutes 0 to 720; "hr" is never plural), helper
+  "Add time before or after booked events". "Meeting limits" ("+ Set limit" adds a row "Max number of meetings [n]
+  per [day | week | month]"; at most one row per period; n from 1 to 999). Semantics in SCH-07, SCH-08.
 - **Acceptance**: setting 15/15 buffers serializes `buffer_before_minutes: 15, buffer_after_minutes: 15`.
 
 ### ET-22 Free/busy rules section (P2)

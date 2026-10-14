@@ -97,8 +97,11 @@ export async function reservedIntervalsByUser(userIds: string[], start: Date, en
 
 export type HoldSyncOutcome = { created: number; deleted: number; pending: number; failed: number; skipped: number };
 
-/** Creates and removes provider holds so they match the poll (see the file header). */
-export async function syncPollHolds(pollId: string): Promise<HoldSyncOutcome> {
+/**
+ * Creates and removes provider holds so they match the poll (see the file header). `refresh` rewrites the holds that
+ * are already synced too (a new poll title).
+ */
+export async function syncPollHolds(pollId: string, opts: { refresh?: boolean } = {}): Promise<HoldSyncOutcome> {
   const db = await getDb();
   const out: HoldSyncOutcome = { created: 0, deleted: 0, pending: 0, failed: 0, skipped: 0 };
   const poll = await loadPoll(db, pollId);
@@ -135,7 +138,7 @@ export async function syncPollHolds(pollId: string): Promise<HoldSyncOutcome> {
     }
   }
   if (!poll || !wanted.size) return out;
-  const have = new Set(existing.filter((r) => r.status === "synced" && r.optionId).map((r) => `${r.userId}:${r.optionId}`));
+  const have = new Set(opts.refresh ? [] : existing.filter((r) => r.status === "synced" && r.optionId).map((r) => `${r.userId}:${r.optionId}`));
   const link = pollUrl(poll.slug);
   const t = getT(poll.locale, "poll-emails");
   for (const [key, w] of wanted) {

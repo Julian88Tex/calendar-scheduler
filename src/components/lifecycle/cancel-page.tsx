@@ -22,7 +22,7 @@ import type { ActionResult } from "@/lib/actions";
 import lifecycleMessages from "@/lib/i18n/messages/en/lifecycle";
 import { cn } from "@/lib/cn";
 import { ChangeStatePanel } from "./change-state-panel";
-import { guestsNotice } from "./lib/state";
+import { changePagePath, guestsNotice } from "./lib/state";
 import { lt } from "./lib/t";
 import { MeetingSummaryPanel } from "./meeting-summary-panel";
 import type { ChangePageView } from "./types";
@@ -116,7 +116,13 @@ export function CancelPage({ view, cancelAction }: CancelPageProps) {
       </BookingMainSection>
     );
   } else if (view.blocked) {
-    main = <ChangeStatePanel copy={view.blocked} scheduleAnotherHref={view.scheduleAnotherHref} />;
+    main = (
+      <ChangeStatePanel
+        copy={view.blocked}
+        scheduleAnotherHref={view.scheduleAnotherHref}
+        rebook={view.rebook ? { href: changePagePath("reschedule", view.inviteeId), hostName: s.hostName } : null}
+      />
+    );
   } else {
     const notice = guestsNotice(s.inviteeName, s.guestCount);
     const errorId = error ? `${base}-error` : undefined;

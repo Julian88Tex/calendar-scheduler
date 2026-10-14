@@ -17,6 +17,7 @@
 //   checkSlugAvailable(actor, slug, pollId?)                          "Customize link"
 //   getUnsubscribeContext(slug, token)                                /p/{slug}/unsubscribe page
 //   readEditToken(request) / readEditTokenFromHeaders()              the voter's edit cookie (or embed fallback header)
+//   issuePollFormToken()                                              the voter form's hidden formToken (bot timing check)
 //
 // Writes (each authorizes the actor itself; throws AppError)
 //   createPoll, duplicatePoll, updatePoll, addOptions, removeOptions, invitePeople, sendReminders, addParticipant,
@@ -25,6 +26,7 @@
 //   public: submitVote, requestVoteCode, addPublicComment, deletePublicComment, unsubscribe, checkVoterCalendar.
 import "server-only";
 
+export { issueBookingFormToken as issuePollFormToken } from "@/lib/booking";
 export { requirePollAccess, requirePollOwner } from "./access";
 export { bookingPreview, bookPoll } from "./book";
 export { addHostComment, addPublicComment, deleteHostComment, deletePublicComment } from "./comments";

@@ -330,6 +330,8 @@ export type BookingPreview = {
   /** Rebooking a reopened poll: the meeting that moves (null for a first booking). */
   rebook: { scheduledEventId: string; start: string; end: string; sameOption: boolean } | null;
   sendMeetingReminders: boolean;
+  /** Why "Book meeting" is unavailable for this time (it started, or it is longer than a meeting can be), else null. */
+  unbookableReason: string | null;
 };
 
 export type BookPollResult = { scheduledEventId: string; mode: "booked" | "rebooked" | "unchanged" };

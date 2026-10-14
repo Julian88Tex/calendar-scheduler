@@ -204,6 +204,47 @@ describe("loadChangePage", () => {
     expect(rr.state === "blocked" && rr.view.blocked).toMatchObject({ reason: "not_reschedulable", title: messages.changes.notReschedulable, cancelAvailable: true });
   });
 
+  it("refuses rescheduling poll and one-off meetings and deleted event types while canceling works (CR-02, CR-03)", async () => {
+    const owner = await host();
+    const et = await eventType(owner);
+    for (const source of ["poll", "one_off"] as const) {
+      const b = await f.createBooking(t.db, { eventType: et, start: la("2030-10-08 13:00"), source, invitee: { name: "Cy", email: `cy-${source}@example.com` } });
+      const id = b.invitee!.id;
+      const c = await loadChangePage(id, "cancel");
+      expect(c.state === "ok" && c.view.blocked).toBeNull();
+      const rr = await loadReschedulePage({ inviteeId: id, mode: "calendar", searchParams: {} });
+      expect(rr.state === "blocked" && rr.view.blocked).toMatchObject({ reason: "not_reschedulable", title: messages.changes.notReschedulable, cancelAvailable: true });
+      // The details step of a deep link says the same (never the booking form).
+      const deep = await loadReschedulePage({ inviteeId: id, mode: "details", start: la("2030-10-09 10:00"), searchParams: {} });
+      expect(deep.state).toBe("blocked");
+    }
+    const b = await booking(owner, { et });
+    await t.db.update(eventTypes).set({ deletedAt: NOW }).where(eq(eventTypes.id, et.id));
+    const c = await loadChangePage(b.invitee.id, "cancel");
+    expect(c.state === "ok" && c.view.blocked).toBeNull();
+    expect(c.state === "ok" && c.view.summary.eventName).toBe("Intro Call");
+    // The booking page is gone: "Schedule another event" opens the host's landing page.
+    expect(c.state === "ok" && c.view.scheduleAnotherHref).toBe(`/${owner.slug}`);
+    const rr = await loadReschedulePage({ inviteeId: b.invitee.id, mode: "calendar", searchParams: {} });
+    expect(rr.state === "blocked" && rr.view.blocked).toMatchObject({ reason: "not_reschedulable", cancelAvailable: true });
+  });
+
+  it("offers 'Pick a new time' on the cancel page after 'Share new times to meet' (CR-08)", async () => {
+    const owner = await host();
+    const b = await booking(owner, {
+      invitee: { status: "canceled", overrides: { metadata: { lifecycle: { cancelKind: "request_reschedule", requestReschedule: { requestedAt: NOW.toISOString(), message: null, reminderDays: null, byUserId: null } } } } },
+      overrides: { status: "canceled" },
+    });
+    const c = await loadChangePage(b.invitee.id, "cancel");
+    expect(c.state === "ok" && c.view).toMatchObject({ rebook: true, blocked: { reason: "canceled" } });
+    // 31 days later the request has expired: no rebook any more.
+    setFakeNow(new Date(NOW.getTime() + 31 * 86_400_000));
+    const late = await loadChangePage(b.invitee.id, "cancel");
+    expect(late.state === "ok" && late.view.rebook).toBe(false);
+    const rr = await loadReschedulePage({ inviteeId: b.invitee.id, mode: "calendar", searchParams: {} });
+    expect(rr.state).toBe("blocked");
+  });
+
   it("follows lifecycle-core's decision instead of recomputing the rules", async () => {
     const owner = await host();
     const b = await booking(owner);

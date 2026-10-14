@@ -1,8 +1,8 @@
 // OWNER: polls-core.
 //
 // GET /api/polls/{id}/export.csv?timezone={IANA}   "Export CSV" (SPEC MP-32): one row per participant, one column per
-// time (Yes, If need be, No or blank), times in the given zone (default the poll's). Cells starting with = + - @ are
-// prefixed with an apostrophe (formula injection).
+// time (Yes, If need be, No or blank), times in the given zone (default the host's profile zone). Cells starting with
+// = + - @ are prefixed with an apostrophe (formula injection).
 import { AppError } from "@/lib/errors";
 import { route } from "@/lib/http";
 import { hostActor, uuidParam, type PollRouteCtx } from "@/lib/polls/route-helpers";

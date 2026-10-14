@@ -610,9 +610,13 @@ export async function listPollEventTypesForApi(organizationId: string, userId: s
     .innerJoin(eventTypes, eq(eventTypes.id, meetingPolls.eventTypeId))
     .innerJoin(eventTypeHosts, eq(eventTypeHosts.eventTypeId, meetingPolls.eventTypeId))
     .where(and(eq(meetingPolls.organizationId, organizationId), eq(eventTypeHosts.userId, userId), isNull(meetingPolls.deletedAt)));
+  const ids = rows.map((r) => r.poll.id);
+  const optionRows = ids.length
+    ? await db.select().from(meetingPollOptions).where(and(inArray(meetingPollOptions.pollId, ids), isNull(meetingPollOptions.deletedAt)))
+    : [];
   const out: PollEventTypeApiRow[] = [];
   for (const { poll, et } of rows) {
-    const options = await loadOptions(db, poll.id);
+    const options = optionRows.filter((o) => o.pollId === poll.id);
     const status = statusOf(poll, options, at);
     out.push({
       eventTypeId: et.id,

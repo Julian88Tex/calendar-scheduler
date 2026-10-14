@@ -20,6 +20,8 @@ const messages = {
     guests: "This event will be canceled for {name} and {count} guests.",
     guestsOne: "This event will be canceled for {name} and 1 guest.",
     policy: "Cancellation policy",
+    rebookNotice: "{hostName} asked you to pick a new time for this meeting.",
+    pickNewTime: "Pick a new time",
     canceling: "Canceling",
   },
   reschedule: {

@@ -278,8 +278,8 @@ export const pollJobHandlers: JobHandlers = {
   },
   [POLL_JOBS.digest]: async (_payload, ctx) => ({ result: { sent: await sendDigests(ctx.db, ctx.now) } }),
   [POLL_JOBS.holdsSync]: async (payload, ctx) => {
-    const p = parse(PollPayload, payload, POLL_JOBS.holdsSync);
-    const out = await syncPollHolds(p.pollId);
+    const p = parse(PollPayload.extend({ refresh: z.boolean().optional() }), payload, POLL_JOBS.holdsSync);
+    const out = await syncPollHolds(p.pollId, { refresh: p.refresh ?? false });
     if (out.pending > 0 && ctx.attempt < 6) throw new RetryLaterError(5 * 60_000, `${out.pending} holds pending`);
     return { result: out };
   },
