@@ -12,7 +12,7 @@ import type { ResolvedLocation } from "@/db/types";
 import { CONFERENCING_COPY, conferenceErrorMessage, conferenceJoinUrl, conferenceProviderName, isConferenceKind, isConferencePending } from "@/lib/conferencing/kinds";
 import { inviteeMetaOf, meetingMetaOf } from "@/lib/lifecycle/types";
 import { dtf, toDate, type DateLike } from "@/lib/time/clock";
-import { formatMeetingWhen, formatNumericDate, formatTimeRange, isoDateInZone } from "@/lib/time/format";
+import { formatNumericDate, formatTimeRange, isoDateInZone } from "@/lib/time/format";
 import { friendlyZoneName, isValidTimeZone } from "@/lib/time/zones";
 import { fill, MEETINGS_COPY as C } from "./copy";
 import type { MeetingHostView, MeetingLocationView, MeetingNotice, MeetingPersonView, MeetingView } from "./types";
@@ -70,6 +70,11 @@ export function dayHeading(date: DateLike, zone: string, dateFormat: string | nu
   return dateFormat === "DD/MM/YYYY"
     ? `${get("weekday")}, ${get("day")} ${get("month")} ${get("year")}`
     : `${get("weekday")}, ${get("month")} ${get("day")}, ${get("year")}`;
+}
+
+/** "10:00am - 10:30am, Wednesday, October 14, 2026" in the viewer's zone, time format and date format. */
+export function whenText(start: Date, end: Date, ctx: Pick<PresentContext, "zone" | "hour12" | "dateFormat">): string {
+  return `${formatTimeRange(start, end, ctx.zone, LOCALE, ctx.hour12)}, ${dayHeading(start, ctx.zone, ctx.dateFormat)}`;
 }
 
 /** "1 host | 0 non-hosts". */
@@ -205,7 +210,7 @@ export function summaryOf(b: MeetingBundle, ctx: PresentContext): HostMeetingSum
 function noticesOf(b: MeetingBundle, ctx: PresentContext, people: RawInvitee[], ended: boolean): MeetingNotice[] {
   const m = b.meeting;
   const out: MeetingNotice[] = [];
-  const when = (s: Date, e: Date) => formatMeetingWhen(s, e, ctx.zone, LOCALE, ctx.hour12);
+  const when = (s: Date, e: Date) => whenText(s, e, ctx);
   const first = people[0] ?? b.invitees[0] ?? null;
   const moved = b.invitees.find((i) => i.rescheduled && i.status === "canceled") ?? null;
 
@@ -287,6 +292,11 @@ export function presentMeeting(b: MeetingBundle, ctx: PresentContext): MeetingVi
   const createdDate = formatNumericDate(m.createdAt, ctx.zone, ctx.dateFormat);
   const createdBy = first?.name ?? null;
   const conferenceFailed = m.location?.status === "failed";
+  const canRetry = manage && active && !ended && (conferenceFailed || m.provisionStatus === "failed");
+  const shownLocation = location && !manage ? { ...location, problem: null } : location;
+  // "Retry" sits with the LOCATION problem when there is one (a Meet link that failed); a calendar write that failed
+  // for any other location gets it on its status line.
+  const notices = noticesOf(b, ctx, peopleRows, ended).map((n) => (n.kind === "calendar_failed" && canRetry && !shownLocation?.problem ? { ...n, retry: true } : n));
   return {
     id: m.id,
     eventName: m.name,
@@ -295,7 +305,7 @@ export function presentMeeting(b: MeetingBundle, ctx: PresentContext): MeetingVi
     end: m.endAt.toISOString(),
     dateKey: isoDateInZone(m.startAt, ctx.zone),
     timeRange: formatTimeRange(m.startAt, m.endAt, ctx.zone, LOCALE, ctx.hour12),
-    when: `${formatTimeRange(m.startAt, m.endAt, ctx.zone, LOCALE, ctx.hour12)}, ${dayHeading(m.startAt, ctx.zone, ctx.dateFormat)}`,
+    when: whenText(m.startAt, m.endAt, ctx),
     status: m.status,
     rescheduled,
     isPoll: m.source === "poll",
@@ -306,10 +316,10 @@ export function presentMeeting(b: MeetingBundle, ctx: PresentContext): MeetingVi
     access: b.access,
     ended,
     people,
-    location: location && !manage ? { ...location, problem: null } : location,
-    canRetry: manage && active && !ended && (conferenceFailed || m.provisionStatus === "failed"),
+    location: shownLocation,
+    canRetry,
     hosts: b.hosts,
-    notices: noticesOf(b, ctx, peopleRows, ended),
+    notices,
     notesHtml: manage ? (clean(m.meetingNotesHtml) ? m.meetingNotesHtml : null) : null,
     createdLabel: createdBy ? fill(C.details.created, { date: createdDate, name: createdBy }) : fill(C.details.createdNoName, { date: createdDate }),
     scheduledByLabel: scheduledBy ? fill(C.details.scheduledBy, { name: scheduledBy }) : null,

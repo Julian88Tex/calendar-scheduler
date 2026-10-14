@@ -2,7 +2,7 @@
 // 10.1): two columns on desktop, one on phones. Left: "Reschedule" and "Cancel" (active meetings that have not ended,
 // hosts and editors only), "Mark as no-show" once the meeting started, then the links "Edit Event Type", "Filter by
 // Event Type" and "Schedule Invitee Again" (canceled or past meetings). Right: status lines (canceled by, rescheduled
-// to or from, calendar problems), EMAIL, LOCATION (with "Join now" and "Retry"), INVITEE TIME ZONE, QUESTIONS,
+// to or from, calendar problems with "Retry"), EMAIL, LOCATION (with "Join now" and "Retry"), INVITEE TIME ZONE, QUESTIONS,
 // GUESTS, TRACKING, MEETING HOST, meeting notes and the "Created ... by ..." footer. Blocks without data are left out.
 // The dialogs are lifecycle-ui's (HostCancelDialog, RescheduleChoiceDialog, MarkNoShowButton, NotesEditor). Client
 // component.
@@ -56,7 +56,27 @@ const NOTICE_TONES: Record<MeetingNotice["tone"], string> = {
   danger: "border-danger-soft bg-danger-soft text-danger-text",
 };
 
-function Notice({ notice, onOpenMeeting }: { notice: MeetingNotice; onOpenMeeting: (id: string) => void }) {
+/** "Retry" of a failed Google Meet link or calendar write (lifecycle-core retryProvisioning). */
+function RetryButton({ meetingId }: { meetingId: string }) {
+  const [pending, start] = useTransition();
+  const retry = () =>
+    start(async () => {
+      try {
+        const r = await retryMeetingProvisioningAction({ scheduledEventId: meetingId });
+        if (r.ok) toast.success(C.details.retried);
+        else toast.error(r.error.message);
+      } catch {
+        toast.error(C.errors.network);
+      }
+    });
+  return (
+    <Button variant="secondary" size="sm" className="self-start" loading={pending} onClick={retry} leftIcon={<RotateCcw aria-hidden="true" />}>
+      {C.details.retry}
+    </Button>
+  );
+}
+
+function Notice({ notice, meetingId, onOpenMeeting }: { notice: MeetingNotice; meetingId: string; onOpenMeeting: (id: string) => void }) {
   return (
     <div className={cn("flex flex-col gap-1 rounded-[var(--radius-card)] border px-3 py-2.5 text-body-md", NOTICE_TONES[notice.tone])} data-testid={`notice-${notice.kind}`}>
       <p className="font-semibold break-words">{notice.text}</p>
@@ -70,6 +90,11 @@ function Notice({ notice, onOpenMeeting }: { notice: MeetingNotice; onOpenMeetin
           {notice.link.label}
         </Button>
       )}
+      {notice.retry && (
+        <div className="mt-1">
+          <RetryButton meetingId={meetingId} />
+        </div>
+      )}
     </div>
   );
 }
@@ -78,17 +103,6 @@ const LOCATION_ICONS = { video: Video, pin: MapPin, phone: Phone, custom: MapPin
 
 function LocationBlock({ meetingId, location, canRetry }: { meetingId: string; location: MeetingLocationView; canRetry: boolean }) {
   const Icon = LOCATION_ICONS[location.icon];
-  const [pending, start] = useTransition();
-  const retry = () =>
-    start(async () => {
-      try {
-        const r = await retryMeetingProvisioningAction({ scheduledEventId: meetingId });
-        if (r.ok) toast.success(C.details.retried);
-        else toast.error(r.error.message);
-      } catch {
-        toast.error(C.errors.network);
-      }
-    });
   return (
     <Block label={C.details.location} testId="meeting-location">
       <div className="flex items-start gap-2">
@@ -114,11 +128,7 @@ function LocationBlock({ meetingId, location, canRetry }: { meetingId: string; l
       {location.problem && (
         <div className="mt-2 flex flex-col gap-2 rounded-[var(--radius-card)] border border-warning-soft bg-warning-soft px-3 py-2 text-warning-text" role="status">
           <p className="break-words">{location.problem}</p>
-          {canRetry && (
-            <Button variant="secondary" size="sm" className="self-start" loading={pending} onClick={retry} leftIcon={<RotateCcw aria-hidden="true" />}>
-              {C.details.retry}
-            </Button>
-          )}
+          {canRetry && <RetryButton meetingId={meetingId} />}
         </div>
       )}
     </Block>
@@ -233,7 +243,7 @@ export function MeetingDetails({ meeting, now, onFilterByEventType, onCanceled, 
       {actions}
       <div className="flex min-w-0 flex-1 flex-col gap-5">
         {meeting.notices.map((n) => (
-          <Notice key={`${n.kind}-${n.text}`} notice={n} onOpenMeeting={onOpenMeeting} />
+          <Notice key={`${n.kind}-${n.text}`} notice={n} meetingId={meeting.id} onOpenMeeting={onOpenMeeting} />
         ))}
         {!manage && <p className="text-body-md text-ink-2">{C.details.viewOnly}</p>}
         {solo && person && (
@@ -281,7 +291,12 @@ export function MeetingDetails({ meeting, now, onFilterByEventType, onCanceled, 
             </ul>
           </Block>
         )}
-        {manage && <NotesEditor key={meeting.notesHtml ?? ""} scheduledEventId={meeting.id} initialHtml={meeting.notesHtml} />}
+        {manage && (
+          // Aligns lifecycle-ui's link-style buttons ("Add meeting notes", "Edit notes") with the block labels.
+          <div className="[&>section>button]:-ml-3">
+            <NotesEditor key={meeting.notesHtml ?? ""} scheduledEventId={meeting.id} initialHtml={meeting.notesHtml} />
+          </div>
+        )}
         <footer className="flex flex-col gap-0.5 border-t border-line pt-3 text-body-sm text-ink-2">
           <p>{meeting.createdLabel}</p>
           {meeting.scheduledByLabel && <p>{meeting.scheduledByLabel}</p>}

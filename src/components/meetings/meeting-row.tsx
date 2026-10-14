@@ -26,7 +26,7 @@ export function MeetingRow({ meeting, expanded, onToggle, phone, ...details }: M
   const panelId = `meeting-${meeting.id}-details`;
   return (
     <li className="border-b border-line last:border-b-0" data-testid={`meeting-row-${meeting.id}`} data-meeting-id={meeting.id}>
-      <div className={cn("flex items-start gap-3 px-4 py-4 sm:gap-4 sm:px-6", expanded && !phone && "bg-canvas")}>
+      <div className={cn("flex items-start gap-3 px-4 py-4 sm:gap-4 sm:px-6", expanded && !phone && "md:bg-canvas")}>
         <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
           <div className="flex shrink-0 items-center gap-3 sm:w-48 sm:pt-0.5">
             <span aria-hidden="true" className="size-4 shrink-0 rounded-full" style={{ backgroundColor: meeting.color }} />
@@ -73,7 +73,16 @@ export function MeetingRow({ meeting, expanded, onToggle, phone, ...details }: M
         </button>
       </div>
       {expanded && !phone && (
-        <div id={panelId} role="region" aria-label={fill(C.row.detailsLabel, { title: meeting.title })} className="border-t border-line bg-white px-4 py-5 sm:px-6">
+        // Below md the details live in the sheet. Until the media query is known (server render and hydration) the
+        // inline panel is hidden there by CSS, so a deep link on a phone does not flash the inline details first.
+        <div
+          id={panelId}
+          role="region"
+          tabIndex={-1}
+          aria-label={fill(C.row.detailsLabel, { title: meeting.title })}
+          className="border-t border-line bg-white px-4 py-5 outline-none max-md:hidden sm:px-6"
+          data-testid="meeting-details-panel"
+        >
           <MeetingDetails meeting={meeting} {...details} />
         </div>
       )}

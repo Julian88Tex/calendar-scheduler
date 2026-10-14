@@ -108,6 +108,13 @@ describe("filter helpers", () => {
     expect(isIsoDate("2026-13-01")).toBe(false);
   });
 
+  it("refuses Date Range years outside 1900 to 2999 (the day after 9999-12-31 emptied the range)", () => {
+    expect(isIsoDate("9999-12-31")).toBe(false);
+    expect(isIsoDate("1899-12-31")).toBe(false);
+    expect(isIsoDate("2999-12-31")).toBe(true);
+    expect(parse("tab=range&start=9999-12-31&end=9999-12-31")).toMatchObject({ tab: "range", start: null, end: null });
+  });
+
   it("builds the Date Range presets from today and the week start", () => {
     // Wednesday, October 14, 2026.
     const sunday = rangePresets("2026-10-14", 0);

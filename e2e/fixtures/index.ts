@@ -162,6 +162,21 @@ export const test = base.extend<Fixtures>({
       if (opts.include) builder = builder.include(opts.include);
       for (const ex of opts.exclude ?? []) builder = builder.exclude(ex);
       if (opts.disableRules?.length) builder = builder.disableRules(opts.disableRules);
+      // Elements that fade or slide in (the Next button's slide-in, transition-colors) would be measured mid-animation
+      // with a washed-out color: wait for the finite running animations first (spinners loop forever; at most 2s).
+      await page
+        .evaluate(() =>
+          Promise.race([
+            Promise.all(
+              document
+                .getAnimations()
+                .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)))
+                .map((a) => a.finished.catch(() => undefined)),
+            ),
+            new Promise((resolve) => setTimeout(resolve, 2_000)),
+          ]),
+        )
+        .catch(() => undefined);
       const results = await builder.analyze();
       const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.help} [${v.nodes.length} node(s)]`);
       expect(summary, "axe violations").toEqual([]);

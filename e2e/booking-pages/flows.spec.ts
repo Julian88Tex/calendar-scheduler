@@ -104,9 +104,11 @@ test.describe("booking flows", () => {
     await expect(page.getByRole("complementary", { name: "Event details" })).toHaveCount(0);
     const day = page.getByRole("button", { name: "Monday, October 7 - Times available" });
     await expect(day).toBeEnabled(SLOW);
-    const color = await day.evaluate((el) => getComputedStyle(el).color);
-    // A shade of pure red (mixed toward black for contrast).
-    expect(color).toMatch(/^color\(srgb 0\.\d+ 0 0\)$|^rgb\(\d+, 0, 0\)$/);
+    // A shade of pure red (mixed toward black for contrast); days fade between colors (transition-colors), so poll
+    // until the transition has settled.
+    await expect
+      .poll(() => day.evaluate((el) => getComputedStyle(el).color))
+      .toMatch(/^color\(srgb 0\.\d+ 0 0\)$|^rgb\(\d+, 0, 0\)$/);
     await day.click();
     await page.getByRole("list", { name: "Select a time" }).getByRole("button").first().click();
     const next = page.getByRole("button", { name: "Next", exact: true });
@@ -235,30 +237,34 @@ test.describe("booking flows", () => {
     await loginAs(page, seeded.owner.email);
     await page.goto("/julianjoseph/30min?preview=1", SLOW);
     await expect(page.getByTestId("preview-banner")).toContainText("This is a preview. To book an event, share the link with your invitees.");
-    await page.evaluate(() =>
-      window.postMessage(
-        {
-          type: "kairos:preview",
-          draft: {
-            name: "Draft Strategy Session",
-            color: "#0099ff",
-            durationMinutes: 45,
-            durationOptions: null,
-            locations: [{ id: "5eed0000-0000-4000-8000-000000000301", kind: "zoom_conference", position: 0 }],
-            descriptionHtml: "<p>Bring your <b>questions</b>.</p>",
-            priceMinor: null,
-            currency: null,
-            kind: "solo",
-            maxInvitees: 1,
-            showRemainingSpots: false,
-            timeZoneDisplay: "auto",
-            lockedTimeZone: null,
+    // The page listens once hydrated (the SSR banner shows earlier) and only answers preview_ready to a parent frame:
+    // repeat the message until the draft renders.
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.postMessage(
+          {
+            type: "kairos:preview",
+            draft: {
+              name: "Draft Strategy Session",
+              color: "#0099ff",
+              durationMinutes: 45,
+              durationOptions: null,
+              locations: [{ id: "5eed0000-0000-4000-8000-000000000301", kind: "zoom_conference", position: 0 }],
+              descriptionHtml: "<p>Bring your <b>questions</b>.</p>",
+              priceMinor: null,
+              currency: null,
+              kind: "solo",
+              maxInvitees: 1,
+              showRemainingSpots: false,
+              timeZoneDisplay: "auto",
+              lockedTimeZone: null,
+            },
           },
-        },
-        window.location.origin,
-      ),
-    );
-    await expect(page.getByRole("heading", { level: 1, name: "Draft Strategy Session" })).toBeVisible();
+          window.location.origin,
+        ),
+      );
+      await expect(page.getByRole("heading", { level: 1, name: "Draft Strategy Session" })).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(page.getByText("45 min")).toBeVisible();
     await expect(page.getByText("Bring your questions.")).toBeVisible();
     // Real availability for the saved settings, even with an unsaved duration.

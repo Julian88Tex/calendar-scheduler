@@ -43,6 +43,8 @@ export type MeetingNotice = {
   details: string[];
   /** Link to the other meeting of a reschedule. */
   link: { label: string; eventId: string } | null;
+  /** "Retry" on the line (a failed calendar write that the LOCATION block does not already offer to retry). */
+  retry?: boolean;
 };
 
 export type MeetingHostView = { id: string; name: string; avatarUrl: string | null };

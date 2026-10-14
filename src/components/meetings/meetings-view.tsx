@@ -7,11 +7,11 @@
 // buffers toggle. Client component.
 "use client";
 
-import { ChevronDown, ChevronLeft, ChevronRight, Download, ListFilter } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ListFilter } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type * as React from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -22,9 +22,10 @@ import { Illustration } from "@/components/ui/illustration";
 import { MEDIA, useMediaQuery } from "@/lib/client/use-media-query";
 import { cn } from "@/lib/cn";
 import { fill, MEETINGS_COPY as C } from "@/lib/meetings/copy";
-import { activeFilterCount, clearedFilters, exportHref, hasActiveFilters, meetingsHref, type MeetingsTab, type QueryPatch } from "@/lib/meetings/filters";
+import { activeFilterCount, clearedFilters, DEFAULT_STATUS, exportHref, hasActiveFilters, meetingsHref, RANGE_MAX, RANGE_MIN, type MeetingsTab, type QueryPatch } from "@/lib/meetings/filters";
 import { rangePresets } from "@/lib/meetings/ranges";
 import type { MeetingsPageData, MeetingView } from "@/lib/meetings/types";
+import { ExportButton } from "./export-button";
 import { FilterBar } from "./filter-bar";
 import { MeetingRow } from "./meeting-row";
 import { useBusinessClock } from "./use-business-clock";
@@ -34,6 +35,29 @@ const TABS: { tab: MeetingsTab; label: string }[] = [
   { tab: "past", label: C.tabs.past },
   { tab: "range", label: C.tabs.range },
 ];
+
+const LIST_ID = "meetings-list";
+
+/**
+ * After a cancel or a reschedule the row that held the focus leaves the list. Once the new data is in (and only if the
+ * focus was lost to the page body), focus moves to the expanded meeting's details (the new time) or to the list.
+ * Returns the function that arms it for the next refreshes (15 seconds).
+ */
+function useFocusAfterRefresh(data: MeetingsPageData): () => void {
+  const until = useRef(0);
+  useEffect(() => {
+    if (until.current < Date.now()) return;
+    const current = document.activeElement;
+    if (current && current !== document.body && current.isConnected) return;
+    until.current = 0;
+    const event = data.query.event;
+    const target = (event && document.getElementById(`meeting-${event}-details`)) || document.getElementById(LIST_ID);
+    target?.focus({ preventScroll: true });
+  }, [data]);
+  return useCallback(() => {
+    until.current = Date.now() + 15_000;
+  }, []);
+}
 
 export function MeetingsView({ data }: { data: MeetingsPageData }) {
   const router = useRouter();
@@ -50,11 +74,14 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
     setExpanded(query.event);
   }
   const filtered = hasActiveFilters(query);
-  const [filtersOpen, setFiltersOpen] = useState(filtered);
-  const [seenFiltered, setSeenFiltered] = useState(filtered);
-  if (filtered !== seenFiltered) {
-    setSeenFiltered(filtered);
-    if (filtered) setFiltersOpen(true);
+  // The filter row opens by itself for filters the user chose. "Canceled events" added by a deep link to a canceled
+  // meeting (statusExplicit false, also the refresh right after canceling an expanded meeting) does not open it.
+  const chosenFilters = hasActiveFilters(query.statusExplicit ? query : { ...query, status: [...DEFAULT_STATUS] });
+  const [filtersOpen, setFiltersOpen] = useState(chosenFilters);
+  const [seenFiltered, setSeenFiltered] = useState(chosenFilters);
+  if (chosenFilters !== seenFiltered) {
+    setSeenFiltered(chosenFilters);
+    if (chosenFilters) setFiltersOpen(true);
   }
 
   const navigate = (href: string, replace = false) =>
@@ -62,13 +89,16 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
       if (replace) router.replace(href as Route, { scroll: false });
       else router.push(href as Route, { scroll: false });
     });
-  const change = (patch: QueryPatch) => navigate(meetingsHref(query, { event: null, ...patch }));
+  const change = (patch: QueryPatch, opts: { replace?: boolean } = {}) => navigate(meetingsHref(query, { event: null, ...patch }), opts.replace);
+
+  const restoreFocusSoon = useFocusAfterRefresh(data);
 
   const toggle = (id: string, open: boolean) => {
     const next = open ? id : null;
     setExpanded(next);
     try {
-      window.history.replaceState(window.history.state, "", meetingsHref(query, { event: next }));
+      // A null state lets the App Router adopt the new URL (its own entries carry internal state).
+      window.history.replaceState(null, "", meetingsHref(query, { event: next }));
     } catch {
       // History unavailable: the expansion still works, only the URL does not follow.
     }
@@ -87,9 +117,13 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
     },
     onCanceled: () => {
       setExpanded(null);
+      restoreFocusSoon();
       navigate(meetingsHref(query, { event: null }), true);
     },
-    onRescheduled: (scheduledEventId: string) => navigate(meetingsHref(query, { event: scheduledEventId, after: null, before: null, page: 1 })),
+    onRescheduled: (scheduledEventId: string) => {
+      restoreFocusSoon();
+      navigate(meetingsHref(query, { event: scheduledEventId, after: null, before: null, page: 1 }));
+    },
     onOpenMeeting: (scheduledEventId: string) => navigate(`/app/meetings?event=${encodeURIComponent(scheduledEventId)}`),
   });
 
@@ -111,9 +145,9 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
     const cls = buttonClassName({ variant: "secondary", size: "sm" });
     if (!href) {
       return (
-        <span aria-disabled="true" className={cls}>
+        <Button variant="secondary" size="sm" disabled>
           {content}
-        </span>
+        </Button>
       );
     }
     return (
@@ -167,10 +201,7 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
             })}
           </nav>
           <div className="flex items-center gap-2 pb-3 sm:pt-3">
-            <a href={exportHref(query)} download className={buttonClassName({ variant: "secondary", size: "sm" })} aria-label={C.exportLabel} data-testid="meetings-export">
-              <Download aria-hidden="true" />
-              {C.export}
-            </a>
+            <ExportButton href={exportHref(query)} />
             <Button
               variant="secondary"
               size="sm"
@@ -200,6 +231,8 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
               }}
               presets={presets}
               weekStart={data.weekStart}
+              min={RANGE_MIN}
+              max={RANGE_MAX}
             />
             <span className="text-body-sm text-ink-2">{data.timeZoneLabel}</span>
           </div>
@@ -209,7 +242,7 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
             <FilterBar query={query} eventTypes={data.eventTypes} onChange={change} />
           </div>
         )}
-        <div aria-busy={pending} className={cn("transition-opacity", pending && "opacity-60")} data-testid="meetings-list">
+        <div id={LIST_ID} tabIndex={-1} aria-busy={pending} className={cn("transition-opacity outline-none", pending && "opacity-60")} data-testid="meetings-list">
           {data.eventNotFound && (
             <div className="px-4 pt-4 sm:px-6">
               <Banner variant="warning" dismissible role="status">

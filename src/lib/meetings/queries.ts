@@ -20,6 +20,7 @@ import { getDb, type DbOrTx } from "@/db";
 import { eventTypePermissions, eventTypes, inviteeGuests, inviteeNoShows, invitees, scheduledEventHosts, scheduledEvents, users } from "@/db/schema";
 import { eventTypeAccess, isOrgAdmin, type ActorCtx } from "@/lib/authz";
 import { fileUrl } from "@/lib/files";
+import { sanitizeRichText } from "@/lib/html";
 import { isUuid } from "@/lib/ids";
 import { inviteeMetaOf } from "@/lib/lifecycle/types";
 import { decodeCursor, encodeCursor } from "@/lib/pagination";
@@ -73,14 +74,22 @@ export function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
-/** Meetings the viewer can see (see the file header). */
+/**
+ * Meetings the viewer can see (see the file header). A permission on a deleted event type (or one of another
+ * organization) grants nothing, the same as meetingAccess.
+ */
 export function visibleCondition(db: DbOrTx, actor: ActorCtx): SQL {
+  const shared = db
+    .select({ id: eventTypePermissions.eventTypeId })
+    .from(eventTypePermissions)
+    .innerJoin(eventTypes, eq(eventTypes.id, eventTypePermissions.eventTypeId))
+    .where(and(eq(eventTypePermissions.userId, actor.user.id), eq(eventTypes.organizationId, actor.orgId), isNull(eventTypes.deletedAt)));
   return and(
     eq(scheduledEvents.organizationId, actor.orgId),
     or(
       eq(scheduledEvents.organizerUserId, actor.user.id),
       inArray(scheduledEvents.id, db.select({ id: scheduledEventHosts.scheduledEventId }).from(scheduledEventHosts).where(eq(scheduledEventHosts.userId, actor.user.id))),
-      inArray(scheduledEvents.eventTypeId, db.select({ id: eventTypePermissions.eventTypeId }).from(eventTypePermissions).where(eq(eventTypePermissions.userId, actor.user.id))),
+      inArray(scheduledEvents.eventTypeId, shared),
     ),
   )!;
 }
@@ -156,7 +165,7 @@ export async function loadBundles(db: DbOrTx, ctx: ViewerContext, rows: RawMeeti
       .select({ inviteeId: inviteeGuests.inviteeId, email: inviteeGuests.email })
       .from(inviteeGuests)
       .where(and(inArray(inviteeGuests.scheduledEventId, ids), isNull(inviteeGuests.canceledAt)))
-      .orderBy(asc(inviteeGuests.createdAt)),
+      .orderBy(asc(inviteeGuests.createdAt), asc(inviteeGuests.id)),
     db
       .select({
         scheduledEventId: scheduledEventHosts.scheduledEventId,
@@ -238,7 +247,10 @@ export async function loadBundles(db: DbOrTx, ctx: ViewerContext, rows: RawMeeti
   const etAccess = new Map<string, Awaited<ReturnType<typeof eventTypeAccess>>>();
   await Promise.all(etIds.map(async (id) => etAccess.set(id, await eventTypeAccess(actor, id, db))));
 
-  return rows.map((m) => {
+  return rows.map((raw) => {
+    // GEN-08: user HTML is sanitized on render too (lifecycle-core sanitizes notes on save).
+    const notes = raw.meetingNotesHtml ? sanitizeRichText(raw.meetingNotesHtml) : null;
+    const m: RawMeeting = notes === raw.meetingNotesHtml ? raw : { ...raw, meetingNotesHtml: notes };
     const hosts = (hostsByEvent.get(m.id) ?? []).sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || a.name.localeCompare(b.name));
     const isHost = m.organizerUserId === actor.user.id || hosts.some((h) => h.userId === actor.user.id);
     const et = etAccess.get(m.eventTypeId) ?? null;
@@ -301,8 +313,7 @@ async function resolveDeepLink(db: DbOrTx, ctx: ViewerContext, q: MeetingsQuery)
   const [hit] = await db.select({ n: count() }).from(scheduledEvents).where(and(where, eq(scheduledEvents.id, m.id)));
   if (!hit?.n) return { query, pinned: m, notFound: false };
   const dir = sortDirOf(query.tab);
-  const [before] = await db.select({ n: count() }).from(scheduledEvents).where(and(where, keysetCondition(dir, { s: m.startAt.toISOString(), i: m.id }, "before")));
-  const position = Number(before?.n ?? 0);
+  const position = await countBefore(db, where, query.tab, m);
   const page = Math.floor(position / PAGE_SIZE) + 1;
   if (page <= 1) return { query: { ...query, page: 1, after: null, before: null }, pinned: null, notFound: false };
   const [boundary] = await db
@@ -314,6 +325,15 @@ async function resolveDeepLink(db: DbOrTx, ctx: ViewerContext, q: MeetingsQuery)
     .limit(1);
   if (!boundary) return { query: { ...query, page: 1, after: null, before: null }, pinned: null, notFound: false };
   return { query: { ...query, page, after: cursorOf(boundary), before: null }, pinned: null, notFound: false };
+}
+
+/** Rows before `row` in the list order (its 0-based position). */
+async function countBefore(db: DbOrTx, where: SQL, tab: MeetingsQuery["tab"], row: Pick<RawMeeting, "startAt" | "id">): Promise<number> {
+  const [r] = await db
+    .select({ n: count() })
+    .from(scheduledEvents)
+    .where(and(where, keysetCondition(sortDirOf(tab), { s: row.startAt.toISOString(), i: row.id }, "before")));
+  return Number(r?.n ?? 0);
 }
 
 type Fetched = { rows: RawMeeting[]; hasNext: boolean; query: MeetingsQuery };
@@ -367,6 +387,13 @@ export async function loadMeetingsPage(actor: ActorCtx, input: MeetingsQuery, op
   ]);
   query = paged;
   const total = Number(totalRow[0]?.n ?? 0);
+  // The counter and the page number follow the first row's real position, not the URL's ?page= (an edited or stale
+  // number would otherwise read "Displaying 76 - 80 of 30 Events" and break "Previous").
+  const offset = query.page > 1 && rows[0] ? await countBefore(db, where, query.tab, rows[0]) : 0;
+  if (query.page > 1) {
+    const page = offset === 0 ? 1 : Math.ceil(offset / PAGE_SIZE) + 1;
+    query = page === 1 ? { ...query, page, after: null, before: null } : { ...query, page };
+  }
   const all = link.pinned && !rows.some((r) => r.id === link.pinned!.id) ? [...rows, link.pinned] : rows;
   const bundles = await loadBundles(db, ctx, all);
   const present: PresentContext = { now: ctx.now.getTime(), zone: ctx.zone, hour12: ctx.hour12, dateFormat: ctx.dateFormat, filterableEventTypeIds: new Set(options.map((o) => o.id)) };
@@ -379,7 +406,7 @@ export async function loadMeetingsPage(actor: ActorCtx, input: MeetingsQuery, op
     if (last && last.dateKey === v.dateKey) last.meetings.push(v);
     else groups.push({ dateKey: v.dateKey, label: dayHeading(r.startAt, ctx.zone, ctx.dateFormat), meetings: [v] });
   }
-  const from = rows.length ? (query.page - 1) * PAGE_SIZE + 1 : 0;
+  const from = rows.length ? offset + 1 : 0;
   const first = rows[0];
   const last = rows[rows.length - 1];
   const pinned = link.pinned ? (views.get(link.pinned.id) ?? null) : null;

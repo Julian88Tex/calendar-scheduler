@@ -60,10 +60,18 @@ function read(sp: Params, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** True for a real calendar date "YYYY-MM-DD". */
+/** Date Range years the page accepts (the day after 9999-12-31 has no "YYYY-MM-DD" form, which emptied the range). */
+const MIN_YEAR = 1900;
+const MAX_YEAR = 2999;
+/** The same bounds for the range picker. */
+export const RANGE_MIN = `${MIN_YEAR}-01-01`;
+export const RANGE_MAX = `${MAX_YEAR}-12-31`;
+
+/** True for a real calendar date "YYYY-MM-DD" (years 1900 to 2999). */
 export function isIsoDate(value: string | null | undefined): value is string {
   if (!value || !ISO_DATE.test(value)) return false;
   const [y, m, d] = value.split("-").map(Number) as [number, number, number];
+  if (y < MIN_YEAR || y > MAX_YEAR) return false;
   const date = new Date(Date.UTC(y, m - 1, d));
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }

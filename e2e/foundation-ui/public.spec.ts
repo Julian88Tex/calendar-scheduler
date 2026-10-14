@@ -41,6 +41,15 @@ async function openGallery(page: Page) {
   await expect(page.getByRole("heading", { level: 2, name: "Public pages" })).toBeVisible();
 }
 
+/** Turns the gallery's tracker switch on (a click before the page hydrates does nothing: retry until it is checked). */
+async function enableTracker(page: Page) {
+  const toggle = page.getByRole("switch", { name: "Simulate a configured tracker (GA4)" });
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-checked")) !== "true") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 test.describe("public components", () => {
   test.beforeEach(async ({ api, seed, page, loginAs }) => {
     await api.reset();
@@ -185,7 +194,7 @@ test.describe("public components", () => {
     await expect(state).toHaveText("Consent: unknown. Tracker not loaded.");
     await expect(banner).toHaveCount(0);
 
-    await page.getByRole("switch", { name: "Simulate a configured tracker (GA4)" }).click();
+    await enableTracker(page);
     await expect(banner).toBeVisible();
     await expect(banner.getByRole("button", { name: "Reject non-essential" })).toBeVisible();
     await expect(banner.getByRole("button", { name: "Cookie settings" })).toBeVisible();
@@ -201,7 +210,7 @@ test.describe("public components", () => {
     // The choice persists: after a reload the banner stays hidden and the tracker loads right away.
     await page.reload();
     await expect(page.getByRole("heading", { level: 2, name: "Public pages" })).toBeVisible();
-    await page.getByRole("switch", { name: "Simulate a configured tracker (GA4)" }).click();
+    await enableTracker(page);
     await expect(state).toHaveText("Consent: granted. Tracker loaded.");
     await expect(banner).toHaveCount(0);
   });
@@ -213,7 +222,7 @@ test.describe("public components", () => {
       await route.fulfill({ status: 200, contentType: "application/javascript", body: "" });
     });
     await openGallery(page);
-    await page.getByRole("switch", { name: "Simulate a configured tracker (GA4)" }).click();
+    await enableTracker(page);
     const banner = page.getByRole("region", { name: "Cookie consent" });
     await banner.getByRole("button", { name: "Cookie settings" }).click();
     const dialog = page.getByRole("dialog", { name: "Cookie settings" });

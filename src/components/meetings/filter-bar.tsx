@@ -21,13 +21,15 @@ import type { EventTypeOption } from "@/lib/meetings/types";
 export type FilterBarProps = {
   query: MeetingsQuery;
   eventTypes: EventTypeOption[];
-  onChange: (patch: QueryPatch) => void;
+  /** `replace`: no new history entry (each search the box sends while typing). */
+  onChange: (patch: QueryPatch, opts?: { replace?: boolean }) => void;
 };
 
 function FilterButton({ label, summary, active, ...rest }: { label: string; summary: string | null; active: boolean } & Omit<React.ComponentProps<"button">, "value">) {
   return (
     <button
       type="button"
+      aria-label={summary ? `${label}: ${summary}` : label}
       {...rest}
       className={cn(
         "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-4 text-[14px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
@@ -206,7 +208,7 @@ export function FilterBar({ query, eventTypes, onChange }: FilterBarProps) {
           const next = v.replace(/\s+/g, " ").trim();
           if (next === query.q) return;
           setSent(next);
-          onChange({ q: next });
+          onChange({ q: next }, { replace: true });
         }}
         className="w-full bg-white sm:w-64"
       />

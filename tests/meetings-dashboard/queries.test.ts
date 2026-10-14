@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { ResolvedLocation } from "@/db/types";
 import type { TestUser } from "../factories";
 
-const { eventTypePermissions, invitees, scheduledEvents, users } = await import("@/db/schema");
+const { eventTypePermissions, eventTypes, invitees, scheduledEvents, users } = await import("@/db/schema");
 const { loadActorCtx } = await import("@/lib/authz");
 const { parseMeetingsQuery } = await import("@/lib/meetings/filters");
 const { loadMeetingsPage } = await import("@/lib/meetings/queries");
@@ -168,6 +168,17 @@ describe("pagination (MT-15)", () => {
     expect(back.pager.next?.page).toBe(3);
   });
 
+  it("counts from the cursor's real position, not from an edited page number", async () => {
+    const et = await eventType();
+    for (let i = 0; i < 30; i++) await f.createBooking(t.db, { eventType: et, start: at((i + 1) * H) });
+    const p1 = await page(owner);
+    const forged = await page(owner, `after=${p1.pager.next!.after}&page=7`);
+    expect(ids(forged)).toHaveLength(5);
+    expect(forged).toMatchObject({ total: 30, from: 26, to: 30 });
+    expect(forged.query.page).toBe(2);
+    expect(forged.pager.prev).toEqual({ before: null, page: 1 });
+  });
+
   it("restarts at page 1 for a stale or forged cursor", async () => {
     const et = await eventType();
     await f.createBooking(t.db, { eventType: et, start: at(H) });
@@ -239,6 +250,18 @@ describe("visibility and access (MT-07)", () => {
     const mine = (await page(owner)).groups[0]!.meetings[0]!;
     expect(mine).toMatchObject({ access: "manage", canCancel: true, canReschedule: true, notesHtml: "<p>Private</p>", editEventTypeHref: `/app/event-types/${et.id}` });
     expect(mine.summary).toMatchObject({ scheduledEventId: booked.scheduledEvent.id, timeZone: LA, hour12: true, eventTypeBookable: true });
+  });
+
+  it("ignores a permission on a deleted event type (as meetingAccess does)", async () => {
+    const et = await eventType();
+    await f.createBooking(t.db, { eventType: et, start: at(5 * H) });
+    const viewer = await f.createUser(t.db, { organizationId: owner.organizationId });
+    await t.db.insert(eventTypePermissions).values({ eventTypeId: et.id, userId: viewer.id, level: "view" });
+    expect((await page(viewer)).total).toBe(1);
+    await t.db.update(eventTypes).set({ deletedAt: at(-H) }).where(eq(eventTypes.id, et.id));
+    expect((await page(viewer)).total).toBe(0);
+    // The host still sees the meetings of the deleted event type.
+    expect((await page(owner)).total).toBe(1);
   });
 
   it("lets editors with edit permission manage", async () => {
@@ -327,12 +350,54 @@ describe("details (MT-06)", () => {
     expect(n.notices[0]).toMatchObject({ kind: "rescheduled_from", text: "Rescheduled from 11:00am - 11:30am, Monday, October 7, 2030", link: { label: "View former time", eventId: old.scheduledEvent.id } });
   });
 
+  it("writes the reschedule lines in the viewer's time and date formats", async () => {
+    await t.db.update(users).set({ timeFormat: "24h", dateFormat: "DD/MM/YYYY" }).where(eq(users.id, owner.id));
+    const et = await eventType();
+    const next = await f.createBooking(t.db, { eventType: et, start: at(30 * H), invitee: { name: "Maya Patel" } });
+    const old = await f.createBooking(t.db, {
+      eventType: et,
+      start: at(5 * H),
+      status: "canceled",
+      invitee: { name: "Maya Patel", overrides: { rescheduled: true, newInviteeId: next.invitee!.id, cancelerType: "invitee" } },
+    });
+    await t.db.update(invitees).set({ oldInviteeId: old.invitee!.id }).where(eq(invitees.id, next.invitee!.id));
+    const byId = new Map((await page(owner, "status=active,canceled")).groups.flatMap((g) => g.meetings).map((m) => [m.id, m]));
+    expect(byId.get(old.scheduledEvent.id)!.notices[0]!.text).toBe("Rescheduled to 12:00 - 12:30, Tuesday, 8 October 2030");
+    expect(byId.get(next.scheduledEvent.id)!.notices[0]!.text).toBe("Rescheduled from 11:00 - 11:30, Monday, 7 October 2030");
+    expect(byId.get(next.scheduledEvent.id)!.when).toBe("12:00 - 12:30, Tuesday, 8 October 2030");
+  });
+
   it("offers Retry for a failed Google Meet link", async () => {
     const et = await eventType();
     await f.createBooking(t.db, { eventType: et, start: at(5 * H), location: { ...MEET, joinUrl: null, status: "failed", error: "not_configured" } });
     const m = (await page(owner)).groups[0]!.meetings[0]!;
     expect(m.canRetry).toBe(true);
     expect(m.location?.problem).toBe("Google Meet isn't available on this server.");
+  });
+
+  it("offers Retry on the status line when the calendar write failed for a meeting without a Meet problem", async () => {
+    const et = await eventType();
+    const venue: ResolvedLocation = { ...MEET, kind: "physical", location: "Sunrise Coffee House", additionalInfo: "4001 24th Street", joinUrl: null, status: null };
+    await f.createBooking(t.db, { eventType: et, start: at(5 * H), location: venue, overrides: { provisionStatus: "failed" } });
+    await f.createBooking(t.db, { eventType: et, start: at(6 * H), location: { ...MEET, joinUrl: null, status: "failed", error: "not_configured" }, overrides: { provisionStatus: "failed" } });
+    const [inPerson, meet] = (await page(owner)).groups[0]!.meetings;
+    expect(inPerson!.canRetry).toBe(true);
+    expect(inPerson!.location?.problem).toBeNull();
+    expect(inPerson!.notices).toContainEqual(expect.objectContaining({ kind: "calendar_failed", retry: true }));
+    // The Meet problem already has its Retry in LOCATION: no second one on the status line.
+    expect(meet!.location?.problem).toBeTruthy();
+    expect(meet!.notices.find((n) => n.kind === "calendar_failed")?.retry).toBeUndefined();
+  });
+
+  it("sanitizes stored meeting notes on render (GEN-08)", async () => {
+    const et = await eventType();
+    const dirty = '<p>Agenda <strong>ok</strong></p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">x</a>';
+    await f.createBooking(t.db, { eventType: et, start: at(5 * H), overrides: { meetingNotesHtml: dirty, meetingNotesPlain: "Agenda ok" } });
+    const m = (await page(owner)).groups[0]!.meetings[0]!;
+    for (const html of [m.notesHtml!, m.summary!.notesHtml!]) {
+      expect(html).toContain("<strong>ok</strong>");
+      expect(html).not.toMatch(/script|onerror|javascript:|<img/i);
+    }
   });
 
   it("marks no-shows and shows Schedule Invitee Again on past meetings", async () => {
