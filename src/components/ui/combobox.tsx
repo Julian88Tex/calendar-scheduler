@@ -3,7 +3,14 @@
 // Combobox (ARCHITECTURE 20.2): a select-like trigger that opens a searchable listbox (WAI-ARIA combobox with a popup
 // listbox: the search input owns aria-activedescendant; ArrowUp/ArrowDown, Home/End, Enter and Escape work). Options
 // are filtered locally by label, value, description, group and keywords, or by the caller via onQueryChange (server
-// search). Grouped options render under group headings.
+// search). Grouped options render under group headings. variant="public" is the booking page picker
+// (docs/research/calendly-live-capture.md item 17): no dividers, a tight shadow, a 2px blue search field inset 20px
+// (12px from the top, its magnifier 10px in), 13px extra-bold navy group headings, flush rows that wrap with a light
+// blue selected tint (no check mark), a 214px list viewport that lets the next row peek out at the bottom, a 6px
+// radius, Calendly's slightly tighter letter spacing for Figtree, and the browser's own scrollbar in a reserved gutter
+// (scrollbar-gutter: stable): Calendly's list uses the native one, a classic 15px bar with arrows on Windows and Linux
+// and an overlay bar on macOS, and the reserved space keeps rows and times where Calendly's sit even where the bar is
+// hidden (headless screenshots run Chromium with --hide-scrollbars).
 "use client";
 
 import * as RadixPopover from "@radix-ui/react-popover";
@@ -46,6 +53,12 @@ export type ComboboxProps = {
   /** A custom trigger element (rendered with asChild) instead of the field-style button. */
   trigger?: React.ReactElement;
   align?: "start" | "center" | "end";
+  /** Preferred side of the trigger for the popup (default "bottom"; it flips when there is no room). */
+  side?: "top" | "bottom";
+  /** Gap between the trigger and the popup in px (default 4). */
+  sideOffset?: number;
+  /** "field" (default, the app's select-like picker) or "public" (the booking page time zone picker). */
+  variant?: "field" | "public";
 };
 
 export function Combobox({
@@ -68,11 +81,18 @@ export function Combobox({
   header,
   trigger,
   align = "start",
+  side = "bottom",
+  sideOffset = 4,
+  variant = "field",
   ...aria
 }: ComboboxProps) {
+  const isPublic = variant === "public";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(-1);
+  // The public variant marks the active row with a blue edge only while the keyboard drives it (the mouse hover tint
+  // is enough otherwise), so the picker opens looking like Calendly's with just the selected row tinted.
+  const [keyboardNav, setKeyboardNav] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const baseId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const listId = `${baseId}-listbox`;
@@ -105,6 +125,7 @@ export function Combobox({
 
   const openWith = (next: boolean) => {
     setOpen(next);
+    setKeyboardNav(false);
     if (next) {
       const idx = flat.findIndex((o) => o.value === value);
       setActive(idx >= 0 ? idx : firstEnabled());
@@ -122,6 +143,7 @@ export function Combobox({
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) setKeyboardNav(true);
     if (e.key === "ArrowDown") {
       e.preventDefault();
       const next = firstEnabled(active + 1, 1);
@@ -174,21 +196,28 @@ export function Combobox({
       <RadixPopover.Portal>
         <RadixPopover.Content
           align={align}
-          sideOffset={4}
+          side={side}
+          sideOffset={sideOffset}
           collisionPadding={8}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>("input[role=combobox]")?.focus();
           }}
           className={cn(
-            "z-50 flex w-[var(--radix-popover-trigger-width)] min-w-64 max-w-[calc(100vw-16px)] flex-col overflow-hidden",
-            "rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-pop)] data-[state=open]:animate-pop-in",
+            "z-50 flex w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-16px)] flex-col overflow-hidden",
+            "border border-line bg-white data-[state=open]:animate-pop-in",
+            isPublic ? "min-w-0 rounded-[6px] pb-[7px] tracking-[-0.01em] shadow-[var(--shadow-next)]" : "min-w-64 rounded-[var(--radius-card)] shadow-[var(--shadow-pop)]",
             contentClassName,
           )}
         >
-          <div className="border-b border-line p-2">
-            <div className="flex h-10 items-center gap-2 rounded-[var(--radius-input)] border border-line px-3 focus-within:border-primary">
-              <Search aria-hidden="true" className="size-4 shrink-0 text-ink-2" />
+          <div className={isPublic ? "px-5 pt-3" : "border-b border-line p-2"}>
+            <div
+              className={cn(
+                "flex h-10 items-center gap-2 rounded-[var(--radius-input)]",
+                isPublic ? "border-2 border-line pr-3 pl-[10px] focus-within:border-brand" : "border border-line px-3 focus-within:border-primary",
+              )}
+            >
+              <Search aria-hidden="true" className={cn("size-4 shrink-0", isPublic ? "text-ink" : "text-ink-2")} />
               <input
                 role="combobox"
                 aria-expanded="true"
@@ -218,7 +247,7 @@ export function Combobox({
             id={listId}
             role="listbox"
             aria-label={aria["aria-label"] ?? "Options"}
-            className="scrollbar-thin max-h-72 overflow-y-auto overscroll-contain p-1"
+            className={cn("overflow-y-auto overscroll-contain", isPublic ? "max-h-[214px] p-0 [scrollbar-gutter:stable]" : "scrollbar-thin max-h-72 p-1")}
           >
             {flat.length === 0 && (
               <li role="presentation" className="px-3 py-6 text-center text-body-md text-ink-2">
@@ -227,7 +256,11 @@ export function Combobox({
             )}
             {groups.map((g) => (
               <li key={g.group ?? "__none"} role="presentation">
-                {g.group && <div className="px-3 pt-3 pb-1 text-eyebrow text-ink-2" aria-hidden="true">{g.group}</div>}
+                {g.group && (
+                  <div className={isPublic ? "px-5 pt-[9px] pb-1.5 text-[13px] leading-5 font-extrabold text-ink uppercase" : "px-3 pt-3 pb-1 text-eyebrow text-ink-2"} aria-hidden="true">
+                    {g.group}
+                  </div>
+                )}
                 <ul role="group" aria-label={g.group ?? undefined}>
                   {g.options.map(({ option: o, index: i }) => {
                     const isSelected = o.value === value;
@@ -238,13 +271,18 @@ export function Combobox({
                         role="option"
                         aria-selected={isSelected}
                         aria-disabled={o.disabled || undefined}
-                        onMouseMove={() => !o.disabled && active !== i && setActive(i)}
+                        onMouseMove={() => {
+                          if (keyboardNav) setKeyboardNav(false);
+                          if (!o.disabled && active !== i) setActive(i);
+                        }}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => choose(o)}
                         className={cn(
-                          "relative flex min-h-10 cursor-pointer select-none items-center gap-2 rounded-[6px] py-2 pr-9 pl-3 text-[14px] text-ink",
-                          i === active && "bg-primary-soft",
-                          isSelected && "font-semibold",
+                          "relative flex cursor-pointer select-none items-center gap-2 text-[14px] text-ink",
+                          isPublic ? "min-h-9 py-2 pr-4 pl-6 leading-5" : "min-h-10 rounded-[6px] py-2 pr-9 pl-3",
+                          isPublic ? (isSelected ? "bg-brand-soft" : i === active && "bg-mist") : i === active && "bg-primary-soft",
+                          isPublic && keyboardNav && i === active && "shadow-[inset_3px_0_0_0_var(--primary-color)]",
+                          isSelected && !isPublic && "font-semibold",
                           o.disabled && "cursor-not-allowed text-ink-3",
                         )}
                       >
@@ -256,7 +294,7 @@ export function Combobox({
                             {o.description && <span className="text-body-sm font-normal text-ink-2">{o.description}</span>}
                           </span>
                         )}
-                        {isSelected && <Check aria-hidden="true" className="absolute right-3 size-4 text-primary" />}
+                        {isSelected && !isPublic && <Check aria-hidden="true" className="absolute right-3 size-4 text-primary" />}
                       </li>
                     );
                   })}

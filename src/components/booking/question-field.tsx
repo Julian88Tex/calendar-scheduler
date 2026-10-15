@@ -1,18 +1,19 @@
-// One custom question of the details form (SPEC BK-12): One line (input), Multiple lines (textarea, 4 rows), Radio
-// buttons, Checkboxes (a single option works as consent), Dropdown ("Select..."), Phone number. "Other" adds a free text
-// input when chosen. URLs in the question text render as links. Errors are linked with aria-describedby (GEN-05).
+// One custom question of the details form (SPEC BK-12; live capture item 8): One line (input), Multiple lines (a 2-row,
+// 57px textarea with the resize handle, like Calendly's), Radio buttons, Checkboxes (a single option works as consent),
+// Dropdown ("Select..."), Phone number. "Other" adds a free text input when chosen. URLs in the question text render as
+// links. Errors are linked with aria-describedby (GEN-05).
 "use client";
 
 import type * as React from "react";
 import { useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FieldError } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { BOOKING_FIELD, BookingFieldError, FIELD_LABEL, RequiredMark } from "./form-parts";
 import { MAX_ANSWER, type FormValues, type PublicQuestion } from "./lib/form";
 import { bt } from "./lib/t";
 
@@ -36,14 +37,6 @@ export function Linkified({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-function Required() {
-  return (
-    <span aria-hidden="true" className="ml-0.5 text-danger-text">
-      *
-    </span>
-  );
-}
-
 const OTHER = "__other__";
 
 export type QuestionFieldProps = {
@@ -63,12 +56,11 @@ export function QuestionField({ question: q, values, onChange, error }: Question
   const label = (
     <>
       <Linkified text={q.label} />
-      {q.required && <Required />}
+      {q.required && <RequiredMark />}
     </>
   );
   const otherInput = (
     <Input
-      size="lg"
       aria-label={`${q.label}: ${bt("details.other")}`}
       placeholder={bt("details.otherPlaceholder")}
       value={values.other[q.id] ?? ""}
@@ -76,7 +68,7 @@ export function QuestionField({ question: q, values, onChange, error }: Question
       onChange={(e) => setOther(e.target.value)}
       aria-invalid={error ? true : undefined}
       aria-describedby={errorId}
-      className="mt-2"
+      className={cn(BOOKING_FIELD, "mt-2")}
     />
   );
 
@@ -90,7 +82,7 @@ export function QuestionField({ question: q, values, onChange, error }: Question
         className="flex min-w-0 flex-col gap-2"
         data-field={`answers.${q.id}`}
       >
-        <span id={legendId} className="text-label text-ink">
+        <span id={legendId} className={FIELD_LABEL}>
           {label}
         </span>
         {q.type === "single_select" ? (
@@ -133,7 +125,7 @@ export function QuestionField({ question: q, values, onChange, error }: Question
           </div>
         )}
         {values.otherSelected[q.id] && otherInput}
-        <FieldError id={errorId} error={error} />
+        <BookingFieldError id={errorId} error={error} />
       </div>
     );
   }
@@ -143,13 +135,21 @@ export function QuestionField({ question: q, values, onChange, error }: Question
   const common = { id, "aria-invalid": error ? true : undefined, "aria-describedby": errorId, required: q.required } as const;
   switch (q.type) {
     case "text":
-      control = <Textarea {...common} rows={4} maxLength={MAX_ANSWER} value={typeof raw === "string" ? raw : ""} onChange={(e) => setAnswer(e.target.value)} className="text-[16px]" />;
+      control = (
+        <Textarea
+          {...common}
+          rows={2}
+          maxLength={MAX_ANSWER}
+          value={typeof raw === "string" ? raw : ""}
+          onChange={(e) => setAnswer(e.target.value)}
+          className={cn(BOOKING_FIELD, "h-[57px] min-h-[57px] py-[7px] leading-5")}
+        />
+      );
       break;
     case "dropdown":
       control = (
         <NativeSelect
           {...common}
-          size="lg"
           placeholder={bt("details.select")}
           value={typeof raw === "string" ? raw : ""}
           onChange={(e) => setAnswer(e.target.value)}
@@ -167,7 +167,6 @@ export function QuestionField({ question: q, values, onChange, error }: Question
         >
           <PhoneInput
             id={id}
-            size="lg"
             value={typeof raw === "string" && raw ? raw : null}
             onChange={(e164) => setAnswer(e164 ?? "")}
             invalid={Boolean(error)}
@@ -179,15 +178,15 @@ export function QuestionField({ question: q, values, onChange, error }: Question
       );
       break;
     default:
-      control = <Input {...common} size="lg" maxLength={MAX_ANSWER} value={typeof raw === "string" ? raw : ""} onChange={(e) => setAnswer(e.target.value)} />;
+      control = <Input {...common} maxLength={MAX_ANSWER} value={typeof raw === "string" ? raw : ""} onChange={(e) => setAnswer(e.target.value)} className={BOOKING_FIELD} />;
   }
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5")} data-field={`answers.${q.id}`}>
-      <label htmlFor={id} className="text-label text-ink">
+    <div className="flex min-w-0 flex-col gap-0.5" data-field={`answers.${q.id}`}>
+      <label htmlFor={id} className={FIELD_LABEL}>
         {label}
       </label>
       {control}
-      <FieldError id={errorId} error={error} />
+      <BookingFieldError id={errorId} error={error} />
     </div>
   );
 }

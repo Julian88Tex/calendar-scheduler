@@ -1,13 +1,25 @@
 // Setup checklist (SPEC GEN-09, ADM-03), auth email templates (AU-01, AU-07, AU-08, AU-10, GEN-11) and the sealed
 // OAuth state cookie (ARCHITECTURE 18.4).
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loginMethodCodeTemplate, resetPasswordTemplate, verifyEmailTemplate, welcomeTemplate } from "@/lib/auth/emails";
 import { backgroundStatus, configurationChecklist, oauthRedirectUris } from "@/lib/auth/flows/setup-status";
 import { checkOAuthState, sealOAuthState, unsealOAuthState } from "@/lib/auth/oauth/state";
 import { resetFakeTime, setFakeNow } from "@/lib/time/now";
 
 const env = process.env as Record<string, string | undefined>;
-const touched = ["RESEND_API_KEY", "SMTP_HOST", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "CRON_SECRET", "ENCRYPTION_KEY", "VERCEL", "APP_URL"];
+const touched = [
+  "RESEND_API_KEY",
+  "SMTP_HOST",
+  "EMAIL_PROVIDER",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "CRON_SECRET",
+  "SETUP_TOKEN",
+  "OWNER_EMAIL",
+  "ENCRYPTION_KEY",
+  "VERCEL",
+  "APP_URL",
+];
 const saved = Object.fromEntries(touched.map((k) => [k, env[k]]));
 afterEach(() => {
   for (const k of touched) {
@@ -21,26 +33,58 @@ const item = (id: string) => configurationChecklist().find((i) => i.id === id)!;
 
 describe("configuration checklist (GEN-09, ADM-03)", () => {
   it("lists every GEN-09 entry with gray Not configured by default", () => {
+    for (const k of touched) delete env[k];
     const ids = configurationChecklist().map((i) => i.id);
-    expect(ids).toEqual(["database", "session_secret", "encryption_key", "google", "microsoft", "email", "cron_secret"]);
+    expect(ids).toEqual(["database", "session_secret", "encryption_key", "google", "microsoft", "email", "cron_secret", "owner_bootstrap"]);
+    expect(item("owner_bootstrap")).toMatchObject({ status: "off", value: "Not configured", envVars: ["SETUP_TOKEN", "OWNER_EMAIL"] });
     expect(item("google")).toMatchObject({ status: "off", value: "Not configured", envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] });
     expect(item("cron_secret").status).toBe("off");
   });
 
-  it("turns green when variables are set, and email falls back to Outbox only without Resend", () => {
+  it("turns green when variables are set; email goes through the owner's Gmail without Resend or SMTP", () => {
+    for (const k of touched) delete env[k];
+    expect(item("email")).toMatchObject({ status: "off", value: "Outbox only" });
+    expect(item("email").hint).toContain("send them from Gmail");
     env.GOOGLE_CLIENT_ID = "id";
     env.GOOGLE_CLIENT_SECRET = "secret";
     env.CRON_SECRET = "c";
     env.ENCRYPTION_KEY = "k";
     env.RESEND_API_KEY = "re_123";
-    expect(item("google")).toMatchObject({ status: "ok", value: "Configured" });
+    expect(item("google")).toMatchObject({ status: "ok", value: "Configured", label: "Google (sign in, Calendar, Meet, Gmail sending)" });
     expect(item("cron_secret").status).toBe("ok");
     expect(item("encryption_key").status).toBe("ok");
-    expect(item("email")).toMatchObject({ status: "ok", value: "Resend" });
+    expect(item("email")).toMatchObject({ status: "ok", value: "Resend", envVars: expect.arrayContaining(["EMAIL_PROVIDER", "RESEND_API_KEY", "SMTP_HOST"]) });
     delete env.RESEND_API_KEY;
-    expect(item("email")).toMatchObject({ status: "off", value: "Outbox only" });
+    expect(item("email")).toMatchObject({ status: "ok", value: "Owner's Gmail" });
+    expect(item("email").hint).toContain("Gmail sending");
     env.SMTP_HOST = "smtp.example.com";
     expect(item("email").value).toBe("SMTP");
+    env.EMAIL_PROVIDER = "gmail";
+    expect(item("email")).toMatchObject({ status: "ok", value: "Owner's Gmail (EMAIL_PROVIDER=gmail)" });
+    env.EMAIL_PROVIDER = "outbox";
+    expect(item("email")).toMatchObject({ status: "off", value: "Outbox only" });
+    delete env.GOOGLE_CLIENT_ID;
+    env.EMAIL_PROVIDER = "gmail";
+    expect(item("email").status).toBe("warning");
+  });
+
+  it("shows whether the owner bootstrap is enabled and limited to OWNER_EMAIL, never the address itself", () => {
+    for (const k of touched) delete env[k];
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    env.OWNER_EMAIL = "owner@example.com";
+    expect(item("owner_bootstrap")).toMatchObject({ status: "off", value: "Not configured" });
+    expect(item("owner_bootstrap").hint).toContain("Only OWNER_EMAIL becomes instance admin");
+    env.SETUP_TOKEN = "short";
+    expect(item("owner_bootstrap").status).toBe("off");
+    env.SETUP_TOKEN = "s".repeat(24);
+    expect(item("owner_bootstrap")).toMatchObject({ status: "ok", value: "Enabled for OWNER_EMAIL" });
+    delete env.OWNER_EMAIL;
+    expect(item("owner_bootstrap")).toMatchObject({ status: "ok", value: "Enabled" });
+    env.OWNER_EMAIL = "not-an-email";
+    expect(item("owner_bootstrap")).toMatchObject({ status: "warning", value: "OWNER_EMAIL is not a valid email address" });
+    env.OWNER_EMAIL = "owner@example.com";
+    expect(JSON.stringify(configurationChecklist())).not.toContain("owner@example.com");
+    vi.restoreAllMocks();
   });
 
   it("flags the missing database on Vercel and skips database reads in setup mode", async () => {
@@ -55,6 +99,7 @@ describe("configuration checklist (GEN-09, ADM-03)", () => {
       "https://cal.example.com/api/auth/google/callback",
       "https://cal.example.com/api/auth/microsoft/callback",
     ]);
+    expect(oauthRedirectUris().map((u) => u.provider)).toEqual(["Google (sign in, Calendar, Meet, Gmail sending)", "Microsoft (sign in)"]);
   });
 });
 

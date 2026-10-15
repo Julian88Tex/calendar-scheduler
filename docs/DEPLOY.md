@@ -216,9 +216,14 @@ other accounts exist, and never overwrites your setup (it also accepts `CRON_SEC
 2. On Google's consent screen keep every box checked (calendar events, calendars, send email). Kairos links Google to
    the bootstrapped account (same verified email), adopts your Google photo when the account has none, and connects
    your primary calendar: it checks it for conflicts and adds booked meetings to it with a Google Meet link.
-3. You land on **Scheduling** with your three event types. Check:
+3. You land on **Scheduling** with your three event types (from now on `{APP_URL}` itself opens Scheduling when you
+   are signed in and the login page when you are not). Check:
    - **Availability > Calendar settings** lists your Google calendar; add any other calendars that should block time.
    - Your booking page `{APP_URL}/julianjoseph` shows the welcome message and the three event types.
+   - **Settings > Email outbox** lists every email Kairos sent or tried to send, newest first. The line at the top says
+     how email goes out ("Sending from you@gmail.com (Gmail)"). An email marked **Waiting for Gmail** is sent by itself
+     once you reconnect Google with its **Reconnect Google** link; one marked **Failed** shows the reason and can be
+     sent again with **Resend**.
    - Optional: upload your logo in **Settings > Branding** (the bootstrap cannot copy it from Calendly).
 
 ## 8. Reminder dispatcher: a Google Apps Script every 5 minutes
@@ -314,7 +319,8 @@ included), so leave it off there or change its schedule to `*/30 * * * *`; the A
    ```
 
    The reminder shows `scheduled` with `run_at` 24 hours before the meeting; within 5 minutes after `run_at` it turns
-   `sent` (with `sent_at`) and the reminder email arrives. Then cancel the test meeting with the link in the email.
+   `sent` (with `sent_at`) and the reminder email arrives (it is also listed in **Settings > Email outbox** as
+   "Reminder: ..." with status Sent and provider Gmail). Then cancel the test meeting with the link in the email.
    `failed` with an `error` that mentions Google means the Google connection needs attention (step 7: reconnect from
    **Integrations**, keeping the send email permission checked).
 
@@ -326,6 +332,6 @@ included), so leave it off there or change its schedule to `*/30 * * * *`; the A
 | Google says `redirect_uri_mismatch` | Register exactly `{APP_URL}/api/auth/google/callback` (step 3.4) and make `APP_URL` match it. |
 | "Sign ups are closed" when you continue with Google | Your Google email differs from the bootstrapped one. Use the `OWNER_EMAIL` account. |
 | Calendar asks to reconnect after about a week | The Google app is still in Testing: publish it (step 3.3), then reconnect. |
-| Emails are not sent | Check `EMAIL_PROVIDER=gmail`, that the Gmail API is enabled (step 3.1) and that you kept the send email permission when connecting Google. |
+| Emails are not sent | Open **Settings > Email outbox**: each email shows why. **Waiting for Gmail**: reconnect Google with the link (keep the send email permission checked); the emails then go out by themselves. **Failed**: read the reason, fix it, then **Resend**. **Stored**: no email provider is active; check `EMAIL_PROVIDER=gmail`, that the Gmail API is enabled (step 3.1) and that you kept the send email permission when connecting Google. |
 | The "Reminders may be sent late" or "past their send time" banner stays | The Apps Script is not running or its `CRON_SECRET` differs from Vercel's (its Executions show HTTP 401). |
 | All calendars need a reconnect after a redeploy | `ENCRYPTION_KEY` changed. Set the old value back, or reconnect. |

@@ -32,13 +32,13 @@ describe("sitemap.xml", () => {
 
     const urls = (await sitemap()).map((e) => e.url);
     expect(urls).toEqual(expect.arrayContaining([
-      "http://localhost:3000",
       "http://localhost:3000/privacy",
       "http://localhost:3000/sitemap-owner",
       "http://localhost:3000/sitemap-owner/public-30",
       "http://localhost:3000/sitemap-team",
       "http://localhost:3000/sitemap-team/team-60",
     ]));
+    expect(urls).not.toContain("http://localhost:3000");
     for (const hidden of ["secret-30", "off-30", "gone-30", "adhoc-30", "shared-30"]) {
       expect(urls.some((u) => u.endsWith(`/${hidden}`)), hidden).toBe(false);
     }
@@ -47,13 +47,7 @@ describe("sitemap.xml", () => {
   it("falls back to the marketing pages when the database is unavailable", async () => {
     setDbForTests({ select: () => { throw new Error("no database"); } } as never);
     const urls = (await sitemap()).map((e) => e.url);
-    expect(urls).toEqual([
-      "http://localhost:3000",
-      "http://localhost:3000/privacy",
-      "http://localhost:3000/terms",
-      "http://localhost:3000/cookie-policy",
-      "http://localhost:3000/help",
-    ]);
+    expect(urls).toEqual(["http://localhost:3000/privacy", "http://localhost:3000/terms"]);
     setDbForTests(t.db);
   });
 });

@@ -74,7 +74,10 @@ function reopenDeadline(poll: PollRow, given: string | null | undefined, lastSta
   return poll.deadlineAt;
 }
 
-/** "Reopen voting" (closed -> open); a passed deadline must be moved or cleared first (MP-22). */
+/**
+ * "Reopen voting" (closed -> open); a passed deadline must be moved or cleared first (MP-22). Respondents are emailed
+ * "{Host} reopened the poll for {title}, you can update your response." unless `notify` is off.
+ */
 export async function reopenVoting(actor: ActorCtx, raw: unknown): Promise<void> {
   const input = ReopenPollSchema.parse(raw);
   const db = await getDb();
@@ -91,6 +94,7 @@ export async function reopenVoting(actor: ActorCtx, raw: unknown): Promise<void>
     await recordActivity(tx, { pollId: poll.id, type: "voting_reopened", actorUserId: actor.user.id, at });
     await scheduleTimedJobs(tx, updated, options, at);
     await rescheduleReminders(tx, updated, options, at);
+    if (input.notify) await notifyRespondents(tx, poll, "reopened", actor.user.id, at);
   });
   runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
 }
@@ -126,7 +130,8 @@ export async function reopenPoll(actor: ActorCtx, raw: unknown): Promise<void> {
 /**
  * "Delete poll" (MP-22): soft delete (canceled, the link answers 410), purged after 30 days. Only the creator and org
  * owners and admins (a co-host gets 403). A booked (or reopened) poll keeps its meeting unless `cancelMeeting`
- * ("Also cancel the scheduled meeting at {old time}?"). Respondents are emailed unless `notify` is off.
+ * ("Also cancel the scheduled meeting at {old time}?"). Respondents are emailed "{Host} canceled the meeting poll" unless
+ * `notify` is off, booked polls included (the meeting's invitees also get its cancellation email when it is canceled).
  */
 export async function deletePoll(actor: ActorCtx, raw: unknown): Promise<void> {
   const input = DeletePollSchema.parse(raw);
@@ -153,7 +158,7 @@ export async function deletePoll(actor: ActorCtx, raw: unknown): Promise<void> {
     // Pending vote notifications and digests of a deleted poll are moot.
     await cancelJobs(tx, { groupKey: pollJobGroup(row.id), type: "polls.notify" });
     await enqueueHoldsSync(tx, row.id, at);
-    if (input.notify && status !== "booked") await notifyRespondents(tx, row, "canceled", actor.user.id, at);
+    if (input.notify) await notifyRespondents(tx, row, "canceled", actor.user.id, at);
   });
   runJobsAfterResponse({ groupKeys: [pollJobGroup(input.pollId)] });
 }

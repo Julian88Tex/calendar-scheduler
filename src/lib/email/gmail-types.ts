@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // What the "Send emails from your Gmail" card on Integrations > Google Calendar renders (gmail-view.ts builds it,
 // src/components/integrations/gmail-sending-card.tsx renders it). Types and pure copy helpers only: client and server

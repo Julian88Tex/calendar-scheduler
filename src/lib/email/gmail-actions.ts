@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // Server action of the "Send emails from your Gmail" card on Integrations > Google Calendar (ARCHITECTURE section 26
 // rule 3). Thin: parse, authenticate (runAction), call setGmailSending with the signed-in actor (it checks that the

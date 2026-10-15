@@ -20,7 +20,7 @@
 // | sms_messages                                      | deleted after 90 days (same as the email outbox)         |
 // | verification_codes, trusted_devices, auth_tokens  | expired codes after 1 day, devices once expired, tokens 30 days after expiry |
 import "server-only";
-import { and, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, notInArray, or, type SQL } from "drizzle-orm";
 import type { DB } from "@/db";
 import {
   authTokens,
@@ -66,6 +66,14 @@ export type CleanupResult = { counts: CleanupCounts; complete: boolean };
 
 const CHUNK = 2_000;
 
+/**
+ * `coalesce(primary, fallback) < at` written with typed operators, so drizzle binds `at` through the columns'
+ * timestamptz encoder (an ISO string). Never compare a raw sql`` expression with a JS Date: PGlite serializes it, but
+ * postgres.js (drizzle's transparent timestamp serializer) receives the Date object and the query fails in production.
+ */
+const coalesceBefore = (primary: PgColumn, fallback: PgColumn, at: Date): SQL =>
+  or(lt(primary, at), and(isNull(primary), lt(fallback, at)))!;
+
 /** Deletes rows matching `where` in chunks of CHUNK ids until none are left or the deadline passes. */
 async function chunkedDelete(
   db: DB,
@@ -104,14 +112,14 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
     chunkedDelete(db, jobs, jobs.id,
       and(
         inArray(jobs.status, ["succeeded", "canceled"]),
-        lt(sql`coalesce(${jobs.finishedAt}, ${jobs.createdAt})`, ago(RETENTION.finishedJobsDays)),
+        coalesceBefore(jobs.finishedAt, jobs.createdAt, ago(RETENTION.finishedJobsDays)),
       )!,
       deadline,
     ),
   );
   await step("jobs_dead", () =>
     chunkedDelete(db, jobs, jobs.id,
-      and(eq(jobs.status, "dead"), lt(sql`coalesce(${jobs.finishedAt}, ${jobs.createdAt})`, ago(RETENTION.deadJobsDays)))!,
+      and(eq(jobs.status, "dead"), coalesceBefore(jobs.finishedAt, jobs.createdAt, ago(RETENTION.deadJobsDays)))!,
       deadline,
     ),
   );
@@ -120,7 +128,7 @@ export async function runRetentionCleanup(db: DB, at: Date, opts: { budgetMs?: n
   );
   await step("webhook_deliveries", () =>
     chunkedDelete(db, webhookDeliveries, webhookDeliveries.id,
-      lt(sql`coalesce(${webhookDeliveries.deliveredAt}, ${webhookDeliveries.createdAt})`, ago(RETENTION.webhookDeliveriesDays)),
+      coalesceBefore(webhookDeliveries.deliveredAt, webhookDeliveries.createdAt, ago(RETENTION.webhookDeliveriesDays)),
       deadline,
     ),
   );

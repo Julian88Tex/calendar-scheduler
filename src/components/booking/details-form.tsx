@@ -1,25 +1,30 @@
-// The "Enter Details" form (SPEC BK-09 to BK-12, BK-14, BK-16, BK-18, VID-03, VID-06): Name (or First and Last Name),
-// Email, "Add Guests" (chips, up to 10), the location choice with its phone or text input, custom questions in order,
-// marketing consent, the terms sentence (only with a configured Terms of Use or Privacy Notice URL) and "Schedule
-// Event". Inline errors use the server's messages and keys; the
-// hidden honeypot field `website` stays empty for people (BK-18). Phones get a sticky submit button (BK-30).
+// The "Enter Details" form (SPEC BK-09 to BK-12, BK-14, BK-16, BK-18, VID-03, VID-06; live capture
+// docs/research/calendly-live-capture.md items 7 to 13, 18 and 19): Name (or First and Last Name), Email, "Add guests"
+// (a pill outlined in its own dark blue text color that opens the "Guest email(s)" box, up to 10), the location choice
+// as plain radio rows with its phone or text input, custom questions in order, marketing consent, the terms sentence
+// and "Schedule Event" (14px semibold on every screen). The fields sit in a 400px column with Calendly's spacing;
+// inline errors use the server's messages and keys; the hidden honeypot field `website` stays empty for people
+// (BK-18). On phones the button stays in the page flow, as on Calendly.
 "use client";
 
 import type * as React from "react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChipsInput } from "@/components/ui/chips-input";
-import { FieldError } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
-import { chosenLocation, isEmail, MAX_GUESTS, showsLegalNotice, type FieldErrors, type FormContext, type FormValues } from "./lib/form";
+import { BOOKING_FIELD, BOOKING_FIELD_BOX, BookingFieldError, BookingLegalNotice, BRAND_BUTTON, FIELD_LABEL, RequiredMark } from "./form-parts";
+import { runOnLabel } from "./lib/display";
+import { chosenLocation, isEmail, MAX_GUESTS, type FieldErrors, type FormContext, type FormValues } from "./lib/form";
 import { locationInput, locationOption } from "./lib/locations";
 import { bt } from "./lib/t";
 import { LocationGlyph } from "./location-icon";
 import { QuestionField } from "./question-field";
+
+export { BRAND_BUTTON } from "./form-parts";
 
 export type DetailsFormProps = {
   ctx: FormContext;
@@ -28,7 +33,12 @@ export type DetailsFormProps = {
   errors: FieldErrors;
   formError: string | null;
   submitting: boolean;
-  onSubmit: () => void;
+  /**
+   * Submit: `viaPointer` is true when a mouse, pen or touch press on "Schedule Event" sent the form (the flow then
+   * leaves focus where it is, like Calendly) and false for the keyboard (Enter in a field, or Enter / Space on the
+   * button), where focus moves to the first invalid field.
+   */
+  onSubmit: (viaPointer: boolean) => void;
   collectMarketing: boolean;
   honeypotName: string;
   honeypotRef: React.RefObject<HTMLInputElement | null>;
@@ -44,20 +54,6 @@ export type DetailsFormProps = {
   disabledNote?: string | null;
 };
 
-const TERMS = "%%terms%%";
-const PRIVACY = "%%privacy%%";
-
-/** The public pages' primary pill: every blue reads --primary-color (GEN-03). */
-export const BRAND_BUTTON = "bg-brand text-white hover:bg-brand hover:brightness-90 active:bg-brand active:brightness-75";
-
-function Req() {
-  return (
-    <span aria-hidden="true" className="ml-0.5 text-danger-text">
-      *
-    </span>
-  );
-}
-
 function TextField({
   id,
   label,
@@ -65,6 +61,8 @@ function TextField({
   error,
   hint,
   field,
+  className,
+  labelClassName,
   children,
 }: {
   id: string;
@@ -73,46 +71,41 @@ function TextField({
   error?: string;
   hint?: React.ReactNode;
   field: string;
+  className?: string;
+  labelClassName?: string;
   children: (a11y: { id: string; "aria-invalid": true | undefined; "aria-describedby": string | undefined }) => React.ReactNode;
 }) {
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint ? `${id}-hint` : undefined;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-field={field}>
-      <label htmlFor={id} className="text-label text-ink">
+    <div className={cn("flex min-w-0 flex-col gap-0.5", className)} data-field={field}>
+      <label htmlFor={id} className={cn(FIELD_LABEL, labelClassName)}>
         {label}
-        {required && <Req />}
+        {required && <RequiredMark />}
       </label>
       {children({ id, "aria-invalid": error ? true : undefined, "aria-describedby": [hintId, errorId].filter(Boolean).join(" ") || undefined })}
+      {/* The hint sits 10px under its field and 3px closer to the next label than the column gap, as captured. */}
       {hint && (
-        <p id={hintId} className="text-body-sm text-ink-2">
+        <p id={hintId} className="mt-2 -mb-[3px] text-[14px] leading-5 text-public-text">
           {hint}
         </p>
       )}
-      <FieldError id={errorId} error={error} />
+      <BookingFieldError id={errorId} error={error} />
     </div>
-  );
-}
-
-function LegalLink({ href, children }: { href: string | null; children: React.ReactNode }) {
-  if (!href) return <>{children}</>;
-  const external = /^https?:\/\//.test(href);
-  return (
-    <a href={href} className="font-semibold text-brand-strong hover:underline" {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
-      {children}
-    </a>
   );
 }
 
 export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProps) {
   const base = `bf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  // How the last submit started: a click with a pointer (MouseEvent.detail > 0) or the keyboard (detail 0, including
+  // the implicit submission of Enter in a field, which clicks the submit button for us).
+  const pointerSubmit = useRef(false);
   const { ctx, values, errors, onChange } = p;
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => onChange((v) => ({ ...v, [key]: value }));
   const location = chosenLocation(ctx, values);
   const input = locationInput(location);
   const multiple = ctx.locations.length > 1;
   const locationErrorId = errors.location ? `${base}-location-error` : undefined;
-  const termsParts = bt("details.terms", { appName: p.appName, terms: TERMS, privacy: PRIVACY }).split(/(%%terms%%|%%privacy%%)/);
   // BK-10: an 11th guest is refused with "You can add up to 10 guests." (the chips keep the first 10).
   const [guestLimit, setGuestLimit] = useState(false);
   const changeGuests = (g: string[]) => {
@@ -133,7 +126,6 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
           >
             <PhoneInput
               id={a.id}
-              size="lg"
               value={values.locationValue || null}
               onChange={(e164) => set("locationValue", e164 ?? "")}
               invalid={Boolean(errors["location.value"])}
@@ -156,12 +148,12 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
         {(a) => (
           <Input
             {...a}
-            size="lg"
             required
             maxLength={1000}
             placeholder={bt("location.askPlaceholder")}
             value={values.locationValue}
             onChange={(e) => set("locationValue", e.target.value)}
+            className={BOOKING_FIELD}
           />
         )}
       </TextField>
@@ -173,9 +165,11 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
       aria-label={bt("details.title")}
       onSubmit={(e) => {
         e.preventDefault();
-        p.onSubmit();
+        const viaPointer = pointerSubmit.current;
+        pointerSubmit.current = false;
+        p.onSubmit(viaPointer);
       }}
-      className="flex min-w-0 flex-col gap-5"
+      className="flex w-full min-w-0 flex-col gap-[26px] min-[600px]:max-w-[400px]"
     >
       {p.formError && (
         <p role="alert" className="rounded-[var(--radius-card)] border border-danger-soft bg-danger-soft px-4 py-3 text-[14px] font-semibold text-danger-text">
@@ -192,23 +186,23 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
       )}
 
       {ctx.nameFormat === "first_last" ? (
-        <div className="grid gap-5 min-[600px]:grid-cols-2">
+        <div className="grid gap-[26px] min-[600px]:grid-cols-2 min-[600px]:gap-x-4">
           <TextField id={`${base}-first`} label={bt("details.firstName")} required error={errors.firstName} field="firstName">
-            {(a) => <Input {...a} size="lg" required autoComplete="given-name" maxLength={300} value={values.firstName} onChange={(e) => set("firstName", e.target.value)} />}
+            {(a) => <Input {...a} required autoComplete="given-name" maxLength={300} value={values.firstName} onChange={(e) => set("firstName", e.target.value)} className={BOOKING_FIELD} />}
           </TextField>
           <TextField id={`${base}-last`} label={bt("details.lastName")} required error={errors.lastName} field="lastName">
-            {(a) => <Input {...a} size="lg" required autoComplete="family-name" maxLength={300} value={values.lastName} onChange={(e) => set("lastName", e.target.value)} />}
+            {(a) => <Input {...a} required autoComplete="family-name" maxLength={300} value={values.lastName} onChange={(e) => set("lastName", e.target.value)} className={BOOKING_FIELD} />}
           </TextField>
         </div>
       ) : (
         <TextField id={`${base}-name`} label={bt("details.name")} required error={errors.name} field="name">
-          {(a) => <Input {...a} size="lg" required autoComplete="name" maxLength={300} value={values.name} onChange={(e) => set("name", e.target.value)} />}
+          {(a) => <Input {...a} required autoComplete="name" maxLength={300} value={values.name} onChange={(e) => set("name", e.target.value)} className={BOOKING_FIELD} />}
         </TextField>
       )}
 
       <TextField id={`${base}-email`} label={bt("details.email")} required error={errors.email} field="email">
         {(a) => (
-          <Input {...a} size="lg" type="email" required autoComplete="email" inputMode="email" maxLength={320} value={values.email} onChange={(e) => set("email", e.target.value)} />
+          <Input {...a} type="email" required autoComplete="email" inputMode="email" maxLength={320} value={values.email} onChange={(e) => set("email", e.target.value)} className={BOOKING_FIELD} />
         )}
       </TextField>
 
@@ -220,45 +214,50 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
             error={errors.guests ?? (guestLimit ? bt("validation.tooManyGuests") : undefined)}
             hint={bt("details.guestsHint")}
             field="guests"
+            // The label sits 1px lower here: Calendly's guests box starts 8px under its label, not 9px.
+            labelClassName="-top-px"
           >
             {(a) => (
               <ChipsInput
                 id={a.id}
-                size="lg"
                 lowercase
                 value={values.guests}
                 onChange={changeGuests}
                 validate={(g) => (isEmail(g) ? (g === values.email.trim().toLowerCase() ? bt("validation.guestIsInvitee") : null) : bt("validation.email"))}
                 invalid={Boolean(errors.guests) || guestLimit}
                 aria-describedby={a["aria-describedby"]}
-                placeholder={bt("details.guestsPlaceholder")}
+                boxClassName={cn(BOOKING_FIELD_BOX, "min-h-[84px] content-start items-start")}
               />
             )}
           </TextField>
         ) : (
-          <div data-field="guests">
+          // 14px under the email field and 22px above the next label, as captured.
+          <div data-field="guests" className="-mt-3 -mb-1">
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => {
                 set("showGuests", true);
                 // The button goes away: keep keyboard focus in the form, on the new guests input (GEN-05).
                 window.setTimeout(() => document.getElementById(`${base}-guests`)?.focus(), 0);
               }}
+              className="border-current bg-public-bg text-brand-strong hover:bg-brand-soft active:bg-brand-hover max-[599px]:w-full"
             >
               {bt("details.addGuests")}
             </Button>
           </div>
         ))}
 
+      {/* The radio list starts 1px under its label and ends 3px into the column gap, where Calendly's rows sit. */}
       {multiple && (
-        <div className="flex min-w-0 flex-col gap-2" data-field="location">
-          <span id={`${base}-location-legend`} className="text-label text-ink">
+        <div className="-mb-[3px] flex min-w-0 flex-col gap-px" data-field="location">
+          <span id={`${base}-location-legend`} className={FIELD_LABEL}>
             {bt("location.label")}
-            <Req />
+            <RequiredMark />
           </span>
           <RadioGroup
-            variant="cards"
+            variant="list"
             required
             aria-labelledby={`${base}-location-legend`}
             aria-describedby={locationErrorId}
@@ -266,19 +265,20 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
             onValueChange={(id) => onChange((v) => ({ ...v, locationId: id, locationValue: "", phoneRaw: { ...v.phoneRaw, location: "" } }))}
             options={ctx.locations.map((l) => {
               const o = locationOption(l);
+              // Venue names only: like Calendly, the radio list shows no address before booking.
               return {
                 value: l.id,
                 label: (
-                  <span className="flex items-start gap-2">
-                    <LocationGlyph icon={o.icon} className="mt-px size-4 shrink-0 text-navy" />
-                    <span className="whitespace-pre-line">{o.label}</span>
+                  // A 12x14 pin, bottom-aligned with the radio and ending 14px before the label, like Calendly's.
+                  <span className="flex items-start gap-2.5">
+                    <LocationGlyph icon={o.icon} className="mt-[5px] -ml-0.5 size-4 shrink-0 text-navy" />
+                    <span>{runOnLabel(o.label)}</span>
                   </span>
                 ),
-                description: o.detail ? <span className="block pl-6 whitespace-pre-line">{o.detail}</span> : undefined,
               };
             })}
           />
-          <FieldError id={locationErrorId} error={errors.location} />
+          <BookingFieldError id={locationErrorId} error={errors.location} />
         </div>
       )}
       {locationValueField}
@@ -295,32 +295,26 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
         <input ref={honeypotRef} id={`${base}-hp`} type="text" name={p.honeypotName} tabIndex={-1} autoComplete="off" defaultValue="" />
       </div>
 
-      {showsLegalNotice(p.termsUrl, p.privacyUrl) && (
-        <p className="text-[13px] leading-5 text-ink-2">
-          {termsParts.map((part, i) =>
-            part === TERMS ? (
-              <LegalLink key={i} href={p.termsUrl}>
-                {bt("details.termsOfUse")}
-              </LegalLink>
-            ) : part === PRIVACY ? (
-              <LegalLink key={i} href={p.privacyUrl}>
-                {bt("details.privacyNotice")}
-              </LegalLink>
-            ) : (
-              <span key={i}>{part}</span>
-            ),
-          )}
-        </p>
-      )}
+      <div className="flex flex-col gap-[21px]">
+        <BookingLegalNotice appName={p.appName} termsUrl={p.termsUrl} privacyUrl={p.privacyUrl} />
 
-      {/* Empty unless Cloudflare asks for a click ("interaction-only"). */}
-      {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}
+        {/* Empty unless Cloudflare asks for a click ("interaction-only"). */}
+        {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}
 
-      <div className={cn("max-[599px]:sticky max-[599px]:bottom-0 max-[599px]:-mx-5 max-[599px]:border-t max-[599px]:border-line max-[599px]:bg-public-bg max-[599px]:px-5 max-[599px]:py-3")}>
-        <Button type="submit" size="lg" loading={p.submitting} disabled={Boolean(p.disabledNote)} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>
-          {bt("details.schedule")}
-        </Button>
-        {p.disabledNote && <p className="mt-2 text-[13px] text-ink-2">{p.disabledNote}</p>}
+        <div>
+          <Button
+            type="submit"
+            loading={p.submitting}
+            disabled={Boolean(p.disabledNote)}
+            onClick={(e) => {
+              pointerSubmit.current = e.detail > 0;
+            }}
+            className={cn(BRAND_BUTTON, "max-[599px]:w-full")}
+          >
+            {bt("details.schedule")}
+          </Button>
+          {p.disabledNote && <p className="mt-2 text-[13px] text-ink-2">{p.disabledNote}</p>}
+        </div>
       </div>
     </form>
   );

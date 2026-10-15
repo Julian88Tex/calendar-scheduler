@@ -107,6 +107,7 @@ beforeAll(() => Object.assign(env, OAUTH_ENV));
 afterAll(() => {
   for (const k of Object.keys(OAUTH_ENV)) delete env[k];
   delete env.SIGNUP_POLICY;
+  delete env.OWNER_EMAIL;
 });
 beforeEach(async () => {
   resetRequest();
@@ -114,6 +115,7 @@ beforeEach(async () => {
   calls.connect.length = 0;
   calls.poll.length = 0;
   delete env.SIGNUP_POLICY;
+  delete env.OWNER_EMAIL;
   await t.db.delete(users);
   await t.db.delete(organizations);
   await t.db.delete(instanceSettings);
@@ -182,7 +184,7 @@ describe("start route", () => {
     expect(q.get("code_challenge_method")).toBe("S256");
     expect(q.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(q.get("scope")).toBe(
-      "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+      "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.send",
     );
     expect(q.get("access_type")).toBe("offline");
     expect(q.get("prompt")).toBe("consent");
@@ -330,6 +332,18 @@ describe("login and signup intents (AU-02, CAL-17)", () => {
     expect(calls.linkCalendar).toHaveLength(0);
   });
 
+  it("with OWNER_EMAIL set, only the owner's Google signup claims a fresh instance (and becomes instance admin)", async () => {
+    env.OWNER_EMAIL = " gina@gmail.EXAMPLE ";
+    const stranger = await flow("google", "intent=signup", googleClaims({ sub: "google-sub-9", email: "eve@evil.example", name: "Eve" }));
+    expect(locationOf(stranger.callback!)).toBe("/signup?error=signups_closed&provider=google");
+    expect(await t.db.select().from(users)).toHaveLength(0);
+    const owner = await flow("google", "intent=signup", googleClaims());
+    expect(locationOf(owner.callback!)).toBe("/app/scheduling");
+    const all = await t.db.select().from(users);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ email: "Gina@Gmail.example", isInstanceAdmin: true });
+  });
+
   it("rejects a callback whose state does not match the cookie, or without a cookie", async () => {
     await handleOAuthStart(new Request("http://localhost:3000/api/auth/google/start"), "google");
     const res = await handleOAuthCallback(new Request("http://localhost:3000/api/auth/google/callback?code=x&state=forged"), "google");
@@ -364,6 +378,22 @@ describe("Microsoft (AU-03)", () => {
     const [u] = await t.db.select().from(users);
     const [et] = await t.db.select().from(eventTypes).where(eq(eventTypes.ownerUserId, u!.id));
     expect(et?.locations).toEqual([]);
+  });
+
+  it("with OWNER_EMAIL set, a work tenant naming the owner's address in its unverified email claim cannot claim the instance", async () => {
+    env.OWNER_EMAIL = "owner@victim.example";
+    // nOAuth: any tenant admin can set a user's email attribute; without xms_edov only the UPN (a domain the tenant
+    // verified) counts, and it is not the owner's.
+    const forged = await flow("microsoft", "intent=signup", msClaims({ email: "owner@victim.example", preferred_username: "max@contoso.example" }));
+    expect(locationOf(forged.callback!)).toBe("/signup?error=signups_closed&provider=microsoft");
+    const noUpn = await flow("microsoft", "intent=signup", msClaims({ oid: "ms-oid-2", email: "owner@victim.example", preferred_username: undefined }));
+    expect(locationOf(noUpn.callback!)).toBe("/signup?error=email_unverified&provider=microsoft");
+    expect(await t.db.select().from(users)).toHaveLength(0);
+    const owner = await flow("microsoft", "intent=signup", msClaims({ oid: "ms-oid-3", email: "owner@victim.example", xms_edov: true }));
+    expect(locationOf(owner.callback!)).toBe("/app/scheduling");
+    expect(await t.db.select({ email: users.emailNormalized, isInstanceAdmin: users.isInstanceAdmin }).from(users)).toEqual([
+      { email: "owner@victim.example", isInstanceAdmin: true },
+    ]);
   });
 
   it("trusts the email claim only for personal accounts or with xms_edov; otherwise the user principal name", () => {

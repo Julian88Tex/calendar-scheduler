@@ -1,5 +1,5 @@
 // Troubleshoot reason codes (SPEC SCH-21, Appendix B; UX walkthrough 21.1). Labels are the chips shown on unavailable
-// times ("DAILY MAX", "MEETING LIMIT"); hints are the side sheet's explanation and fix.
+// times ("DAILY MAX", "MEETING LIMIT", "TOO SOON"); hints are the side sheet's explanation and fix.
 import { appName } from "@/lib/brand";
 import type { ReasonCode } from "./types";
 
@@ -65,16 +65,36 @@ export function isReasonCode(value: unknown): value is ReasonCode {
   return typeof value === "string" && RANK.has(value as ReasonCode);
 }
 
-const LABELS: Partial<Record<ReasonCode, string>> = {
+/**
+ * Chip labels, written as words like Calendly's ("DAILY MAX", "MEETING LIMIT", "TOO SOON", "ROUND ROBIN"), never a bare
+ * code such as "TOOSOON". The same words as the availability Troubleshoot chips (REASON_CHIP_LABELS in
+ * src/components/availability/reason-chip.tsx).
+ */
+const LABELS: Readonly<Record<ReasonCode, string>> = {
+  CALENDAR: "CALENDAR",
+  NOCAL: "NO CALENDAR",
   DAILY_MAX: "DAILY MAX",
   WEEKLY_MAX: "WEEKLY MAX",
   MONTHLY_MAX: "MONTHLY MAX",
+  DURATION: "DURATION",
+  RANGE: "RANGE",
+  TOOSOON: "TOO SOON",
+  EVENT: "EVENT",
+  GROUP: "GROUP",
+  OVERLAP: "OVERLAP",
+  HOLIDAY: "HOLIDAY",
   MEETING_LIMIT: "MEETING LIMIT",
+  HOST: "HOST",
+  ROUNDROBIN: "ROUND ROBIN",
+  UNFAIR: "UNFAIR",
+  BUFFER: "BUFFER",
+  PAST: "PAST",
+  RESERVED: "RESERVED",
 };
 
-/** The chip label of a code: "DAILY MAX", "MEETING LIMIT", "CALENDAR", ... */
+/** The chip label of a code: "DAILY MAX", "MEETING LIMIT", "TOO SOON", "NO CALENDAR", "CALENDAR", ... */
 export function reasonLabel(code: ReasonCode): string {
-  return LABELS[code] ?? code;
+  return Object.hasOwn(LABELS, code) ? LABELS[code] : String(code).replace(/_+/g, " ").trim();
 }
 
 /** Meaning and fix hint of a code (SPEC Appendix B; {AppName} is the configured product name). */

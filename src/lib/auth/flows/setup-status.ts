@@ -3,12 +3,21 @@
 // database is reachable) the last cron tick and the job backlog. configurationChecklist() reads the environment only,
 // so the setup page can render it without a database (setup mode). Integrations outside the reduced scope
 // (docs/SCOPE.md: Zoom, SMS, payments) are not listed.
+//
+// Email: EMAIL_PROVIDER, Resend or SMTP when configured, else the owner's Gmail whenever Google sign in is configured
+// (the owner connects Google and allows Gmail sending; whether they did needs the database, so the Integrations hub
+// shows that), else the outbox. Owner bootstrap: SETUP_TOKEN (or a long CRON_SECRET) enables POST /api/setup/bootstrap;
+// OWNER_EMAIL limits it, and the first-account exception of the signup policy (a signup that verifies the address), to
+// the owner. The page is public, so the owner's address is never shown.
 import "server-only";
 import { and, count, eq, lte } from "drizzle-orm";
 import { getDb, setupRequired } from "@/db";
 import { instanceSettings, jobs } from "@/db/schema";
 import { appName } from "@/lib/brand";
-import { getEnv, getFeatures } from "@/lib/env";
+import { configuredTransport } from "@/lib/email";
+import { getEnv, getFeatures, type Features } from "@/lib/env";
+import { isAppError } from "@/lib/errors";
+import { bootstrapSecrets, configuredOwnerEmail, SETUP_TOKEN_MIN_LENGTH } from "@/lib/setup/config";
 import { now } from "@/lib/time/now";
 import { appUrl } from "@/lib/url";
 import { GOOGLE_REDIRECT_PATH, MICROSOFT_REDIRECT_PATH } from "../oauth/clients";
@@ -33,13 +42,88 @@ export type RedirectUri = { provider: string; uri: string; envVars: string[] };
 export function oauthRedirectUris(): RedirectUri[] {
   const base = appUrl();
   return [
-    { provider: "Google (sign in, Calendar, Meet)", uri: `${base}${GOOGLE_REDIRECT_PATH}`, envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+    {
+      provider: "Google (sign in, Calendar, Meet, Gmail sending)",
+      uri: `${base}${GOOGLE_REDIRECT_PATH}`,
+      envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+    },
     {
       provider: "Microsoft (sign in)",
       uri: `${base}${MICROSOFT_REDIRECT_PATH}`,
       envVars: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_TENANT"],
     },
   ];
+}
+
+const EMAIL_ENV_VARS = ["EMAIL_PROVIDER", "RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "EMAIL_FROM"];
+
+const GMAIL_HINT =
+  "Booking emails are sent from the owner's Gmail once the owner connects Google and allows Gmail sending (Integrations > Google Calendar); until then they wait in the outbox.";
+
+/** The Email row: which transport the environment selects (see the file header). */
+function emailItem(f: Features): ChecklistItem {
+  const base = { id: "email", label: "Email provider", envVars: EMAIL_ENV_VARS };
+  const configured = configuredTransport();
+  if (configured?.name === "resend") return { ...base, status: "ok", value: "Resend" };
+  if (configured?.name === "smtp") return { ...base, status: "ok", value: "SMTP" };
+  if (configured?.name === "outbox") {
+    return { ...base, status: "off", value: "Outbox only", hint: "EMAIL_PROVIDER=outbox: every email is stored in the database outbox instead of being sent." };
+  }
+  if (configured?.name === "gmail") {
+    return f.googleOAuth
+      ? { ...base, status: "ok", value: "Owner's Gmail (EMAIL_PROVIDER=gmail)", hint: GMAIL_HINT }
+      : {
+          ...base,
+          status: "warning",
+          value: "Owner's Gmail (EMAIL_PROVIDER=gmail)",
+          hint: "Gmail sending needs Google sign in: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. Until then emails wait in the outbox.",
+        };
+  }
+  if (f.googleOAuth) {
+    return { ...base, status: "ok", value: "Owner's Gmail", hint: `${GMAIL_HINT} Set RESEND_API_KEY or SMTP_HOST to send through them instead.` };
+  }
+  return {
+    ...base,
+    status: "off",
+    value: "Outbox only",
+    hint: "Emails are stored in the database outbox instead of being sent. Configure Google sign in so the owner can send them from Gmail, or set RESEND_API_KEY or SMTP_HOST.",
+  };
+}
+
+/** The owner bootstrap row (SETUP_TOKEN, OWNER_EMAIL; see the file header). */
+function ownerBootstrapItem(): ChecklistItem {
+  const base = { id: "owner_bootstrap", label: "Owner bootstrap", envVars: ["SETUP_TOKEN", "OWNER_EMAIL"] };
+  let ownerEmailSet: boolean;
+  try {
+    ownerEmailSet = configuredOwnerEmail() !== null;
+  } catch (e) {
+    if (!isAppError(e) || e.code !== "not_configured") throw e;
+    return {
+      ...base,
+      status: "warning",
+      value: "OWNER_EMAIL is not a valid email address",
+      hint: "Until it is fixed the owner bootstrap is disabled and no first signup becomes instance admin.",
+    };
+  }
+  const enabled = bootstrapSecrets().length > 0;
+  if (enabled) {
+    return {
+      ...base,
+      status: "ok",
+      value: ownerEmailSet ? "Enabled for OWNER_EMAIL" : "Enabled",
+      hint: ownerEmailSet
+        ? "POST /api/setup/bootstrap creates the owner account of a fresh instance. Only OWNER_EMAIL can claim it, with the bootstrap or by signing up first with Google or Microsoft (a password signup does not prove the address)."
+        : "POST /api/setup/bootstrap creates the owner account of a fresh instance. Set OWNER_EMAIL so only the owner can claim it.",
+    };
+  }
+  return {
+    ...base,
+    status: "off",
+    value: "Not configured",
+    hint: ownerEmailSet
+      ? `Only OWNER_EMAIL becomes instance admin by signing up first, with Google or Microsoft (a password signup does not prove the address). Set SETUP_TOKEN (at least ${SETUP_TOKEN_MIN_LENGTH} characters) to create the owner account with POST /api/setup/bootstrap.`
+      : `Optional: set SETUP_TOKEN (at least ${SETUP_TOKEN_MIN_LENGTH} characters) to create the owner account with POST /api/setup/bootstrap, and OWNER_EMAIL so only the owner can claim a fresh instance.`,
+  };
 }
 
 /** The GEN-09 checklist from the environment (never touches the database). */
@@ -49,8 +133,6 @@ export function configurationChecklist(): ChecklistItem[] {
   const onVercel = Boolean(e.VERCEL);
   const app = appName();
   const off = "Not configured";
-  const email =
-    f.email === "resend" ? "Resend" : f.email === "smtp" ? "SMTP" : "Outbox only";
   return [
     {
       id: "database",
@@ -80,7 +162,7 @@ export function configurationChecklist(): ChecklistItem[] {
     },
     {
       id: "google",
-      label: "Google (sign in, Calendar, Meet)",
+      label: "Google (sign in, Calendar, Meet, Gmail sending)",
       status: f.googleOAuth ? "ok" : "off",
       value: f.googleOAuth ? "Configured" : off,
       envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
@@ -92,14 +174,7 @@ export function configurationChecklist(): ChecklistItem[] {
       value: f.microsoftOAuth ? `Configured (tenant ${e.MICROSOFT_TENANT ?? "common"})` : off,
       envVars: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_TENANT"],
     },
-    {
-      id: "email",
-      label: "Email provider",
-      status: f.email === "outbox" ? "off" : "ok",
-      value: email,
-      envVars: ["RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "EMAIL_FROM"],
-      hint: f.email === "outbox" ? "Emails are stored in the database outbox instead of being sent. Set RESEND_API_KEY or SMTP_HOST to send them." : undefined,
-    },
+    emailItem(f),
     {
       id: "cron_secret",
       label: "Cron secret",
@@ -108,6 +183,7 @@ export function configurationChecklist(): ChecklistItem[] {
       envVars: ["CRON_SECRET"],
       hint: f.cronSecret ? undefined : "Recommended: only callers with the secret can trigger /api/cron.",
     },
+    ownerBootstrapItem(),
   ];
 }
 

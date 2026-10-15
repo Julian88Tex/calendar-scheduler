@@ -92,8 +92,14 @@ export function MeetingsView({ data }: { data: MeetingsPageData }) {
   const change = (patch: QueryPatch, opts: { replace?: boolean } = {}) => navigate(meetingsHref(query, { event: null, ...patch }), opts.replace);
 
   const restoreFocusSoon = useFocusAfterRefresh(data);
-  // A click on the Date Range tab opens its calendar: the picker mounts open once the range data arrives.
+  // A click on the Date Range tab opens its calendar: the picker mounts open once the range data arrives. Leaving the
+  // tab any other way (Back or Forward in the browser) closes it, so returning later never pops it open by itself.
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [seenTab, setSeenTab] = useState(query.tab);
+  if (query.tab !== seenTab) {
+    setSeenTab(query.tab);
+    if (seenTab === "range" && rangeOpen) setRangeOpen(false);
+  }
 
   const toggle = (id: string, open: boolean) => {
     const next = open ? id : null;

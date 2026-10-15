@@ -25,7 +25,7 @@ export type PollMenuPoll = {
   respondents: number;
   deadline: string | null;
   /** The scheduled meeting (booked, or kept by a reopened poll). */
-  meeting: { start: string; end: string | null; status: "active" | "canceled" } | null;
+  meeting: { start: string; end: string | null; allDayDate?: string | null; status: "active" | "canceled" } | null;
 };
 
 export type PollMenuProps = {
@@ -143,7 +143,9 @@ export function PollDialogs({
   onDeleted?: () => void;
 }) {
   const close = (v: boolean) => !v && setOpen(null);
-  const meeting = poll.meeting ? { start: poll.meeting.start, end: poll.meeting.end, active: poll.meeting.status === "active" } : null;
+  const meeting = poll.meeting
+    ? { start: poll.meeting.start, end: poll.meeting.end, allDayDate: poll.meeting.allDayDate ?? null, active: poll.meeting.status === "active" }
+    : null;
   return (
     <>
       {open === "invite" && <InviteDialog open onOpenChange={close} pollId={poll.id} pollTitle={poll.title} hostName={hostName} onSent={onChanged} />}
@@ -157,7 +159,7 @@ export function PollDialogs({
           deadline={poll.deadline}
           zone={zone}
           hour12={hour12}
-          meeting={poll.meeting ? { start: poll.meeting.start, end: poll.meeting.end } : null}
+          meeting={poll.meeting ? { start: poll.meeting.start, end: poll.meeting.end, allDayDate: poll.meeting.allDayDate ?? null } : null}
           respondents={poll.respondents}
           onDone={onChanged}
         />

@@ -1,28 +1,20 @@
-// OWNER: marketing-site. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+// OWNER: marketing-site. Implemented by golden-path-qa: docs/SCOPE.md skips the marketing site (item 15).
 //
-// / placeholder (ARCHITECTURE section 3.1, SPEC MK-01): the signed-out landing page. The owner replaces it with the
-// real page (signed-in users then redirect to /app/scheduling).
-import Link from "next/link";
-import { buttonClassName } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { APP_NAME } from "@/lib/brand";
+// / : a signed-in visitor goes to the app (/app/scheduling), a signed-out visitor to the login page; no landing page.
+// The session is checked for real (a stale or revoked `sid` cookie counts as signed out); a session still waiting for
+// its second factor goes to /login, which sends it on to the challenge.
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { robots: { index: false, follow: true } };
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-export default async function MarketingHomePage({ searchParams }: Props) {
+export default async function RootPage({ searchParams }: Props): Promise<never> {
   await searchParams;
-  return (
-    <main id="main" className="mx-auto max-w-3xl px-4 py-16">
-      <PageHeader title={APP_NAME} description="Scheduling without the back and forth." />
-      <EmptyState
-        heading="This page is being built."
-        action={
-          <Link href="/login" className={buttonClassName()}>
-            Log in
-          </Link>
-        }
-      />
-    </main>
-  );
+  const user = await getCurrentUser();
+  redirect(user ? "/app/scheduling" : "/login");
 }

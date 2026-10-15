@@ -551,7 +551,7 @@ export async function listPolls(
       .innerJoin(meetingPollParticipants, eq(meetingPollParticipants.id, meetingPollVotes.participantId))
       .where(and(inArray(meetingPollVotes.pollId, ids), isNull(meetingPollOptions.deletedAt), isNull(meetingPollParticipants.deletedAt))),
     db
-      .select({ id: scheduledEvents.id, startAt: scheduledEvents.startAt, status: scheduledEvents.status })
+      .select({ id: scheduledEvents.id, startAt: scheduledEvents.startAt, endAt: scheduledEvents.endAt, status: scheduledEvents.status })
       .from(scheduledEvents)
       .where(inArray(scheduledEvents.id, polls.map((p) => p.bookedScheduledEventId).filter((v): v is string => Boolean(v)).concat(["00000000-0000-0000-0000-000000000000"]))),
     db
@@ -598,6 +598,9 @@ export async function listPolls(
     const top = ranked.find((r) => !r.isPast && (r.yes > 0 || r.ifNeedBe > 0));
     const topOption = top ? sorted.find((o) => o.id === top.id) : null;
     const meeting = p.bookedScheduledEventId ? meetingById.get(p.bookedScheduledEventId) : undefined;
+    // Booked from a date-only option and still at that day: the meeting is "All day" on that date.
+    const bookedOption = meeting && p.bookedOptionId ? options.find((o) => o.id === p.bookedOptionId) : undefined;
+    const bookedAllDay = meeting && bookedOption?.allDayDate && meeting.startAt.getTime() === startOf(bookedOption, p.timezone) ? bookedOption.allDayDate : null;
     const last = lastActivity.get(p.id);
     const hostIds = hostsMap.get(p.eventTypeId) ?? [];
     const role = p.ownerUserId === actor.user.id ? "owner" : hostIds.includes(actor.user.id) ? "cohost" : "admin";
@@ -618,7 +621,9 @@ export async function listPolls(
       invited: parts.filter((x) => x.source === "invite").length,
       hasNew: Boolean(last && (!p.hostLastViewedAt || last.getTime() > p.hostLastViewedAt.getTime())),
       deadline: p.deadlineAt?.toISOString() ?? null,
-      booked: meeting ? { scheduledEventId: meeting.id, start: meeting.startAt.toISOString(), status: meeting.status } : null,
+      booked: meeting
+        ? { scheduledEventId: meeting.id, start: meeting.startAt.toISOString(), end: meeting.endAt.toISOString(), allDayDate: bookedAllDay, status: meeting.status }
+        : null,
       topOption: top && topOption ? { optionId: top.id, start: topOption.startsAt?.toISOString() ?? null, allDayDate: topOption.allDayDate, yes: top.yes, ifNeedBe: top.ifNeedBe } : null,
       role,
       canDelete: role === "owner" || admin,

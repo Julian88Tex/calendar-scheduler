@@ -6,7 +6,9 @@
 // channels; the periodic sync job (every 10 minutes on each cron tick) covers them.
 // - ensureWatchChannels(connectionId): one events.watch channel (7 day TTL) per calendar we care about (checked for
 //   conflicts, or the destination, or holding upcoming booked events), renewed a day before it expires; channels of
-//   calendars no longer needed are stopped. The channel token is random and stored hashed.
+//   calendars no longer needed are stopped. The channel token is random and stored hashed. Free/busy only calendars
+//   (access.ts) get no channel (events.watch needs read access to events): their busy times rely on the cache TTL and
+//   the booking-time recheck.
 // - handleGooglePush: verifies the channel id and token, marks the calendar's busy cache stale and enqueues an
 //   immediate CAL-14 sync of that calendar (coalesced while one is pending).
 import "server-only";
@@ -20,6 +22,7 @@ import { enqueueOrReviveJob } from "@/lib/jobs";
 import { log } from "@/lib/logger";
 import { now, nowMs } from "@/lib/time/now";
 import { absoluteUrl, appUrl } from "@/lib/url";
+import { isBusyOnlyCalendar, readableCalendarCondition } from "./access";
 import { invalidateCalendarCache } from "./busy";
 import { withConnection } from "./credentials";
 import { stopGoogleChannel, watchGoogleEvents } from "./providers/google";
@@ -50,7 +53,7 @@ export async function ensureWatchChannels(connectionId: string): Promise<{ creat
   const [conn] = await db.select().from(calendarConnections).where(eq(calendarConnections.id, connectionId)).limit(1);
   if (!conn || conn.provider !== "google" || (conn.status !== "active" && conn.status !== "error")) return result;
   const cals = await db
-    .select({ id: calendars.id, externalId: calendars.externalId, checkConflicts: calendars.checkConflicts, syncChanges: calendars.syncChanges })
+    .select({ id: calendars.id, externalId: calendars.externalId, checkConflicts: calendars.checkConflicts, syncChanges: calendars.syncChanges, ctag: calendars.ctag })
     .from(calendars)
     .where(and(eq(calendars.connectionId, connectionId), isNull(calendars.deletedAt)));
   if (!cals.length) return result;
@@ -64,7 +67,7 @@ export async function ensureWatchChannels(connectionId: string): Promise<{ creat
         .where(and(inArray(calendarLinkedEvents.calendarId, ids), eq(calendarLinkedEvents.status, "synced")))
     ).map((r) => r.calendarId),
   );
-  const wanted = cals.filter((c) => c.checkConflicts || (c.syncChanges && (c.id === u?.dest || withEvents.has(c.id))));
+  const wanted = cals.filter((c) => !isBusyOnlyCalendar(c) && (c.checkConflicts || (c.syncChanges && (c.id === u?.dest || withEvents.has(c.id)))));
   const wantedIds = new Set(wanted.map((c) => c.id));
   const channels = await db.select().from(calendarWatchChannels).where(inArray(calendarWatchChannels.calendarId, ids));
   const renewAt = new Date(nowMs() + RENEW_BEFORE_MS);
@@ -123,6 +126,7 @@ export async function renewWatchChannels(limit = 25): Promise<number> {
         or(eq(calendarConnections.status, "active"), eq(calendarConnections.status, "error")),
         isNull(calendars.deletedAt),
         eq(calendars.checkConflicts, true),
+        readableCalendarCondition(),
         isNull(calendarWatchChannels.id),
       ),
     )

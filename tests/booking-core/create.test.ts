@@ -1,6 +1,7 @@
 // createBooking on PGlite (ARCHITECTURE section 9): solo bookings with every row and the domain event, slot taken,
-// idempotency, validation, blocked invitees, reschedules (CR-04, SCH-24), group seats, round robin, collective,
-// single-use links, one-off and poll bookings (0/0 buffers, limits ignored), notification mode and redirects.
+// idempotency (client request id; a refresh and a new submit of the same booking answers already_booked), validation, blocked
+// invitees, reschedules (CR-04, SCH-24), group seats, round robin, collective, single-use links, one-off and poll
+// bookings (0/0 buffers, limits ignored), notification mode and redirects.
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExternalBusy } from "@/lib/calendars";
@@ -207,6 +208,100 @@ describe("createBooking: solo", () => {
     expect(u.searchParams.get("invitee_email")).toBe("ana@example.com");
     expect(u.searchParams.get("invitee_uuid")).toBe(r.inviteeId);
     expect(u.searchParams.get("event_start_time")).toBe("2030-10-08T19:00:00-04:00");
+  });
+});
+
+describe("createBooking: the same booking submitted again with a new client request id (a refresh)", () => {
+  const ana = (email = "ana@example.com") => ({ name: "Ana Lima", email, timezone: "America/New_York" });
+  const cancel = async (r: { inviteeId: string; scheduledEventId: string }) => {
+    await t.db.update(invitees).set({ status: "canceled", canceledAt: NOW, cancelerType: "invitee" }).where(eq(invitees.id, r.inviteeId));
+    await t.db.update(scheduledEvents).set({ status: "canceled", canceledAt: NOW }).where(eq(scheduledEvents.id, r.scheduledEventId));
+    await t.db.update(scheduledEventHosts).set({ isActive: false }).where(eq(scheduledEventHosts.scheduledEventId, r.scheduledEventId));
+  };
+
+  it("answers already_booked instead of slot_unavailable, without returning the booking", async () => {
+    const fx = await setupSolo(t.db);
+    const start = la("2030-10-08 10:00");
+    const first = await createBooking(bookingInput(fx.target, start, { invitee: ana("Ana@Example.com"), clientRequestId: "before-refresh" }), ctx);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    // The page was refreshed: a new client request id, the email typed again in another case.
+    const again = await createBooking(bookingInput(fx.target, start, { invitee: ana(" ana@example.COM "), clientRequestId: "after-refresh" }), ctx);
+    const alreadyBooked = { ok: false, code: "already_booked", message: MESSAGES.alreadyBooked };
+    expect(again).toEqual(alreadyBooked);
+    // The answer never carries the booking's ids: the submitted email is unproven and the invitee id opens the
+    // cancel and reschedule pages. A script without any client request id gets the same answer.
+    expect(await createBooking(bookingInput(fx.target, start, { invitee: ana() }), ctx)).toEqual(alreadyBooked);
+
+    const rows = await t.db.select().from(invitees).where(eq(invitees.eventTypeId, fx.target.eventType.id));
+    expect(rows.map((r) => [r.id, r.clientRequestId])).toEqual([[first.inviteeId, "before-refresh"]]);
+    expect(await t.db.select().from(scheduledEvents).where(eq(scheduledEvents.eventTypeId, fx.target.eventType.id))).toHaveLength(1);
+    const created = await t.db.select().from(domainEvents).where(eq(domainEvents.type, "booking.created"));
+    expect(created.filter((e) => (e.payload as { inviteeId: string }).inviteeId === first.inviteeId)).toHaveLength(1);
+  });
+
+  it("another email still gets slot_unavailable", async () => {
+    const fx = await setupSolo(t.db);
+    const start = la("2030-10-08 11:00");
+    const first = await createBooking(bookingInput(fx.target, start, { invitee: ana(), clientRequestId: "ana-11" }), ctx);
+    expect(first.ok).toBe(true);
+    const other = await createBooking(bookingInput(fx.target, start, { invitee: ana("ana.lima@example.com"), clientRequestId: "other-11" }), ctx);
+    expect(other).toEqual({ ok: false, code: "slot_unavailable", message: MESSAGES.slotTaken });
+    // The same email on another event type of the host at that time is not the same booking either.
+    const { eventType: second } = await f.createEventType(t.db, {
+      owner: fx.owner,
+      durationMinutes: 30,
+      locations: [MEET],
+      overrides: { slotIncrementMinutes: 30, minimumNoticeMinutes: 0, bufferBeforeMinutes: 0, bufferAfterMinutes: 0, dateRangeType: "rolling", dateRangeDays: 60 },
+    });
+    const target = { kind: "event_type" as const, eventType: (await loadEventType(second.id, t.db))! };
+    expect((await createBooking(bookingInput(target, la("2030-10-08 11:30")), ctx)).ok).toBe(true);
+    expect(await createBooking(bookingInput(target, start, { invitee: ana() }), ctx)).toEqual({ ok: false, code: "slot_unavailable", message: MESSAGES.slotTaken });
+    expect(await t.db.select().from(invitees).where(eq(invitees.emailNormalized, "ana.lima@example.com"))).toHaveLength(0);
+  });
+
+  it("a canceled earlier booking of the invitee does not count", async () => {
+    const fx = await setupSolo(t.db);
+    const start = la("2030-10-08 14:00");
+    const first = await createBooking(bookingInput(fx.target, start, { invitee: ana(), clientRequestId: "ana-14" }), ctx);
+    if (!first.ok) throw new Error("setup booking failed");
+    await cancel(first);
+    // Someone else takes the freed time; Ana's new submit is not answered with her canceled booking (or with Bo's).
+    const bo = await createBooking(bookingInput(fx.target, start, { invitee: { name: "Bo", email: "bo@example.com", timezone: "UTC" } }), ctx);
+    expect(bo.ok).toBe(true);
+    expect(await createBooking(bookingInput(fx.target, start, { invitee: ana(), clientRequestId: "ana-14-again" }), ctx)).toEqual({
+      ok: false,
+      code: "slot_unavailable",
+      message: MESSAGES.slotTaken,
+    });
+  });
+
+  it("only the same start and duration qualify, and a reschedule into the time is a plain conflict", async () => {
+    const fx = await setupSolo(t.db, { eventType: { durationOptions: [30, 60] } });
+    const long = await createBooking(bookingInput(fx.target, la("2030-10-09 10:00"), { invitee: ana(), durationMinutes: 60 }), ctx);
+    expect(long.ok).toBe(true);
+    // 10:00 for 30 minutes and 10:30 overlap Ana's hour but are other bookings.
+    expect(await createBooking(bookingInput(fx.target, la("2030-10-09 10:00"), { invitee: ana(), durationMinutes: 30 }), ctx)).toMatchObject({ ok: false, code: "slot_unavailable" });
+    expect(await createBooking(bookingInput(fx.target, la("2030-10-09 10:30"), { invitee: ana(), durationMinutes: 30 }), ctx)).toMatchObject({ ok: false, code: "slot_unavailable" });
+    // Ana's other meeting moved onto her own 10:00 hour is a conflict, not "already booked".
+    const other = await createBooking(bookingInput(fx.target, la("2030-10-09 15:00"), { invitee: ana(), durationMinutes: 60 }), ctx);
+    if (!other.ok) throw new Error("setup booking failed");
+    const moved = await createBooking(
+      bookingInput(await fx.reload(), la("2030-10-09 10:00"), { invitee: ana(), durationMinutes: 60, reschedule: { inviteeId: other.inviteeId } }),
+      ctx,
+    );
+    expect(moved).toMatchObject({ ok: false, code: "slot_unavailable" });
+    const [kept] = await t.db.select().from(invitees).where(eq(invitees.id, other.inviteeId));
+    expect(kept).toMatchObject({ status: "active", rescheduled: false });
+  });
+
+  it("a host booking for the invitee's email gets slot_unavailable (only invitee submits answer already_booked)", async () => {
+    const fx = await setupSolo(t.db);
+    const start = la("2030-10-10 10:00");
+    const first = await createBooking(bookingInput(fx.target, start, { invitee: ana() }), ctx);
+    expect(first.ok).toBe(true);
+    const host = await createBooking(bookingInput(fx.target, start, { invitee: ana(), actor: { type: "host", userId: fx.owner.id } }), ctx);
+    expect(host).toMatchObject({ ok: false, code: "slot_unavailable" });
   });
 });
 

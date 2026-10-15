@@ -1,7 +1,17 @@
 // Google Calendar provider against mocked endpoints (SPEC CAL-02, CAL-11, CAL-12, SCH-12, VID-07).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockFetch, mockResponse, type MockFetch, type MockRequest } from "../../../../tests/helpers/fake-providers";
-import { differsFromInput, GOOGLE_BUSY_EVENT_TYPES, googleProvider, googleTiming, mapGoogleEvent, readGoogleConference, watchGoogleEvents, type GoogleEvent } from "./google";
+import {
+  differsFromInput,
+  FREEBUSY_MAX_ITEMS,
+  GOOGLE_BUSY_EVENT_TYPES,
+  googleProvider,
+  googleTiming,
+  mapGoogleEvent,
+  readGoogleConference,
+  watchGoogleEvents,
+  type GoogleEvent,
+} from "./google";
 import { ProviderAuthError, ProviderRequestError, ProviderTransientError, type ConnectionContext, type WriteEventInput } from "./types";
 
 const G = "https://www.googleapis.com/calendar/v3";
@@ -85,7 +95,8 @@ describe("googleProvider", () => {
       ["team@group.calendar.google.com", "Team", false, false],
     ]);
     expect(cals[0]?.allowedOnlineMeetingProviders).toEqual(["hangoutsMeet"]);
-    expect(f.calls[0]?.url.searchParams.get("minAccessRole")).toBe("reader");
+    expect(cals.map((c) => c.busyOnly)).toEqual([false, false, false]);
+    expect(f.calls[0]?.url.searchParams.get("minAccessRole")).toBe("freeBusyReader");
     expect(f.calls[0]?.headers.get("authorization")).toBe("Bearer at-1");
   });
 
@@ -127,7 +138,10 @@ describe("googleProvider", () => {
   });
 
   it("leaves out a calendar that no longer exists", async () => {
-    f = mockFetch({ method: "GET", url: `${G}/calendars/`, handler: () => mockResponse({ error: { code: 404, message: "Not Found", errors: [{ reason: "notFound" }] } }, { status: 404 }) });
+    f = mockFetch(
+      { method: "GET", url: `${G}/calendars/`, handler: () => mockResponse({ error: { code: 404, message: "Not Found", errors: [{ reason: "notFound" }] } }, { status: 404 }) },
+      { method: "POST", url: `${G}/freeBusy`, handler: () => ({ calendars: { "gone@group.calendar.google.com": { errors: [{ domain: "global", reason: "notFound" }], busy: [] } } }) },
+    );
     const res = await googleProvider.listEvents(ctx, ["gone@group.calendar.google.com"], { start: new Date(0), end: new Date(86_400_000) });
     expect(res).toEqual({});
   });
@@ -316,5 +330,131 @@ describe("googleProvider", () => {
     const res = await watchGoogleEvents(ctx, "me@example.com", { channelId: "ch1", address: "https://app.example.com/api/webhooks/calendars/google", token: "tok", ttlSeconds: 604800 });
     expect(body).toMatchObject({ id: "ch1", type: "web_hook", token: "tok", params: { ttl: "604800" } });
     expect(res).toEqual({ channelId: "ch1", resourceId: "res1", expiresAt: new Date("2026-10-27T00:00:00Z") });
+  });
+});
+
+describe("free/busy only calendars (freeBusyReader)", () => {
+  type FreeBusyBody = { timeMin: string; timeMax: string; timeZone: string; items: { id: string }[] };
+  const listBusy = googleProvider.listBusy!;
+
+  it("lists them as busy only, never writable, after the readable calendars", async () => {
+    f = mockFetch({
+      method: "GET",
+      url: `${G}/users/me/calendarList`,
+      handler: () => ({
+        items: [
+          { id: "jjoseph@copado.com", summary: "jjoseph@copado.com", accessRole: "freeBusyReader", backgroundColor: "#a47ae2" },
+          { id: "holidays@group.v.calendar.google.com", summary: "Holidays", accessRole: "reader" },
+          { id: "me@example.com", summary: "me@example.com", primary: true, accessRole: "owner" },
+        ],
+      }),
+    });
+    const cals = await googleProvider.listCalendars(ctx);
+    expect(cals.map((c) => [c.externalId, c.canWrite, c.busyOnly])).toEqual([
+      ["me@example.com", true, false],
+      ["holidays@group.v.calendar.google.com", false, false],
+      ["jjoseph@copado.com", false, true],
+    ]);
+  });
+
+  it("reads busy intervals with one batched FreeBusy request, merged per calendar, untitled and busy", async () => {
+    const bodies: FreeBusyBody[] = [];
+    f = mockFetch({
+      method: "POST",
+      url: `${G}/freeBusy`,
+      handler: (req) => {
+        bodies.push(req.body as FreeBusyBody);
+        return {
+          kind: "calendar#freeBusy",
+          calendars: {
+            "jjoseph@copado.com": {
+              busy: [
+                { start: "2026-10-20T16:00:00Z", end: "2026-10-20T17:00:00Z" },
+                { start: "2026-10-20T16:30:00Z", end: "2026-10-20T17:30:00Z" },
+                { start: "2026-10-20T17:30:00Z", end: "2026-10-20T18:00:00Z" },
+                { start: "2026-10-21T09:00:00-07:00", end: "2026-10-21T10:00:00-07:00" },
+                { start: "bad", end: "2026-10-21T10:00:00Z" },
+              ],
+            },
+            "team@group.calendar.google.com": { busy: [] },
+            "gone@group.calendar.google.com": { errors: [{ domain: "global", reason: "notFound" }], busy: [] },
+          },
+        };
+      },
+    });
+    const range = { start: new Date("2026-10-01T00:00:00Z"), end: new Date("2026-11-01T00:00:00Z") };
+    const res = await listBusy(ctx, ["jjoseph@copado.com", "team@group.calendar.google.com", "gone@group.calendar.google.com"], range);
+    expect(bodies).toEqual([
+      {
+        timeMin: "2026-10-01T00:00:00.000Z",
+        timeMax: "2026-11-01T00:00:00.000Z",
+        timeZone: "UTC",
+        items: [{ id: "jjoseph@copado.com" }, { id: "team@group.calendar.google.com" }, { id: "gone@group.calendar.google.com" }],
+      },
+    ]);
+    expect(f.calls[0]!.headers.get("authorization")).toBe("Bearer at-1");
+    expect(Object.keys(res).sort()).toEqual(["jjoseph@copado.com", "team@group.calendar.google.com"]);
+    expect(res["team@group.calendar.google.com"]).toEqual([]);
+    const work = res["jjoseph@copado.com"]!;
+    expect(work.map((e) => [e.start.toISOString(), e.end.toISOString()])).toEqual([
+      ["2026-10-20T16:00:00.000Z", "2026-10-20T18:00:00.000Z"],
+      ["2026-10-21T16:00:00.000Z", "2026-10-21T17:00:00.000Z"],
+    ]);
+    expect(work[0]).toMatchObject({ title: null, busy: true, allDay: false, status: "confirmed", externalId: "freebusy:2026-10-20T16:00:00.000Z/2026-10-20T18:00:00.000Z" });
+  });
+
+  it("splits more than 50 calendars and more than 31 days into separate requests and joins intervals across them", async () => {
+    const bodies: FreeBusyBody[] = [];
+    const ids = Array.from({ length: FREEBUSY_MAX_ITEMS + 1 }, (_, i) => `c${i}@group.calendar.google.com`);
+    f = mockFetch({
+      method: "POST",
+      url: `${G}/freeBusy`,
+      handler: (req) => {
+        const body = req.body as FreeBusyBody;
+        bodies.push(body);
+        // c0 is busy across the boundary of the two spans (Google clips intervals to each request's range).
+        const busy = (id: string) =>
+          id === "c0@group.calendar.google.com"
+            ? [{ start: body.timeMin < "2026-11-01T00:00:00.000Z" ? "2026-10-31T23:00:00Z" : body.timeMin, end: body.timeMin < "2026-11-01T00:00:00.000Z" ? body.timeMax : "2026-11-01T02:00:00Z" }]
+            : [];
+        return { calendars: Object.fromEntries(body.items.map((i) => [i.id, { busy: busy(i.id) }])) };
+      },
+    });
+    const range = { start: new Date("2026-10-01T00:00:00Z"), end: new Date("2026-11-10T00:00:00Z") };
+    const res = await listBusy(ctx, ids, range);
+    expect(bodies.map((b) => [b.timeMin, b.timeMax, b.items.length])).toEqual([
+      ["2026-10-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z", 50],
+      ["2026-10-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z", 1],
+      ["2026-11-01T00:00:00.000Z", "2026-11-10T00:00:00.000Z", 50],
+      ["2026-11-01T00:00:00.000Z", "2026-11-10T00:00:00.000Z", 1],
+    ]);
+    expect(Object.keys(res)).toHaveLength(ids.length);
+    expect(res["c0@group.calendar.google.com"]!.map((e) => [e.start.toISOString(), e.end.toISOString()])).toEqual([["2026-10-31T23:00:00.000Z", "2026-11-01T02:00:00.000Z"]]);
+  });
+
+  it("maps per calendar errors other than notFound and rate limits to transient errors", async () => {
+    const range = { start: new Date("2026-10-01T00:00:00Z"), end: new Date("2026-10-02T00:00:00Z") };
+    f = mockFetch({ method: "POST", url: `${G}/freeBusy`, handler: () => ({ calendars: { "jjoseph@copado.com": { errors: [{ domain: "global", reason: "internalError" }] } } }) });
+    await expect(listBusy(ctx, ["jjoseph@copado.com"], range)).rejects.toBeInstanceOf(ProviderTransientError);
+    f.restore();
+    f = mockFetch({
+      method: "POST",
+      url: `${G}/freeBusy`,
+      handler: () => mockResponse({ error: { code: 403, message: "Rate Limit Exceeded", errors: [{ reason: "rateLimitExceeded" }] } }, { status: 403 }),
+    });
+    await expect(listBusy(ctx, ["jjoseph@copado.com"], range)).rejects.toBeInstanceOf(ProviderTransientError);
+  });
+
+  it("reads a calendar that refuses events.list (access dropped to free/busy) through FreeBusy", async () => {
+    f = mockFetch(
+      {
+        method: "GET",
+        url: `${G}/calendars/jjoseph%40copado.com/events`,
+        handler: () => mockResponse({ error: { code: 403, message: "You need to have reader access to this calendar.", errors: [{ reason: "requiredAccessLevel" }] } }, { status: 403 }),
+      },
+      { method: "POST", url: `${G}/freeBusy`, handler: () => ({ calendars: { "jjoseph@copado.com": { busy: [{ start: "2026-10-20T16:00:00Z", end: "2026-10-20T17:00:00Z" }] } } }) },
+    );
+    const res = await googleProvider.listEvents(ctx, ["jjoseph@copado.com"], { start: new Date("2026-10-01T00:00:00Z"), end: new Date("2026-11-01T00:00:00Z") });
+    expect(res["jjoseph@copado.com"]?.map((e) => [e.start.toISOString(), e.busy, e.title])).toEqual([["2026-10-20T16:00:00.000Z", true, null]]);
   });
 });

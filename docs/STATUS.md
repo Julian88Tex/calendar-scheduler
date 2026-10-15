@@ -3,32 +3,29 @@
 Updated after every finished module. Scope was reduced to the features the owner uses today (docs/SCOPE.md). "Testable" means you can click through it in a running app (locally with
 `npm run dev` after `npm run db:seed`, or on a Vercel preview). Seed login: `owner@example.com` / `password123`.
 
-## Testable right now
+## Live now
 
-Run locally (no database or accounts needed): check out the `claude/scheduler-app` branch, then
-`npm install`, `npm run db:seed -- --demo`, `npm run dev`, and open http://localhost:3000. Sign in with
-`owner@example.com` / `password123`.
+Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free plan, Neon Postgres database).
+- Sign in with Google as julian88tex@gmail.com. Sign-ups are invite only, so nobody else can create an account.
+- Your public page is https://calendar-scheduler-smoky.vercel.app/julianjoseph with your 3 event types copied from
+  Calendly.
+- Google Calendar is connected: bookings land on your calendar with a Google Meet link, and busy times on Julian -
+  Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is turned on as soon as the
+  next release is live.
+- Emails (confirmations, reminders, reschedules, cancellations, host notifications) are sent from your Gmail.
+- Reminders and other background jobs run every 5 minutes, triggered by a Google Apps Script in your Google account
+  (Vercel's free plan only allows a daily cron).
+- Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
+  from the invitee link deleted the event and sent both cancellation emails.
 
-What works:
-- Public booking flow: http://localhost:3000/julianjoseph (profile), pick an event type, pick a date and time,
-  enter details (the meal event offers the 9 locations), book, and see the "You are scheduled" confirmation page with
-  add-to-calendar links. The booking respects schedules, buffers, increments and limits.
-- Availability (sidebar > Availability): edit weekly hours and date-specific hours, switch schedules, set meeting
-  limits under Advanced, and open the Troubleshoot view to see why any time is unavailable.
-- Google Calendar settings (Availability > Calendar settings) work once a Google OAuth client is configured
-  (docs/GOOGLE_SETUP.md); without it the app runs with no calendar conflicts.
+How releases work: the `production` branch is what is live. A commit whose message contains `[deploy]` on that
+branch builds and goes live; nothing else builds, so work in progress never reaches your site.
 
-- Scheduling home (sidebar > Scheduling): event type cards with copy link, on/off, duplicate, delete and reorder;
-  click a card to open the event type editor (duration, locations, questions, buffers, limits, notice, reminders).
-- After booking: the confirmation page has "Cancel" and "Reschedule" links that open the invitee cancel and
-  reschedule pages. Confirmation, reschedule, cancellation and reminder emails are generated with calendar invites;
-  with no email provider configured they are stored in the database outbox (an outbox page comes with QA).
-- Settings (account menu > Settings): profile (name, avatar, welcome message, time zone, time format), branding,
-  your link, password and sessions.
+## Testable locally
 
-Not working yet (being built): the Meetings list, meeting polls, a few booking page visual differences found by
-comparing against live Calendly screenshots (back arrow position, location list style, field sizes, time zone picker
-layout, error messages).
+Check out the `claude/scheduler-app` branch, then `npm install`, `npm run db:seed -- --demo`, `npm run dev`, and open
+http://localhost:3000. Sign in with `owner@example.com` / `password123`. Everything listed under the milestones below
+works there, with emails stored in the database outbox instead of being sent.
 
 ## Milestones (in build order)
 
@@ -75,19 +72,22 @@ Each milestone ends in something you can test. Reply any time to reorder, drop, 
 |---|---|---|
 | workflows (lite) | Reminder emails before meetings (default 24h, multiple timings), kept in sync with reschedules and cancels | done |
 | settings (lite) | Profile (name, avatar, welcome message, time zone), logo, your link, password and sessions | done |
-| booking-parity | Pixel-level pass on the booking pages against live Calendly screenshots (desktop and phone) | next |
-| golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | last |
+| booking-parity | Pixel-level pass on the booking pages against live Calendly screenshots (desktop and phone) | done |
+| golden-path-qa | End-to-end tests of every kept flow, email outbox page, deployment guide, QA report | done |
 
 ### Skipped (owner decision, see docs/SCOPE.md)
 Teams and round robin, single-use links and one-off meetings, payments, contacts, routing forms, public API,
 webhooks and embed, analytics, admin tools, marketing site, translations, Microsoft/iCloud/ICS calendars, Zoom and Jitsi,
 Teams/Webex video, the custom workflow builder and SMS. Any of these can be added back later.
 
-## Setup you can do now
-- Vercel: import the repo at vercel.com/new, add a Neon database from the Storage tab (Production and Preview), and
-  add `MIGRATE_ON_PREVIEW=1` for Preview. Previews of this branch will then work.
-- Google Calendar connection needs a Google Cloud OAuth client: follow docs/GOOGLE_SETUP.md.
+## Where things are
+- Settings > Email outbox shows every email with its status (Sent, Waiting for Gmail with a reconnect link, Failed with
+  the reason and Resend).
+- Availability > Troubleshoot shows why any time is unavailable.
+- The deployment guide is docs/DEPLOY.md and the end-to-end check of everything you use today is docs/QA_REPORT.md.
 
 ## Open questions for you
 - Your live Calendly event types show a "Send text messages to" phone field, which means SMS reminders are switched on
   there. SMS is skipped right now (it needs a paid SMS provider such as Twilio). Say if you want it added.
+- Should invitees get a Google Calendar invitation (what happens now, sent by Google) or a Calendly-style confirmation
+  email from your Gmail with a calendar file attached?

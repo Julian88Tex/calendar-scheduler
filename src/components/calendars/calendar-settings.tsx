@@ -6,6 +6,8 @@
 // for conflicts" (per account, Edit opens the selection modal), "Calendar to add events to" (single choice across
 // accounts or None, Edit opens the modal) with the destination's sync settings ("Include buffers on this calendar",
 // "Automatically sync cancellations and reschedules from this calendar to {AppName}"). Changes save immediately.
+// Calendars shared with "See only free/busy" carry a "Free/busy only" note in the conflict picker and its summary, and
+// are never offered as the calendar to add events to.
 "use client";
 
 import { AlertTriangle, MoreVertical, RefreshCw, Unplug } from "lucide-react";
@@ -26,7 +28,18 @@ import { RadioGroup } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toast";
 import { ConnectCalendarDialog } from "./connect-calendar-dialog";
-import { CalendarDot, ConnectionStatusBadge, connectionProblemText, googleConnectHref, providerMeta, ProviderTile } from "./shared";
+import {
+  CalendarDot,
+  canReceiveEvents,
+  conflictCalendarNote,
+  ConnectionStatusBadge,
+  connectionProblemText,
+  destinationChoices,
+  FREE_BUSY_ONLY_NOTE,
+  googleConnectHref,
+  providerMeta,
+  ProviderTile,
+} from "./shared";
 
 export type CalendarSettingsProps = {
   view: CalendarSettingsView;
@@ -182,7 +195,7 @@ function ConfigurationCard({ view, appName }: { view: CalendarSettingsView; appN
   const allCalendars = useMemo(() => view.connections.flatMap((c) => c.calendars.map((cal) => ({ cal, conn: c }))), [view.connections]);
   const destination = allCalendars.find((x) => x.cal.id === view.destinationCalendarId) ?? null;
   const anyChecked = allCalendars.some((x) => x.cal.checkConflicts);
-  const writable = allCalendars.filter((x) => x.cal.canWrite);
+  const writable = allCalendars.filter((x) => canReceiveEvents(x.cal));
   const [pending, start] = useTransition();
 
   return (
@@ -225,6 +238,7 @@ function ConfigurationCard({ view, appName }: { view: CalendarSettingsView; appN
                         <li key={cal.id} className="flex min-w-0 items-center gap-2 text-body-md text-ink">
                           <CalendarDot color={cal.color} />
                           <span className="truncate">{cal.name}</span>
+                          {cal.busyOnly && <span className="shrink-0 text-body-sm text-ink-2">{FREE_BUSY_ONLY_NOTE}</span>}
                         </li>
                       ))}
                     </ul>
@@ -405,11 +419,14 @@ function ConflictsDialog({ open, onOpenChange, connections }: { open: boolean; o
                     <span className="truncate">{cal.name}</span>
                   </span>
                 }
-                description={!cal.canWrite ? "View only" : cal.isPrimary ? "Primary calendar" : undefined}
+                description={conflictCalendarNote(cal)}
               />
             ))}
           </fieldset>
         ))}
+        {connections.some((c) => c.calendars.some((cal) => cal.busyOnly)) && (
+          <p className="text-body-sm text-ink-2">Free/busy only calendars block their busy times, but their event details stay private and events can&apos;t be added to them.</p>
+        )}
       </div>
     </Dialog>
   );
@@ -430,7 +447,7 @@ function DestinationDialog({
 }) {
   const [value, setValue] = useState<string>(current ?? NONE);
   const [pending, start] = useTransition();
-  const groups = connections.map((c) => ({ c, cals: c.calendars.filter((cal) => cal.canWrite) })).filter((g) => g.cals.length > 0);
+  const groups = destinationChoices(connections);
   return (
     <Dialog
       open={open}

@@ -11,6 +11,8 @@
 // a transient provider failure stops that connection's batch until the next run. A permanent failure of one event (a
 // calendar that was unshared or deleted answers "calendarUnavailable", never a delete) skips that row only and asks
 // for a calendar list refresh, so one bad row never blocks the others and no meeting is canceled by mistake.
+// Free/busy only calendars (access.ts) are never checked: their events cannot be read, so a missing event there says
+// nothing about the meeting (only reachable when a destination calendar's access later dropped to free/busy).
 import "server-only";
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -19,6 +21,7 @@ import { enqueueJob } from "@/lib/jobs";
 import { applyExternalCalendarChange, type ExternalCalendarChange } from "@/lib/lifecycle";
 import { log } from "@/lib/logger";
 import { now, nowMs } from "@/lib/time/now";
+import { readableCalendarCondition } from "./access";
 import { invalidateCalendarCache } from "./busy";
 import { withConnection } from "./credentials";
 import { markConnectionHealthy, recordConnectionFailure } from "./health";
@@ -85,6 +88,7 @@ export async function syncBookedEvents(opts: { calendarId?: string; limit?: numb
         inArray(calendarLinkedEvents.status, ["synced", "failed"]),
         isNotNull(calendarLinkedEvents.externalId),
         eq(calendars.syncChanges, true),
+        readableCalendarCondition(),
         isNull(calendars.deletedAt),
         inArray(calendarConnections.status, ["active", "error"]),
         eq(scheduledEvents.status, "active"),

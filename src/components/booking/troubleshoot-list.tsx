@@ -65,13 +65,17 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
     ul.scrollTop = li ? Math.max(0, li.offsetTop - 2) : 0;
   }, [dateLabel, firstRelevant]);
   return (
-    <div className="flex min-w-0 flex-col pt-7 pb-6 min-[1000px]:pr-6 max-[999px]:px-5 min-[600px]:max-[999px]:px-8" data-testid="troubleshoot-list">
-      <h3 className="mb-1 flex h-[38px] shrink-0 items-center text-[16px] leading-6 text-public-text">{dateLabel}</h3>
+    <div
+      className="flex min-w-0 flex-col pt-7 pb-6 max-[599px]:px-[17px] max-[599px]:pt-[21px] min-[600px]:max-[999px]:px-8 min-[1000px]:pt-[81px] min-[1000px]:pr-[18px]"
+      data-testid="troubleshoot-list"
+    >
+      {/* Phones show the weekday and date in the times view header above. */}
+      <h3 className="mb-1 flex h-[38px] shrink-0 items-center text-[15px] leading-6 text-public-text max-[599px]:hidden">{dateLabel}</h3>
       <p className="mb-3 text-[13px] leading-5 text-ink-2">{bt("troubleshoot.intro")}</p>
       {shown.length === 0 ? (
         <p className="py-8 text-center text-[14px] text-ink-2">{bt("troubleshoot.none")}</p>
       ) : (
-        <ul ref={listRef} aria-label={bt("troubleshoot.title")} className="scrollbar-thin relative -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:max-h-[450px] min-[1000px]:[@media(min-height:860px)]:max-h-[540px]">
+        <ul ref={listRef} aria-label={bt("troubleshoot.title")} className="scrollbar-thin relative -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:max-h-[450px] min-[1000px]:[@media(min-height:860px)]:max-h-[519px]">
           {shown.map((c) => {
             const iso = new Date(c.start).toISOString();
             const time = formatTime(c.start);
@@ -79,12 +83,12 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
               if (iso === selected) {
                 return (
                   <li key={c.start} data-start={c.start} className="flex min-w-0 items-stretch justify-between">
-                    <div className="flex h-[52px] w-[48.5%] items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] text-[16px] font-bold text-white">{time}</div>
+                    <div className="flex h-[52px] w-[48.5%] items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] pb-0.5 text-[16px] font-bold text-white">{time}</div>
                     <button
                       ref={nextRef}
                       type="button"
                       onClick={() => onNext(iso)}
-                      className="inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand text-[16px] font-bold text-white shadow-[var(--shadow-next)] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                      className="inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand pb-0.5 text-[16px] font-bold text-white shadow-[var(--shadow-next)] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                     >
                       {bt("page.next")}
                     </button>
@@ -99,7 +103,7 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
                       focusNext.current = true;
                       onSelect(iso);
                     }}
-                    className="flex h-[52px] w-full items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg text-[16px] font-bold text-brand-strong hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none"
+                    className="flex h-[52px] w-full items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg pb-0.5 text-[16px] font-bold text-brand-strong hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none"
                   >
                     {time}
                   </button>

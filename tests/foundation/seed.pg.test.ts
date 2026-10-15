@@ -1,6 +1,6 @@
 // The seed on real Postgres (npm run test:pg): owner, team and --demo scenarios apply and re-apply without duplicates
 // (the CLI and CI run them on PGlite; deployments with a local Postgres use postgres.js).
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { eventTypes, invitees, scheduledEvents, teams, users } from "@/db/schema";
 import { runSeed } from "../../scripts/seed-scenarios.ts";
@@ -21,7 +21,15 @@ describe.runIf(process.env.TEST_DATABASE_URL)("seed (real Postgres)", () => {
     expect(first.owner?.slug).toBe("julianjoseph");
     expect(first.team?.slug).toBe("sales");
     const after = await total();
-    expect(after).toEqual({ users: 3, eventTypes: 7, teams: 1, meetings: 3, invitees: 3 });
+    // 8 event types: the owner's 30min, 60min and meal (the seed updates the 30min that account creation adds in place),
+    // each member's untouched signup default "30 Minute Meeting" (2), the team's intro and demo (2), and the adhoc event
+    // type of the --demo meeting poll (src/lib/polls/seed.ts; seed.test.ts mocks the demo seeds, so it never sees it).
+    expect(after).toEqual({ users: 3, eventTypes: 8, teams: 1, meetings: 3, invitees: 3 });
+    const adhoc = await t.db
+      .select({ ownerUserId: eventTypes.ownerUserId, bookingMethod: eventTypes.bookingMethod })
+      .from(eventTypes)
+      .where(eq(eventTypes.type, "adhoc"));
+    expect(adhoc).toEqual([{ ownerUserId: first.owner?.userId, bookingMethod: "poll" }]);
     const again = await runSeed(t.db, { scenario: "team", demo: true });
     expect(again.owner).toEqual(first.owner);
     expect(again.team).toEqual(first.team);

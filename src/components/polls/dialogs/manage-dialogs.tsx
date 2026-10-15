@@ -1,7 +1,8 @@
 // Lifecycle dialogs of a meeting poll (SPEC MP-21, MP-22; research B8, B9): "Close voting" confirmation, "Reopen voting"
 // (a passed deadline must be moved or removed first) and "Reopen poll" after booking (the meeting stays until the host
 // books again; optional email to respondents), and "Delete poll" ("The link will stop working.", notify voters, and for
-// a scheduled meeting "Keep the scheduled meeting" or "Cancel it too"). Client components.
+// a scheduled meeting "Keep the scheduled meeting" or "Cancel it too"). Reopening voting and deleting a booked poll
+// offer the respondent email too (golden-path-qa); it starts off for a booked poll whose meeting stays. Client components.
 "use client";
 
 import { useState } from "react";
@@ -20,10 +21,18 @@ import { localDateOf, wallClockToUtc } from "@/lib/time/luxon";
 import { failureMessage, fieldErrorsOf, unwrap } from "../lib/action";
 import { pt } from "../lib/t";
 
-export function meetingWhen(start: string, end: string | null, zone: string, hour12: boolean): string {
+/**
+ * "Tuesday, October 20, 2026, 10:00am - 10:30am" in `zone`; a meeting booked from a date-only option is that calendar
+ * day for everyone: "Tuesday, October 20, 2026 (all day)".
+ */
+export function meetingWhen(start: string, end: string | null, zone: string, hour12: boolean, allDayDate?: string | null): string {
+  if (allDayDate) return `${formatDateLong(`${allDayDate}T12:00:00Z`, "UTC")} (all day)`;
   const date = formatDateLong(start, zone);
   return end ? `${date}, ${formatTimeRange(start, end, zone, "en", hour12)}` : date;
 }
+
+type MeetingWhen = { start: string; end: string | null; allDayDate?: string | null };
+const whenOf = (m: MeetingWhen, zone: string, hour12: boolean) => meetingWhen(m.start, m.end, zone, hour12, m.allDayDate);
 
 export function CloseVotingDialog({ open, onOpenChange, pollId, onDone }: { open: boolean; onOpenChange: (v: boolean) => void; pollId: string; onDone: () => void }) {
   return (
@@ -51,7 +60,7 @@ export type ReopenDialogProps = {
   zone: string;
   hour12: boolean;
   /** "Reopen poll": the meeting that stays scheduled. */
-  meeting: { start: string; end: string | null } | null;
+  meeting: MeetingWhen | null;
   respondents: number;
   onDone: () => void;
 };
@@ -81,7 +90,7 @@ export function ReopenDialog(p: ReopenDialogProps) {
     }
     setBusy(true);
     try {
-      const input = { pollId: p.pollId, deadline, notify: p.mode === "poll" && notify };
+      const input = { pollId: p.pollId, deadline, notify: p.respondents > 0 && notify };
       await unwrap(p.mode === "poll" ? reopenPollAction(input) : reopenVotingAction(input));
       toast.success(pt("list.votingReopenedToast"));
       p.onOpenChange(false);
@@ -105,7 +114,7 @@ export function ReopenDialog(p: ReopenDialogProps) {
       onOpenChange={(v) => !busy && p.onOpenChange(v)}
       title={p.mode === "poll" ? pt("results.reopenPollTitle") : pt("results.reopenVotingTitle")}
       description={
-        p.mode === "poll" && p.meeting ? pt("results.reopenPollBody", { when: meetingWhen(p.meeting.start, p.meeting.end, p.zone, p.hour12) }) : pt("results.reopenVotingBody")
+        p.mode === "poll" && p.meeting ? pt("results.reopenPollBody", { when: whenOf(p.meeting, p.zone, p.hour12) }) : pt("results.reopenVotingBody")
       }
       footer={
         <>
@@ -127,7 +136,7 @@ export function ReopenDialog(p: ReopenDialogProps) {
             <TimeInput value={minutes} onChange={setMinutes} hour12={p.hour12} aria-label={pt("details.deadlineTime")} />
           </div>
         ) : null}
-        {p.mode === "poll" && p.respondents > 0 && <Checkbox label={pt("results.reopenNotify")} checked={notify} onCheckedChange={setNotify} />}
+        {p.respondents > 0 && <Checkbox label={pt("results.reopenNotify")} checked={notify} onCheckedChange={setNotify} />}
         {error && <FieldError error={error} />}
       </div>
     </Dialog>
@@ -140,7 +149,7 @@ export type DeleteDialogProps = {
   pollId: string;
   respondents: number;
   /** The scheduled meeting of the poll (booked, or kept by a reopened poll). */
-  meeting: { start: string; end: string | null; active: boolean } | null;
+  meeting: (MeetingWhen & { active: boolean }) | null;
   booked: boolean;
   zone: string;
   hour12: boolean;
@@ -148,7 +157,9 @@ export type DeleteDialogProps = {
 };
 
 export function DeleteDialog(p: DeleteDialogProps) {
-  const [notify, setNotify] = useState(true);
+  // Voters of a poll that is still open learn it is gone; for a booked poll the meeting stays by default, so the
+  // "canceled the meeting poll" email is opt in.
+  const [notify, setNotify] = useState(!p.booked);
   const [cancelMeeting, setCancelMeeting] = useState(false);
   const activeMeeting = p.meeting?.active ? p.meeting : null;
   return (
@@ -160,7 +171,7 @@ export function DeleteDialog(p: DeleteDialogProps) {
       confirmLabel={pt("results.deleteConfirm")}
       variant="destructive"
       onConfirm={async () => {
-        await unwrap(deletePollAction({ pollId: p.pollId, notify: p.respondents > 0 && !p.booked ? notify : false, cancelMeeting: Boolean(activeMeeting) && cancelMeeting }));
+        await unwrap(deletePollAction({ pollId: p.pollId, notify: p.respondents > 0 && notify, cancelMeeting: Boolean(activeMeeting) && cancelMeeting }));
         toast.success(pt("list.deletedToast"));
         p.onDone();
       }}
@@ -168,7 +179,7 @@ export function DeleteDialog(p: DeleteDialogProps) {
       <div className="flex flex-col gap-3">
         {activeMeeting && p.booked && (
           <>
-            <p className="text-body-md text-ink">{pt("results.deleteMeetingQuestion", { when: meetingWhen(activeMeeting.start, activeMeeting.end, p.zone, p.hour12) })}</p>
+            <p className="text-body-md text-ink">{pt("results.deleteMeetingQuestion", { when: whenOf(activeMeeting, p.zone, p.hour12) })}</p>
             <RadioGroup
               aria-label={pt("results.deleteMeetingQuestion", { when: "" })}
               value={cancelMeeting ? "cancel" : "keep"}
@@ -181,9 +192,9 @@ export function DeleteDialog(p: DeleteDialogProps) {
           </>
         )}
         {activeMeeting && !p.booked && (
-          <Checkbox label={pt("results.deleteReopenedQuestion", { when: meetingWhen(activeMeeting.start, activeMeeting.end, p.zone, p.hour12) })} checked={cancelMeeting} onCheckedChange={setCancelMeeting} />
+          <Checkbox label={pt("results.deleteReopenedQuestion", { when: whenOf(activeMeeting, p.zone, p.hour12) })} checked={cancelMeeting} onCheckedChange={setCancelMeeting} />
         )}
-        {p.respondents > 0 && !p.booked && (
+        {p.respondents > 0 && (
           <Checkbox label={p.respondents === 1 ? pt("results.deleteNotifyOne") : pt("results.deleteNotify", { count: p.respondents })} checked={notify} onCheckedChange={setNotify} />
         )}
       </div>

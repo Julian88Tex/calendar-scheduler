@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // The Gmail transport (owner decision: confirmation, reschedule, cancellation and reminder emails are sent from the
 // owner's own Gmail): Gmail API users.messages.send with the owner's Google connection, the raw RFC 5322 message from

@@ -1,10 +1,12 @@
 // Race safety on real Postgres (SPEC SCH-19, SCH-20, BK-19, CR-04; ARCHITECTURE section 9; run with npm run test:pg):
 // 10 concurrent bookings of one solo slot produce one booking; two submits with one client request id return the
-// same invitee; two concurrent reschedules of one invitee produce one new invitee; a cancel racing a reschedule
-// serializes; 10 concurrent reservations for one slot create one; completeReservation called concurrently creates one
-// invitee; two concurrent round robin bookings at one time go to different hosts; concurrent first bookings of a
-// group slot share one scheduled event; a host-level daily limit admits one of several concurrent bookings across
-// event types; a double click in the email verification flow keeps one hold and one code.
+// same invitee, and two of one booking (same email and slot) with different ids make one booking (the other answers
+// already_booked); two concurrent reschedules of one invitee produce one new invitee; a cancel racing a reschedule
+// serializes; 10 concurrent reservations for one
+// slot create one; completeReservation called concurrently creates one invitee; two concurrent round robin bookings
+// at one time go to different hosts; concurrent first bookings of a group slot share one scheduled event; a
+// host-level daily limit admits one of several concurrent bookings across event types; a double click in the email
+// verification flow keeps one hold and one code.
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -60,6 +62,26 @@ describe.runIf(process.env.TEST_DATABASE_URL)("booking races on real Postgres", 
       expect(a.ok && b.ok).toBe(true);
       expect(a.ok && b.ok && a.inviteeId === b.inviteeId).toBe(true);
       expect(await t.db.select().from(invitees).where(eq(invitees.clientRequestId, "same-click-123"))).toHaveLength(1);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("two concurrent submits of one booking with different client request ids make one booking, the other answers already_booked", async () => {
+    const t = await createTestDb({ kind: "postgres", poolSize: 12 });
+    try {
+      const fx = await setupSolo(t.db);
+      const start = la("2030-10-08 12:00");
+      const invitee = { name: "Ana Lima", email: "ana@example.com", timezone: "America/New_York" };
+      // Two tabs of the same booking page: the second waits on the host lock and finds the first one's booking.
+      const [a, b] = await Promise.all([
+        createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "tab-1" }), ctx),
+        createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "tab-2" }), ctx),
+      ]);
+      expect([a, b].map((r) => (r.ok ? "ok" : r.code)).sort()).toEqual(["already_booked", "ok"]);
+      expect(await t.db.select().from(invitees).where(eq(invitees.eventTypeId, fx.target.eventType.id))).toHaveLength(1);
+      const other = await createBooking(bookingInput(fx.target, start, { clientRequestId: "tab-3" }), ctx);
+      expect(other).toMatchObject({ ok: false, code: "slot_unavailable" });
     } finally {
       await t.close();
     }

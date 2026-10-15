@@ -312,7 +312,11 @@ export type PollListItem = {
   /** A vote or comment arrived since the host last opened the results. */
   hasNew: boolean;
   deadline: string | null;
-  booked: { scheduledEventId: string; start: string; status: "active" | "canceled" } | null;
+  /**
+   * The scheduled meeting of a booked (or reopened) poll: its start and end, and `allDayDate` when it was booked from a
+   * date-only option (shown as that day, "All day").
+   */
+  booked: { scheduledEventId: string; start: string; end: string; allDayDate: string | null; status: "active" | "canceled" } | null;
   topOption: { optionId: string; start: string | null; allDayDate: string | null; yes: number; ifNeedBe: number } | null;
   role: "owner" | "cohost" | "admin";
   canDelete: boolean;

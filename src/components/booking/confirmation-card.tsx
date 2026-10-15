@@ -8,6 +8,7 @@ import { CalendarDays, Check, ExternalLink, Globe, User, XCircle } from "lucide-
 import type * as React from "react";
 import type { Route } from "next";
 import Link from "next/link";
+import { PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
 import { PublicCard } from "@/components/public/public-card";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { Avatar } from "@/components/ui/avatar";
@@ -35,7 +36,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
   const sentence =
     v.mode === "calendar_invitation" ? bt("confirmation.sentTo") : bt("confirmation.sentEmail");
   return (
-    <PublicCard width="narrow" ribbon={v.ribbon} embed={embed}>
+    <PublicCard width="narrow" ribbon={v.ribbon} embed={embed} className={PUBLIC_TEXT_TRACKING}>
       <div className="flex flex-col items-center px-6 pt-10 pb-2 text-center min-[600px]:px-10" data-testid="confirmation">
         {v.hostAvatar && <Avatar src={v.hostAvatar.src} name={v.hostAvatar.name} alt="" size={64} className="mb-5" />}
         <h1 className="flex items-center justify-center gap-2.5 text-[24px] leading-8 font-bold text-public-text">
@@ -165,7 +166,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
         )}
       </div>
       <div className="flex flex-col items-center gap-3 border-t border-line px-6 py-5">
-        <PublicFooterLinks operatorEmail={v.operatorEmail} showPrivacyPolicy={Boolean(v.privacyUrl)} privacyUrl={v.privacyUrl} />
+        <PublicFooterLinks showPrivacyPolicy privacyUrl={v.privacyUrl} />
         {v.ribbon && <p className="text-[12px] text-ink-2">{bt("confirmation.poweredBy", { appName: v.appName })}</p>}
       </div>
     </PublicCard>

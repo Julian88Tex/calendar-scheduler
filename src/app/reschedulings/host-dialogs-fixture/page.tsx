@@ -4,7 +4,8 @@
 // acceptance "Host dialogs ... work from a test page against seeded meetings"). Answers 404 unless E2E test mode is on
 // (never on Vercel, src/lib/env.ts isE2eMode); requires a signed-in user and lists the meetings that user organizes,
 // newest start first, through loadHostMeetingSummary (manage access checked per meeting). The Meetings page
-// (meetings-dashboard) mounts the same components.
+// (meetings-dashboard) mounts the same components. Outside E2E test mode even the metadata is the generic 404 one, so
+// production never shows that a fixture exists (golden-path-qa).
 import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -17,7 +18,14 @@ import { isE2eMode } from "@/lib/env";
 import { now } from "@/lib/time/now";
 import { HostDialogsFixture } from "./fixture";
 
-export const metadata: Metadata = { title: "Host dialogs fixture", robots: { index: false, follow: false } };
+// Decided per request: a build without E2E_TEST_MODE must not bake the 404 in for a later E2E `next start`.
+export const dynamic = "force-dynamic";
+
+const NOINDEX = { index: false, follow: false } as const;
+
+export function generateMetadata(): Metadata {
+  return isE2eMode() ? { title: "Host dialogs fixture", robots: NOINDEX } : { title: "Page not found", robots: NOINDEX };
+}
 
 export default async function Page() {
   if (!isE2eMode()) notFound();

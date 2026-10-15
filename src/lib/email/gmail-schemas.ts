@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // Zod schema of the "Send emails from your Gmail" action (ARCHITECTURE section 26 rule 4). Client and server safe.
 import { z } from "zod";

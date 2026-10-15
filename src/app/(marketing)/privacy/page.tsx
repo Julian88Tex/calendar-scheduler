@@ -1,3 +1,4 @@
+// OWNER: marketing-site. Written at go-live for the single-owner deployment.
 // /privacy (ARCHITECTURE section 3.1, SPEC MK-03): the privacy notice linked from booking pages, emails and the Google
 // consent screen. Written for a single-owner deployment (docs/SCOPE.md); plain language, no marketing site.
 import type { Metadata } from "next";

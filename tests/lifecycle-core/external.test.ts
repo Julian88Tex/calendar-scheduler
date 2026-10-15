@@ -172,6 +172,29 @@ describe("moved in the connected calendar (CAL-14, CR-17)", () => {
     await drain(t.db);
   });
 
+  it("applies long and all-day moves of poll meetings (up to a whole day, maxMoveMinutes), others up to 12 hours", async () => {
+    const { r, row } = await bookedWithGoogle();
+    const before = await meeting(t.db, r.scheduledEventId);
+    // A regular meeting moved to 13 hours is ignored (meetings last at most 12 hours).
+    const start = la("2030-10-12 08:00");
+    await applyExternalCalendarChange({ linkedEventId: row.id, change: { type: "moved", start, end: new Date(start.getTime() + 13 * HOUR) } });
+    expect(await meeting(t.db, r.scheduledEventId)).toMatchObject({ status: "active", startAt: before.startAt, endAt: before.endAt });
+    expect((await invitee(t.db, r.inviteeId)).status).toBe("active");
+
+    // The same meeting booked through a poll, made an all-day event in Google Calendar: moved in place.
+    await t.db.update(scheduledEvents).set({ source: "poll" }).where(eq(scheduledEvents.id, r.scheduledEventId));
+    const day = { start: la("2030-10-12 00:00"), end: la("2030-10-13 00:00") };
+    await applyExternalCalendarChange({ linkedEventId: row.id, change: { type: "moved", ...day } });
+    const moved = await meeting(t.db, r.scheduledEventId);
+    expect(moved).toMatchObject({ status: "active", durationMinutes: 24 * 60, startAt: day.start, endAt: day.end, icsSequence: before.icsSequence + 1 });
+    expect((await invitee(t.db, r.inviteeId)).status).toBe("active");
+
+    // Longer than a day is still ignored.
+    await applyExternalCalendarChange({ linkedEventId: row.id, change: { type: "moved", start: day.start, end: new Date(day.start.getTime() + 27 * HOUR) } });
+    expect(await meeting(t.db, r.scheduledEventId)).toMatchObject({ durationMinutes: 24 * 60, endAt: day.end });
+    await drain(t.db);
+  });
+
   it("ignores changes of a meeting that is no longer active", async () => {
     const { r, row } = await bookedWithGoogle();
     await t.db.update(scheduledEvents).set({ status: "canceled" }).where(eq(scheduledEvents.id, r.scheduledEventId));
