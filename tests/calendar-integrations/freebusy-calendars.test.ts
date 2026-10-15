@@ -37,7 +37,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const { calendarLinkedEvents, calendars, calendarSyncWindows, calendarWatchChannels } = await import("@/db/schema");
+const { calendarConnections, calendarLinkedEvents, calendars, calendarSyncWindows, calendarWatchChannels } = await import("@/db/schema");
 const { GOOGLE_FREE_BUSY_ONLY_TAG } = await import("@/lib/calendars/access");
 const { getExternalBusy, WINDOW_MS } = await import("@/lib/calendars/busy");
 const { setConflictCalendars, setDestinationCalendar, syncCalendarList } = await import("@/lib/calendars/connections");
@@ -78,6 +78,8 @@ type Google = {
   /** FreeBusy intervals per calendar. */
   busy: Record<string, { start: string; end: string }[]>;
   freeBusyFails: boolean;
+  /** Per calendar FreeBusy errors ("internalError", "backendError"): that calendar alone is unreadable. */
+  freeBusyErrors: Record<string, string>;
 };
 
 let g: Google;
@@ -100,6 +102,10 @@ function routes() {
         for (const { id } of body.items) {
           if (!role(id)) {
             calendarsOut[id] = { errors: [{ domain: "global", reason: "notFound" }], busy: [] };
+            continue;
+          }
+          if (g.freeBusyErrors[id]) {
+            calendarsOut[id] = { errors: [{ domain: "global", reason: g.freeBusyErrors[id] }], busy: [] };
             continue;
           }
           calendarsOut[id] = { busy: (g.busy[id] ?? []).filter((b) => b.start < body.timeMax && b.end > body.timeMin) };
@@ -139,6 +145,7 @@ beforeEach(() => {
     events: {},
     busy: {},
     freeBusyFails: false,
+    freeBusyErrors: {},
   };
   sync.changes = [];
   f = routes();
@@ -278,6 +285,61 @@ describe("busy layer", () => {
     const r = await getExternalBusy({ userIds: [c.user.id], ...range, maxAgeSeconds: 0 });
     expect(r[c.user.id]).toMatchObject({ ok: false, stale: true, nocal: false });
     expect(r[c.user.id]!.busy.map((b) => b.title)).toEqual(["Lunch", `Busy (${WORK})`]);
+  });
+
+  it("treats a failing free/busy only calendar as its own failure: the connection stays healthy, the others refresh", async () => {
+    const c = await connected();
+    await setConflictCalendars(c.actor, [{ calendarId: c.work.id, checked: true }]);
+    const client = await busyOnlyCalendar(c.connectionId, c.user.id, CLIENT, "Client team");
+    g.calendarList.push({ id: CLIENT, summary: "Client team", accessRole: "freeBusyReader" });
+    const day = midWindow();
+    const iso = (hh: number) => new Date(day.getTime() + hh * HOUR).toISOString();
+    g.events[ME] = [{ id: "dentist", summary: "Dentist", start: iso(15), end: iso(16) }];
+    g.busy[WORK] = [{ start: iso(17), end: iso(18) }];
+    g.busy[CLIENT] = [{ start: iso(20), end: iso(21) }];
+    const range = { start: new Date(day.getTime() + 8 * HOUR), end: new Date(day.getTime() + 22 * HOUR) };
+    expect((await getExternalBusy({ userIds: [c.user.id], ...range }))[c.user.id]).toMatchObject({ ok: true });
+    const [before] = await t.db.select().from(calendarSyncWindows).where(eq(calendarSyncWindows.calendarId, c.work.id));
+
+    // Google keeps failing on the work calendar alone (in the same batched request as the client's), then on the whole
+    // FreeBusy request: more often than the connection failure threshold, while the other calendars keep changing.
+    const titles = (r: Awaited<ReturnType<typeof getExternalBusy>>) => r[c.user.id]!.busy.map((b) => [b.title, b.start.toISOString()]);
+    for (const [n, fail] of (["internalError", "backendError", "internalError", "backendError", "whole request"] as const).entries()) {
+      if (fail === "whole request") g.freeBusyFails = true;
+      else g.freeBusyErrors[WORK] = fail;
+      g.events[ME] = [{ id: `lunch-${n}`, summary: `Lunch ${n}`, start: iso(12), end: iso(13) }];
+      g.busy[CLIENT] = fail === "whole request" ? g.busy[CLIENT]! : [{ start: iso(9 + n), end: iso(9.5 + n) }];
+      const r = await getExternalBusy({ userIds: [c.user.id], ...range, maxAgeSeconds: 0 });
+      // The work calendar is on its last data (stale, never "No times available" while that data is under 24 hours old).
+      expect(r[c.user.id]).toMatchObject({ ok: false, stale: true, nocal: false });
+      const clientAt = fail === "whole request" ? iso(12) : iso(9 + n);
+      expect(titles(r)).toEqual(
+        [
+          [`Lunch ${n}`, iso(12)],
+          [`Busy (${WORK})`, iso(17)],
+          ["Busy (Client team)", clientAt],
+        ].sort((a, b) => a[1]!.localeCompare(b[1]!)),
+      );
+      const [conn] = await t.db.select().from(calendarConnections).where(eq(calendarConnections.id, c.connectionId));
+      expect(conn).toMatchObject({ status: "active", consecutiveFailures: 0, lastError: null });
+      // The work window is not refreshed and not left leased: the next read asks Google again.
+      const [w] = await t.db.select().from(calendarSyncWindows).where(eq(calendarSyncWindows.calendarId, c.work.id));
+      expect(w).toMatchObject({ status: "ok", fetchLeaseUntil: null, fetchLeaseHolder: null });
+      expect(w!.fetchedAt.getTime()).toBe(before!.fetchedAt.getTime());
+      expect(w!.error).toMatch(/free\/busy times|Backend Error|503/i);
+    }
+    const [client1] = await t.db.select().from(calendarSyncWindows).where(eq(calendarSyncWindows.calendarId, client.id));
+    expect(client1!.fetchedAt.getTime()).toBeGreaterThan(before!.fetchedAt.getTime());
+
+    // Google answers again: the work calendar refreshes on the next read.
+    g.freeBusyFails = false;
+    g.freeBusyErrors = {};
+    g.busy[WORK] = [{ start: iso(18), end: iso(19) }];
+    const calls = freeBusyCalls().length;
+    const healed = await getExternalBusy({ userIds: [c.user.id], ...range });
+    expect(freeBusyCalls().length).toBeGreaterThan(calls);
+    expect(healed[c.user.id]).toMatchObject({ ok: true, stale: false, nocal: false });
+    expect(healed[c.user.id]!.busy.filter((b) => b.calendarId === c.work.id).map((b) => b.start.toISOString())).toEqual([iso(18)]);
   });
 
   it("leaves out a free/busy only calendar that was unshared (notFound) and refreshes the calendar list", async () => {
