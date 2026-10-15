@@ -21,11 +21,21 @@ follow-ups).
   ```
 
 - **Integration and unit tests** (Vitest, PGlite): the email outbox read model and Resend
-  (`src/app/(dashboard)/app/settings/email-outbox/outbox.test.ts`), the fixture guard
-  (`src/app/reschedulings/host-dialogs-fixture/page.test.ts`), and the whole default project (192 files).
+  (`src/app/(dashboard)/app/settings/email-outbox/outbox.test.ts`), the voter page 410 in the proxy
+  (`src/proxy.poll-gate.test.ts`), the fixture guard (`src/app/reschedulings/host-dialogs-fixture/page.test.ts`), and
+  the whole default project (192 files).
+- **Real Postgres through postgres.js** (`npm run test:pg`): the outbox read model and Resend
+  (`src/app/(dashboard)/app/settings/email-outbox/outbox.pg.test.ts`: the raw `sql` search and prefix filters with
+  production parameter serialization, int8 counts, and the Resend compare-and-set against an `updated_at` the database
+  filled with microseconds).
 - **Equivalence check** of the meeting poll time helpers rewritten without Luxon: 379,068 comparisons against the old
   Luxon implementation over 20 time zones (including Lord Howe's 30 minute DST, Santiago and Havana with DST at
-  midnight, Casablanca, Apia, Chatham) and every day of 2024 to 2027: no difference.
+  midnight, Casablanca, Apia, Chatham) and every day of 2024 to 2027: no difference. A wider second check (662,706
+  comparisons, 25 zones, every day of 2009 to 2030) found 592 differences, all on past transitions where the new Intl
+  code is right and Luxon was not: a fall back at midnight repeats the last hour of the day (Sao Paulo until 2019,
+  Tehran until 2022), so that hour now has both of its instants; Mexico City and Moscow fall back hours, the first hour
+  after a spring forward in Apia (2010 to 2021) and Nuuk (until 2023), Scoresbysund's repeated midnight (the earlier
+  instant starts the day) and Apia's skipped December 30, 2011. None from 2024 on.
 - Type check (`npm run typecheck:owned`), ESLint and `npm run check:dashes` on every changed path; neighbouring e2e
   suites re-run on the same port (foundation harness, foundation-ui shell, polls-ui, lifecycle-ui host dialogs,
   settings-onboarding).
@@ -47,7 +57,7 @@ follow-ups).
 | Troubleshoot: MEETING LIMIT on the full day, "Outside your working hours", the calendar event by name ("Dentist") and the 15 minute buffers before and after it; the public page agrees (2:15pm and 4:15pm offered, 2:30pm to 4:00pm not) | same | Pass |
 | Reminders: the 24 hour reminder job of a new booking is scheduled (nothing before its time); when the dispatcher is late the instance admin sees "1 reminder is past its send time." (the count reads the pending job in the jobs table); one reminder with cancel and reschedule links, never a second copy; a reschedule moves it to the new time | host.spec "a booking's 24 hour reminder ..." | Pass |
 | Meeting poll: create on the week grid, share, a voter answers, close voting, reopen voting with the voter email (new), book the best time (meeting in Meetings, invitee confirmation), list shows "Booked for", Delete names the meeting with its end time and offers the voter email for a booked poll (new), the deleted link answers HTTP 410 (GET and HEAD) with "This poll is no longer available." and noindex, unknown slugs 404 | polls.spec | Pass |
-| Email outbox page: settings navigation entry, transport line, rows with status, subject, template, recipient, provider and time, search, status filter, empty state, preview in a sandboxed frame and as plain text, axe; a member without the owner role gets no entry and the not found page | outbox.spec | Pass |
+| Email outbox page: settings navigation entry, transport line, rows with status, subject, template, recipient, provider and time, search, status filter, empty state, a page past the end (also a huge `?page=`) opens the last page, preview in a sandboxed frame and as plain text, axe; a member without the owner role gets no entry and the not found page | outbox.spec | Pass |
 | Gmail sending not connected (EMAIL_PROVIDER=gmail): rows "Waiting for Gmail" with the reason (no internal prefix), "Reconnect Google" link to `/app/integrations/calendars/google`, the page banner; after 24 hours "Failed" with "Not sent: ..." (no "permanent: " prefix) and Resend, whose new copy waits for Gmail again | gmail-hold.spec | Pass |
 | `/reschedulings/host-dialogs-fixture` is the 404 page outside E2E test mode (before any session or database read; generic metadata) and keeps working for the lifecycle-ui e2e | page.test.ts, lifecycle-ui host-dialogs.spec | Pass |
 
@@ -56,6 +66,13 @@ runs). Vitest default project: 2,536 tests in 192 files passing. One earlier ful
 "Sorry, that time is no longer available." although the booking was made (the slot list then started after it): it
 happened while another agent was editing the booking components the dev server recompiles, and did not reproduce
 alone or in the next full run; see item 8 below.
+
+Verification pass (same commands, same day): five more full default runs and one Gmail run. Runs 1 and 2 (the code as
+first delivered) passed 10 of 10. Run 3 (after fixes 8 to 10 below) lost the "Book" click in the polls test (fix 11,
+a test timing issue, not an app bug); runs 4 and 5 after that fix passed 10 of 10, and the Gmail run passed 1 of 1.
+The lifecycle-ui e2e that uses the fixture route passed 5 of 5. The outbox page was also checked for authorization: a
+member gets no settings entry, the not found page for the list and for `?view={id}`, and "not found" from Resend; an
+organization owner who is not an instance admin sees and resends only their organization's emails.
 
 ## Changes made for go-live
 
@@ -90,6 +107,21 @@ alone or in the next full run; see item 8 below.
 7. The plain text preview of the new outbox dialog was a scrollable region without keyboard access (axe); fixed before
    release.
 
+Found by the adversarial verification pass (fixed, with regression tests):
+
+8. A huge page number on the outbox page (`?page=1000000000000000000`) failed the whole page with a server error: the
+   OFFSET overflowed Postgres bigint. Page numbers are now capped, and a page past the end (a stale link) opens the last
+   page instead of an empty "No emails yet" (outbox.test.ts, outbox.pg.test.ts, outbox.spec).
+9. When the new copy of a "Resend" failed with an error (database or provider), the original stayed marked "Resent as
+   a new email." although no copy existed. The original is now put back as it was, and "Resend" on the same page then
+   makes exactly one copy, also when the copy had been stored before the error (outbox.test.ts).
+10. The proxy's 410 check never read the state route's response body (nor the page body for HEAD or a fallback). An
+    unread body holds its pooled connection until garbage collection, and the check runs on every voter page view; the
+    bodies are now released (src/proxy.poll-gate.test.ts, which also covers the 410 for GET and HEAD, the skipped
+    requests and the fallbacks).
+11. The polls e2e clicked "Book" right after `page.reload()`, before hydration: one of five full runs lost the click
+    (the dialog never opened). It now opens the page through `open()` and retries the click until the dialog shows.
+
 ## Found outside these paths (not changed, for their owners)
 
 1. **Not found pages under `/app` answer HTTP 200**: `/app/loading.tsx` streams the dashboard shell first, so a page
@@ -115,6 +147,10 @@ alone or in the next full run; see item 8 below.
    flight), the second post answers "no longer available" for the invitee's own new booking. Worth a look: keep the
    button busy until the navigation to `/booking/{id}` happens, and treat a conflict with the invitee's own just made
    booking as success.
+
+Left as is inside these paths: the outbox "Resend" rate limit (30 a minute) is one bucket for the whole instance, so a
+second signed-in account could use it up for the owner. The live instance has only the owner's account (signup is invite
+only), so it was not changed.
 
 ## Known gaps (not covered by this suite)
 

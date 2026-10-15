@@ -52,6 +52,7 @@ test.describe("golden path: meeting polls", () => {
     const voterCtx = await browser.newContext({ baseURL, timezoneId: "America/New_York", locale: "en-US" });
     const voter = await voterCtx.newPage();
     await voter.goto(link, SLOW);
+    await voter.waitForLoadState("networkidle");
     await expect(voter.getByRole("heading", { name: "Select all the times you're available to meet" })).toBeVisible(SLOW);
     const controls = voter.getByTestId("answer-control");
     await expect(controls).toHaveCount(2);
@@ -82,10 +83,15 @@ test.describe("golden path: meeting polls", () => {
     const reopened = await emailTo(api, "iris.golden@example.com", "polls.reopened");
     expect(reopened.subject).toBe("Julian Joseph reopened the poll for Quarterly planning");
 
-    // Book the best time: the meeting is created and the voter is invited.
-    await page.reload();
-    await page.getByTestId("book-option").first().click();
-    await expect(page.getByTestId("book-dialog")).toContainText("Iris Novak", SLOW);
+    // Book the best time: the meeting is created and the voter is invited. (A click before hydration is lost in dev
+    // mode, so the page is opened through open() and the click retried until the dialog shows.)
+    await open(page, resultsUrl);
+    const bookDialog = page.getByTestId("book-dialog");
+    await expect(async () => {
+      if (!(await bookDialog.isVisible())) await page.getByTestId("book-option").first().click({ timeout: 2_000 });
+      await expect(bookDialog).toBeVisible({ timeout: 2_000 });
+    }).toPass(SLOW);
+    await expect(bookDialog).toContainText("Iris Novak", SLOW);
     await page.getByTestId("book-submit").click();
     await expect(page.getByTestId("booked-banner")).toBeVisible(SLOW);
     await emailTo(api, "iris.golden@example.com", "lifecycle.invitee_confirmation");
