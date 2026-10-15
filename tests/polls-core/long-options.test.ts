@@ -132,6 +132,23 @@ describe("all-day options (MP-18, MP-19)", () => {
     const [mail] = await outbox(t.db, { to: "cara@example.com", template: "lifecycle.invitee_confirmation", scheduledEventId: m.id });
     expect(allDayOf(mail!.ics)).toEqual({ start: "20301103", end: "20301104", timed: false });
   });
+
+  it("a timed option covering the same whole day as a date-only option books a timed meeting", async () => {
+    const host = await setupHost(t.db);
+    const p = await newPoll(host, { options: [{ date: "2030-10-12" }, opt("2030-10-12 00:00", 24 * 60)] });
+    const rows = (await t.db.select().from(meetingPollOptions).where(eq(meetingPollOptions.pollId, p.pollId))).filter((o) => !o.deletedAt);
+    const timed = rows.find((o) => !o.allDayDate)!;
+    const r = await bookPoll(host.actor, { pollId: p.pollId, optionId: timed.id, invitees: [{ email: "eve@example.com", name: "Eve" }] });
+    const m = await meetingRow(r.scheduledEventId);
+    expect(m.startAt.toISOString()).toBe(la("2030-10-12 00:00").toISOString());
+    expect(m.endAt.toISOString()).toBe(la("2030-10-13 00:00").toISOString());
+    await drain(t.db, { lifecycle: true });
+    const [mail] = await outbox(t.db, { to: "eve@example.com", template: "lifecycle.invitee_confirmation", scheduledEventId: m.id });
+    expect(allDayOf(mail!.ics)).toMatchObject({ start: null, timed: true });
+    expect(mail!.html).not.toContain("allday=true");
+    const download = await buildMeetingIcs({ scheduledEventId: m.id, method: "REQUEST" });
+    expect(download?.allDayDate).toBeNull();
+  });
 });
 
 describe("long timed options (MP-02, MP-18)", () => {

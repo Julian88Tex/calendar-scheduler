@@ -3,9 +3,11 @@
 // TimeZoneSelect (dashboard picker) and TimeZoneButton (booking page trigger, SPEC BK-05) (ARCHITECTURE 20.2, GEN-06):
 // friendly Calendly-style names from src/lib/time/zones.ts ("Eastern Time - US & Canada"), the current local time of
 // every zone (refreshed each minute), the GEN-06 groups (US/CANADA, AMERICA, ... UTC) and search by name, city or IANA
-// id. TimeZoneButton renders the "Time zone" label, a globe + name + "(6:53pm)" + caret button, and a dropdown with
-// search, the "am/pm | 24h" toggle and the grouped list. Pass `names` (the zones i18n namespace) and `labels` for
-// non-English invitee pages. Any valid IANA zone (including legacy aliases) stays selectable.
+// id. TimeZoneButton renders the "Time zone" label, a globe + name + "(6:53pm)" + caret button (a gray pill while
+// open), and a 250px popup centered over the button (docs/research/calendly-live-capture.md item 17) with search, a
+// "TIME ZONE" row holding the "am/pm [switch] 24h" toggle (a "Time format" radio group for assistive technology) and
+// the grouped list whose names wrap. Pass `names` (the zones i18n namespace) and `labels` for non-English invitee
+// pages. Any valid IANA zone (including legacy aliases) stays selectable.
 "use client";
 
 import { Globe } from "lucide-react";
@@ -13,7 +15,6 @@ import { useId, useMemo } from "react";
 import { cn } from "@/lib/cn";
 import { currentLocalTime, friendlyZoneName, groupedZones } from "@/lib/time/zones";
 import { Combobox, type ComboboxOption } from "./combobox";
-import { SegmentedControl } from "./segmented-control";
 import { useMinuteClock } from "./use-minute-clock";
 
 export type TimeZoneSelectProps = {
@@ -145,6 +146,61 @@ export type TimeZoneButtonProps = {
   disabled?: boolean;
 };
 
+/** A booking picker row: the zone name wraps over two lines when needed, the local time stays on the right in navy. */
+function PublicZoneRow({ option, hour12, locale, now }: { option: ZoneOption; hour12: boolean; locale: string; now: number | null }) {
+  return (
+    <span className="flex w-full min-w-0 items-center justify-between gap-3">
+      <span className="min-w-0 break-words">{option.label}</span>
+      {now !== null && <span className="shrink-0 text-[14px] font-normal text-ink">{currentLocalTime(option.zone, { hour12, locale, at: now })}</span>}
+    </span>
+  );
+}
+
+/**
+ * Calendly's "am/pm [switch] 24h" control. The two words are the options of a "Time format" radio group (arrow keys
+ * move between them) and the small track between them flips the choice; the knob sits left for am/pm, right for 24h.
+ */
+function HourFormatToggle({ hour12, onChange, labels }: { hour12: boolean; onChange: (hour12: boolean) => void; labels?: TimeZoneLabels }) {
+  const option = (value: boolean, text: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={hour12 === value}
+      tabIndex={hour12 === value ? 0 : -1}
+      onClick={() => onChange(value)}
+      onKeyDown={(e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+          e.preventDefault();
+          onChange(!hour12);
+          const group = e.currentTarget.parentElement;
+          window.setTimeout(() => group?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus(), 0);
+        }
+      }}
+      className="rounded-[4px] text-[12px] leading-4 text-ink"
+    >
+      {text}
+    </button>
+  );
+  return (
+    <div role="radiogroup" aria-label={labels?.timeFormat ?? "Time format"} className="flex items-center gap-1">
+      {option(true, labels?.h12 ?? "am/pm")}
+      <span
+        aria-hidden="true"
+        onClick={() => onChange(!hour12)}
+        className="relative inline-flex h-3.5 w-8 shrink-0 cursor-pointer items-center rounded-full bg-mist"
+      >
+        <span
+          className={cn(
+            "absolute top-1/2 left-0 size-[18px] -translate-y-1/2 rounded-full border border-line bg-white shadow-[0_1px_2px_rgba(10,37,64,0.2)] transition-transform duration-150",
+            !hour12 && "translate-x-[14px]",
+          )}
+        />
+      </span>
+      {option(false, labels?.h24 ?? "24h")}
+    </div>
+  );
+}
+
 export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale = "en", names, label = "Time zone", className, labels, disabled }: TimeZoneButtonProps) {
   const now = useMinuteClock();
   const options = useZoneOptions(value, locale, names);
@@ -162,46 +218,38 @@ export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale
         onChange={(v) => v && onChange(v)}
         options={options}
         disabled={disabled}
+        variant="public"
         searchPlaceholder={labels?.search ?? "Search..."}
         emptyText={labels?.noResults ?? "No time zones found"}
-        contentClassName="w-[min(400px,calc(100vw-16px))]"
-        align="start"
+        contentClassName="w-[250px]"
+        align="center"
+        side="top"
+        sideOffset={0}
         trigger={
           <button
             type="button"
             aria-haspopup="listbox"
             aria-labelledby={`${headingId} ${headingId}-value`}
             disabled={disabled}
-            className="group inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-input)] px-2.5 py-1.5 text-left text-[14px] leading-5 text-ink hover:bg-primary-soft data-[state=open]:bg-primary-soft disabled:cursor-not-allowed"
+            className="group inline-flex h-8 w-full max-w-full min-w-0 items-center gap-0.5 rounded-full px-2.5 text-left text-[14px] leading-5 text-ink transition-colors duration-100 hover:bg-mist data-[state=open]:bg-mist disabled:cursor-not-allowed"
           >
-            <Globe aria-hidden="true" className="size-4 shrink-0 text-ink" />
+            <Globe aria-hidden="true" className="size-3.5 shrink-0 text-ink" strokeWidth={2.5} />
             <span id={`${headingId}-value`} className="min-w-0 truncate">
               {name}
               {time && <span> ({time})</span>}
             </span>
-            <svg aria-hidden="true" viewBox="0 0 10 6" className="h-1.5 w-2.5 shrink-0 fill-navy transition-transform group-data-[state=open]:rotate-180">
+            <svg aria-hidden="true" viewBox="0 0 10 6" className="ml-[5px] h-1.5 w-2.5 shrink-0 fill-navy transition-transform group-data-[state=open]:rotate-180">
               <path d="M0 0h10L5 6z" />
             </svg>
           </button>
         }
         header={
-          onHour12Change ? (
-            <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2">
-              <span className="text-eyebrow text-ink-2">{labels?.timeFormat ?? "Time format"}</span>
-              <SegmentedControl<"12h" | "24h">
-                size="sm"
-                aria-label={labels?.timeFormat ?? "Time format"}
-                value={hour12 ? "12h" : "24h"}
-                onValueChange={(v) => onHour12Change(v === "12h")}
-                options={[
-                  { value: "12h", label: labels?.h12 ?? "am/pm" },
-                  { value: "24h", label: labels?.h24 ?? "24h" },
-                ]}
-              />
-            </div>
-          ) : undefined
+          <div className="flex items-center justify-between gap-3 px-5 pt-[22px] pb-3">
+            <span className="text-[12px] leading-4 font-bold text-ink uppercase">{label}</span>
+            {onHour12Change && <HourFormatToggle hour12={hour12} onChange={onHour12Change} labels={labels} />}
+          </div>
         }
-        renderOption={(o) => <ZoneRow option={byValue.get(o.value) ?? { ...o, zone: o.value }} hour12={hour12} locale={locale} now={now} showTime />}
+        renderOption={(o) => <PublicZoneRow option={byValue.get(o.value) ?? { ...o, zone: o.value }} hour12={hour12} locale={locale} now={now} />}
       />
     </div>
   );

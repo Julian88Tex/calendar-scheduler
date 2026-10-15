@@ -1,7 +1,11 @@
 // Signup policy (SPEC AU-11): instance setting signup_policy ("invite_only" default once an account exists, "open",
 // "domains" with signup_domains), overridden by the SIGNUP_POLICY env var. The very first signup of a fresh instance is
-// always allowed and becomes the instance admin and org owner. ADMIN_EMAILS addresses may always sign up (they become
-// instance admins once their email is verified, src/lib/authz.ts). Invitation acceptance bypasses the policy.
+// always allowed and becomes the instance admin and org owner (the first-account exception). When OWNER_EMAIL is set
+// (src/lib/setup/config.ts, the same check as the owner bootstrap) that exception applies only to that address
+// (case-insensitive, trimmed): any other first signup follows the policy like everyone else and never becomes instance
+// admin, so nobody can claim a fresh instance by signing up before the owner. A set but malformed OWNER_EMAIL gives the
+// exception to nobody, like it disables the bootstrap. ADMIN_EMAILS addresses may always sign up (they become instance
+// admins once their email is verified, src/lib/authz.ts). Invitation acceptance bypasses the policy.
 //
 // signupPolicyAllows() reads the user count, so a caller that creates an account must evaluate it inside the signup
 // transaction after taking the signup advisory lock (createAccountUnderPolicy in src/lib/auth/signup.ts); otherwise
@@ -11,6 +15,8 @@ import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { instanceSettings, organizations, users } from "@/db/schema";
 import { adminEmails, getEnv } from "@/lib/env";
+import { isAppError } from "@/lib/errors";
+import { configuredOwnerEmail } from "@/lib/setup/config";
 import { normalizeEmail } from "@/lib/validation";
 
 export type SignupPolicy = "invite_only" | "open" | "domains";
@@ -67,6 +73,21 @@ export function isAdminEmail(email: string): boolean {
   return adminEmails().includes(normalizeEmail(email));
 }
 
+/**
+ * Whether the first-account exception (allowed whatever the policy, instance admin) may apply to this email: anyone
+ * while OWNER_EMAIL is unset, only OWNER_EMAIL (case-insensitive, trimmed) when it is set, nobody while it is malformed.
+ */
+export function firstAccountExceptionAllows(email: string): boolean {
+  let owner: string | null;
+  try {
+    owner = configuredOwnerEmail();
+  } catch (e) {
+    if (isAppError(e) && e.code === "not_configured") return false;
+    throw e;
+  }
+  return owner === null || normalizeEmail(email) === owner;
+}
+
 /** Live (not deleted) accounts on the instance. */
 export async function countLiveUsers(db?: DbOrTx): Promise<number> {
   const d = db ?? (await getDb());
@@ -90,7 +111,7 @@ export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } = 
   const db = opts.db ?? (await getDb());
   const n = await countLiveUsers(db);
   const policy = await getSignupPolicy(db);
-  if (n === 0) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
+  if (n === 0 && firstAccountExceptionAllows(email)) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
   if (policy === "open") return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
   let domainMatch = false;
   if (policy === "domains") {
@@ -104,7 +125,7 @@ export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } = 
 
 export type SignupAvailability = {
   policy: SignupPolicy;
-  /** No account exists yet: the next signup becomes the instance admin. */
+  /** No account exists yet: the next signup becomes the instance admin (only OWNER_EMAIL's, when that is set). */
   firstUser: boolean;
   /**
    * Whether /signup shows the form. False only when nobody without an invitation can sign up (invite_only with

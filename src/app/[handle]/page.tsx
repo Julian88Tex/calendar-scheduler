@@ -3,7 +3,8 @@
 // /{handle}: the user landing page (SPEC BK-01) or team landing page (BK-02, TM-06): avatar, name, welcome message and
 // the active, non-secret event types in a two-column grid ordered by position; each item links to its booking page
 // with ?back=1 (prefill, UTM, display and embed parameters are forwarded). hide_landing_page_details=1 hides the
-// header (BK-26); embeds post calendly.profile_page_viewed (BK-25). Unknown and deleted handles are 404 (BK-23).
+// header (BK-26); embeds post calendly.profile_page_viewed (BK-25). Unknown and deleted handles are 404 (BK-23). Like
+// Calendly's profile card, the footer shows only "Cookie settings" (docs/research/calendly-live-capture.md item 20).
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { EmbedBeacon } from "@/components/booking/embed-beacon";
@@ -12,7 +13,6 @@ import { landingForwardParams, withCarried } from "@/components/booking/lib/url-
 import { loadLanding } from "@/components/booking/server/landing";
 import { EventTypeList } from "@/components/public/event-type-list";
 import { LandingEmpty, LandingEvents, LandingFooter } from "@/components/public/landing-layout";
-import { getOperatorEmail } from "@/components/public/operator";
 import { ProfileHeader } from "@/components/public/profile-header";
 import { PublicCard } from "@/components/public/public-card";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
@@ -42,7 +42,6 @@ export default async function Page({ params, searchParams }: Props) {
   if (!data) notFound();
   const embed = embedDisplayParams(sp);
   const forward = landingForwardParams(sp);
-  const operatorEmail = await getOperatorEmail();
   const items = data.items.map((e) => ({
     id: e.id,
     name: e.name,
@@ -56,7 +55,6 @@ export default async function Page({ params, searchParams }: Props) {
       embed={embed.embed}
       showFooterLinks={false}
       hideGdprBanner={embed.hideGdprBanner}
-      operatorEmail={operatorEmail}
       privacyUrl={data.privacyUrl}
     >
       <PublicCard width="default" ribbon={data.ribbon} embed={embed.embed} className="min-[1000px]:min-h-[706px]">
@@ -65,7 +63,7 @@ export default async function Page({ params, searchParams }: Props) {
           {items.length > 0 ? <EventTypeList items={items} aria-label={bt("landing.eventTypes")} /> : <LandingEmpty name={data.name} />}
         </LandingEvents>
         <LandingFooter>
-          <PublicFooterLinks operatorEmail={operatorEmail} showPrivacyPolicy={false} />
+          <PublicFooterLinks showPrivacyPolicy={false} />
         </LandingFooter>
       </PublicCard>
       {embed.embed && <EmbedBeacon event="calendly.profile_page_viewed" />}

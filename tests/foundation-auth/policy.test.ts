@@ -1,9 +1,10 @@
 // Signup policy matrix (SPEC AU-11): first user, invite_only, open, domains, SIGNUP_POLICY override, ADMIN_EMAILS, and
 // createAccountUnderPolicy (first account is instance admin, domains joins the first organization, invitations bypass).
+// With OWNER_EMAIL set, the first-account exception applies to that address only (the owner bootstrap's rule).
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { instanceSettings, organizationMemberships, organizations, users } from "@/db/schema";
-import { getSignupAvailability, getSignupPolicy, signupPolicyAllows, SIGNUPS_CLOSED_MESSAGE } from "@/lib/auth/policy";
+import { firstAccountExceptionAllows, getSignupAvailability, getSignupPolicy, signupPolicyAllows, SIGNUPS_CLOSED_MESSAGE } from "@/lib/auth/policy";
 import { createAccountUnderPolicy, EMAIL_TAKEN_MESSAGE } from "@/lib/auth/signup";
 import { isAppError } from "@/lib/errors";
 import { useTestDb } from "../helpers/db";
@@ -37,11 +38,13 @@ async function caught(p: Promise<unknown>) {
 beforeEach(async () => {
   delete env.SIGNUP_POLICY;
   delete env.ADMIN_EMAILS;
+  delete env.OWNER_EMAIL;
   await wipe();
 });
 afterEach(() => {
   delete env.SIGNUP_POLICY;
   delete env.ADMIN_EMAILS;
+  delete env.OWNER_EMAIL;
 });
 
 describe("signupPolicyAllows", () => {
@@ -94,6 +97,75 @@ describe("signupPolicyAllows", () => {
     env.ADMIN_EMAILS = "Ops@Example.com, other@example.com";
     expect((await signupPolicyAllows("ops@example.com", { db: t.db })).allowed).toBe(true);
     expect((await signupPolicyAllows("random@example.com", { db: t.db })).allowed).toBe(false);
+  });
+});
+
+describe("OWNER_EMAIL and the first-account exception", () => {
+  it("lets only OWNER_EMAIL (case-insensitive, trimmed) claim a fresh instance; anyone else follows the policy", async () => {
+    env.OWNER_EMAIL = "  Owner@Example.com ";
+    await setSetting("signup_policy", "invite_only");
+    expect(await signupPolicyAllows("eve@example.com", { db: t.db })).toEqual({
+      allowed: false,
+      firstUser: false,
+      policy: "invite_only",
+      message: SIGNUPS_CLOSED_MESSAGE,
+    });
+    expect(await signupPolicyAllows(" OWNER@example.COM ", { db: t.db })).toMatchObject({ allowed: true, firstUser: true, policy: "invite_only" });
+    expect(firstAccountExceptionAllows("owner@EXAMPLE.com")).toBe(true);
+    expect(firstAccountExceptionAllows("owner2@example.com")).toBe(false);
+  });
+
+  it("createAccountUnderPolicy refuses another first signup and makes the owner instance admin", async () => {
+    env.OWNER_EMAIL = "owner@example.com";
+    const closed = await caught(create("eve@example.com"));
+    expect(isAppError(closed) && closed.code).toBe("forbidden");
+    expect((closed as Error).message).toBe(SIGNUPS_CLOSED_MESSAGE);
+    expect(await t.db.select().from(users)).toHaveLength(0);
+    const owner = await create("Owner@Example.com");
+    expect(owner.user.isInstanceAdmin).toBe(true);
+    expect(owner.decision).toMatchObject({ allowed: true, firstUser: true });
+  });
+
+  it("a first signup allowed by the policy itself (open, domains, ADMIN_EMAILS) is not made instance admin", async () => {
+    env.OWNER_EMAIL = "owner@example.com";
+    env.SIGNUP_POLICY = "open";
+    expect(await signupPolicyAllows("eve@example.com", { db: t.db })).toMatchObject({ allowed: true, firstUser: false, policy: "open" });
+    const eve = await create("eve@example.com");
+    expect(eve.user.isInstanceAdmin).toBe(false);
+    expect(eve.decision).toMatchObject({ allowed: true, firstUser: false });
+
+    await wipe();
+    env.SIGNUP_POLICY = "domains";
+    await setSetting("signup_domains", ["acme.test"]);
+    expect(await signupPolicyAllows("dev@acme.test", { db: t.db })).toMatchObject({ allowed: true, firstUser: false, joinOrganizationId: null });
+    expect((await signupPolicyAllows("eve@evil.test", { db: t.db })).allowed).toBe(false);
+
+    delete env.SIGNUP_POLICY;
+    env.ADMIN_EMAILS = "ops@example.com";
+    expect(await signupPolicyAllows("ops@example.com", { db: t.db })).toMatchObject({ allowed: true, firstUser: false });
+    expect((await create("ops@example.com")).user.isInstanceAdmin).toBe(false);
+  });
+
+  it("gives the exception to nobody while OWNER_EMAIL is malformed (like the bootstrap, which it disables)", async () => {
+    env.OWNER_EMAIL = "not-an-email";
+    expect(firstAccountExceptionAllows("not-an-email")).toBe(false);
+    expect(firstAccountExceptionAllows("owner@example.com")).toBe(false);
+    expect(await signupPolicyAllows("owner@example.com", { db: t.db })).toMatchObject({ allowed: false, message: SIGNUPS_CLOSED_MESSAGE });
+    const closed = await caught(create("owner@example.com"));
+    expect(isAppError(closed) && closed.code).toBe("forbidden");
+  });
+
+  it("keeps the exception for anyone while OWNER_EMAIL is unset or empty", async () => {
+    env.OWNER_EMAIL = "   ";
+    expect(firstAccountExceptionAllows("anyone@example.com")).toBe(true);
+    expect(await signupPolicyAllows("anyone@example.com", { db: t.db })).toMatchObject({ allowed: true, firstUser: true });
+    delete env.OWNER_EMAIL;
+    expect((await create("anyone@example.com")).user.isInstanceAdmin).toBe(true);
+  });
+
+  it("shows the signup form on a fresh instance (the owner must be able to sign up)", async () => {
+    env.OWNER_EMAIL = "owner@example.com";
+    expect(await getSignupAvailability(t.db)).toMatchObject({ open: true, firstUser: true });
   });
 });
 

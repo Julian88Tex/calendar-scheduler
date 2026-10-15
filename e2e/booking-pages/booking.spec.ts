@@ -27,7 +27,10 @@ test.describe("booking pages", () => {
     const items = page.getByRole("list", { name: "Event types" }).getByRole("link");
     await expect(items).toHaveText(["30 Minute Virtual", "60 Minute Virtual", "In-Person Meal or Coffee"]);
     await expect(items.first()).toHaveAttribute("href", "/julianjoseph/30min?back=1");
-    await expect(page.getByRole("button", { name: "Cookie settings" })).toBeVisible();
+    // Like Calendly's profile card: only "Cookie settings" (live capture, 01-profile).
+    const footer = page.getByRole("navigation", { name: "Footer" });
+    await expect(footer.getByRole("button", { name: "Cookie settings" })).toBeVisible();
+    await expect(footer.getByRole("link")).toHaveCount(0);
     await expect(page.getByTestId("powered-by-ribbon")).toBeVisible();
     await axe(page);
   });
@@ -54,6 +57,12 @@ test.describe("booking pages", () => {
     await expect(day).toBeEnabled();
     await expect(page.getByRole("button", { name: "Saturday, October 12 - No times available" })).toBeDisabled();
     await expect(page.getByText("Eastern Time - US & Canada")).toBeVisible();
+    // The card footer: "Cookie settings" and "Privacy Policy" (the /privacy page without a configured URL), no
+    // "Report abuse" (live capture item 6).
+    const footer = page.getByRole("navigation", { name: "Footer" });
+    await expect(footer.getByRole("button", { name: "Cookie settings" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
+    await expect(footer.getByRole("link", { name: "Report abuse" })).toHaveCount(0);
     await axe(page);
 
     await day.click();
@@ -70,6 +79,14 @@ test.describe("booking pages", () => {
     await expect(page.getByRole("heading", { name: "Enter Details" })).toBeVisible();
     await expect(page.getByTestId("details-when")).toHaveText("3:00pm - 3:30pm, Monday, October 7, 2030");
     await expect(page.getByTestId("details-zone")).toHaveText("Eastern Time - US & Canada");
+    // The card keeps its widened size and the back arrow sits in the details panel (live capture items 1 and 14).
+    await expect(page.getByRole("complementary", { name: "Event details" }).getByRole("button", { name: "Back to calendar" })).toBeVisible();
+    expect(Math.round((await page.locator("[data-booking-card]").boundingBox())!.width)).toBeGreaterThan(900);
+    // The terms sentence always shows, linking the app's own pages when no URLs are configured (BK-09).
+    const legal = page.getByTestId("legal-notice");
+    await expect(legal).toHaveText(/^By proceeding, you confirm that you have read and agree to .+'s Participant Terms and Privacy Notice\.$/);
+    await expect(legal.getByRole("link", { name: /Participant Terms/ })).toHaveAttribute("href", "/terms");
+    await expect(legal.getByRole("link", { name: "Privacy Notice" })).toHaveAttribute("href", "/privacy");
 
     // Empty submit: inline errors, nothing lost.
     await page.getByRole("button", { name: "Schedule Event" }).click();

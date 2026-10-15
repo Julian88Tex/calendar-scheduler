@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { getHolidays, blockedDatesFor, COUNTRY_NAMES, SUPPORTED_COUNTRIES } from "@/lib/holidays";
 import * as countries from "@/lib/holidays/countries";
 import { rawHolidays } from "@/lib/holidays/data";
-import { MAX_QUERY_DAYS, bookingWindow, computeSlots } from "@/lib/slots";
+import { MAX_QUERY_DAYS, REASON_CODES, bookingWindow, computeSlots, reasonLabel } from "@/lib/slots";
 import type { CandidateDiagnostic, SlotEngineInput } from "@/lib/slots";
 import {
   BERLIN,
@@ -306,5 +306,18 @@ describe("DST: notice, buffers, windows and limits", () => {
     expect(byDate["2026-03-07"]).toBe("03:00");
     expect(byDate["2026-03-10"]).toBe("04:00");
     expect(byDate["2026-03-31"]).toBe("03:00");
+  });
+});
+
+describe("reason labels read as words (Troubleshoot chips)", () => {
+  it("TOO SOON, NO CALENDAR and ROUND ROBIN, never the fused codes", () => {
+    expect(reasonLabel("TOOSOON")).toBe("TOO SOON");
+    expect(reasonLabel("NOCAL")).toBe("NO CALENDAR");
+    expect(reasonLabel("ROUNDROBIN")).toBe("ROUND ROBIN");
+    for (const code of REASON_CODES) {
+      const label = reasonLabel(code);
+      expect(label, code).toMatch(/^[A-Z]+( [A-Z]+)*$/);
+      if (/_|TOOSOON|NOCAL|ROUNDROBIN/.test(code)) expect(label, code).toContain(" ");
+    }
   });
 });

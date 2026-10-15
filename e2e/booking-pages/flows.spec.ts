@@ -280,10 +280,10 @@ test.describe("booking flows", () => {
     await expect(page.getByTestId("preview-banner")).toHaveCount(0);
   });
 
-  test("guests: Add Guests moves focus into the chips and an 11th guest is refused (BK-10)", async ({ page }) => {
+  test("guests: Add guests moves focus into the chips and an 11th guest is refused (BK-10)", async ({ page }) => {
     await page.goto("/julianjoseph/30min/2030-10-08T18:00:00Z", SLOW);
-    await page.getByRole("button", { name: "Add Guests" }).click();
-    const guests = page.getByRole("textbox", { name: "Guest Email(s)" });
+    await page.getByRole("button", { name: "Add guests" }).click();
+    const guests = page.getByRole("textbox", { name: "Guest email(s)" });
     await expect(guests).toBeFocused();
     await expect(page.getByText("Notify up to 10 additional guests of the scheduled event.")).toBeVisible();
     for (let i = 1; i <= 11; i++) await guests.fill(`g${i}@example.com,`);
@@ -304,7 +304,9 @@ test.describe("booking flows", () => {
     // Like Calendly, the details panel of a multiple-location event lists no location (only the radio list does).
     await expect(page.getByTestId("location-row")).toHaveCount(0);
     await expect(page.getByTestId("details-when")).toBeVisible();
-    await expect(page.getByText("2001 Chestnut Street, San Francisco, CA 94123")).toBeVisible();
+    // Venue names only, notes run on (live capture item 10): no street address before booking.
+    await expect(group.getByText("Golden Gate Grill - Marina - $$$ [Business Casual Dress Code]")).toBeVisible();
+    await expect(page.getByText("2001 Chestnut Street, San Francisco, CA 94123")).toHaveCount(0);
     await fillDetails(page);
     await page.getByRole("button", { name: "Schedule Event" }).click();
     await expect(page.locator('[data-field="location"]').getByRole("alert")).toHaveText("One location must be selected.");
@@ -408,9 +410,20 @@ test.describe("booking flows", () => {
       await expect(day).toBeEnabled(SLOW);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await axe(page);
+      // Phones title the calendar step "Select a Day" and show only "Cookie settings" at the bottom (live capture item 20).
+      await expect(page.getByRole("heading", { name: "Select a Day" })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Footer" }).getByRole("button", { name: "Cookie settings" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveCount(0);
       await day.click();
-      // The separate times view with a back arrow (BK-30).
+      // The separate times view (BK-30): back arrow, weekday title, full date, time zone picker, "Select a Time" and
+      // the duration line.
       await expect(page.getByRole("heading", { level: 1, name: "30 Minute Virtual" })).toBeHidden();
+      const header = page.getByTestId("phone-times-header");
+      await expect(header.getByRole("heading", { name: "Tuesday" })).toBeVisible();
+      await expect(header.getByText("October 8, 2030")).toBeVisible();
+      await expect(header.getByRole("button", { name: /Time zone/ })).toBeVisible();
+      await expect(header.getByText("Select a Time")).toBeVisible();
+      await expect(header.getByText("Duration: 30 min")).toBeVisible();
       const back = page.getByRole("button", { name: "Back to calendar" });
       await expect(back).toBeVisible();
       await back.click();
@@ -420,6 +433,8 @@ test.describe("booking flows", () => {
       await page.getByRole("button", { name: "Next", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Enter Details" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      // The button stays in the page flow (Calendly has no sticky bar on phones).
+      expect(await page.getByRole("button", { name: "Schedule Event" }).evaluate((el) => getComputedStyle(el.parentElement!).position)).toBe("static");
       await fillDetails(page);
       await axe(page);
       await page.getByRole("button", { name: "Schedule Event" }).click();

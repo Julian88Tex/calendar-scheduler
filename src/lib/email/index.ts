@@ -7,7 +7,8 @@
 // - renderEmailLayout / renderEmailText: the shared responsive layout and its text footer (layout.ts)
 // - composeEmail / renderEmail: Calendly-style content blocks rendered to HTML and text together (blocks.ts)
 // - buildIcs: invitations and cancellations in UTC (ical.ts); buildMeetingIcs applies the NT-06 rules from the schema
-// - meetingSender (NT-20 From name and Reply-To), emailBrandForUser (NT-05 header and footer) (meeting.ts)
+// - meetingSender (NT-20 From name and Reply-To), emailBrandForUser (NT-05 header and footer), meetingAllDayDate (the
+//   date of a meeting booked from a date-only poll option, which emails and the ICS show as all day) (meeting.ts)
 // - addToCalendarLinks: Google, Outlook.com, Office 365 and ICS links (BK-22, calendar-links.ts)
 // - renderMeetingEmail: Calendly-style confirmation, new event, cancellation, reschedule and reminder emails from a
 //   template context (meeting-templates.ts), for lifecycle-core, workflows and polls-core
@@ -42,6 +43,7 @@ export {
 export {
   EMAIL_PROVIDER_SETTING_KEY,
   GMAIL_SENDER_SETTING_KEY,
+  configuredTransport,
   describeEmailTransport,
   emailProviderFromEnv,
   getGmailSender,
@@ -93,6 +95,7 @@ export {
 export {
   buildMeetingIcs,
   emailBrandForUser,
+  meetingAllDayDate,
   meetingSender,
   type BuildMeetingIcsInput,
   type MeetingIcs,

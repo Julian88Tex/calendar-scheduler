@@ -4,9 +4,13 @@
 //
 // - calendar step: details panel, month calendar (a month of slots per request in the invitee zone, next month
 //   prefetched, jump to the first month with availability), the time zone dropdown with the "am/pm | 24h" toggle, and
-//   the times column that widens the card ([time][Next] split); phones get a separate times view with a back arrow
-// - details step: the URL becomes /{slug}/{eventSlug}/{ISO start} (pushState, Next integrates it), the back button and
-//   the browser back button return to the calendar with the same month and date
+//   the times column that widens the card ([time][Next] split); phones title the step "Select a Day" and get a separate
+//   times view (back arrow, the weekday and date, the time zone picker, "Select a Time" and "Duration: {d}")
+// - details step: the URL becomes /{slug}/{eventSlug}/{ISO start} (pushState, Next integrates it), the card keeps its
+//   widened size, and the back button (top-left of the details panel, like Calendly) and the browser back button
+//   return to the calendar with the same month and date
+// - footer: "Cookie settings" and "Privacy Policy" at the bottom of the details panel; phones show only "Cookie
+//   settings" at the bottom of the card (docs/research/calendly-live-capture.md items 6 and 20)
 // - URL state: ?month, &date, &duration and every other parameter (prefill, UTM, display, embed) persist (BK-08)
 // - owners: banner, in-page troubleshoot mode and a link to the availability module's Troubleshoot view (BK-24)
 // - editors: live preview of the unsaved draft with booking disabled (ET-29); embeds post calendly.* events (BK-25)
@@ -32,11 +36,12 @@ import { troubleshootHref } from "@/lib/availability/links";
 import { fallbackCookieHeaders } from "@/lib/client/embed-cookie";
 import { cn } from "@/lib/cn";
 import { postEmbedEvent, postPageHeight } from "@/lib/embed-events";
-import { formatMeetingWhen, formatTime, isoDateInZone } from "@/lib/time/format";
+import { formatDuration, formatMeetingWhen, formatTime, isoDateInZone } from "@/lib/time/format";
 import { currentLocalTime, friendlyZoneName } from "@/lib/time/zones";
 import { getViewerBusy } from "@/app/[handle]/[eventSlug]/actions";
-import { BRAND_BUTTON, DetailsForm } from "./details-form";
+import { DetailsForm } from "./details-form";
 import { EventDetailsPanel } from "./event-details-panel";
+import { BRAND_BUTTON } from "./form-parts";
 import {
   buildBookingBody,
   emptyValues,
@@ -48,6 +53,7 @@ import {
   type FormValues,
   type SubmitOutcome,
 } from "./lib/form";
+import { longDate, weekdayTitle } from "./lib/display";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
 import { bt } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
@@ -94,9 +100,10 @@ const MAX_MONTHS_AHEAD = 24;
 const EMBED_KEYS = ["embed_type", "embed_domain", "hide_gdpr_banner", "background_color", "text_color", "primary_color"];
 /**
  * On tall desktop screens the card is 700px high (BookingCard); the times list then runs down to the card's bottom
- * edge like Calendly's instead of stopping at the 450px default.
+ * edge like Calendly's (81px top padding, the 38px date row and 26px below it, 24px at the bottom) instead of stopping
+ * at the 450px default.
  */
-const SLOT_LIST_TALL = "min-[1000px]:[@media(min-height:860px)]:[&_ul]:max-h-[596px]";
+const SLOT_LIST_TALL = "min-[1000px]:[@media(min-height:860px)]:[&_ul]:max-h-[529px]";
 /** Only web pages: the server already refuses other schemes; this keeps a bad value from ever reaching location. */
 const WEB_URL = /^https?:\/\//i;
 
@@ -552,9 +559,16 @@ export function BookingFlow(p: BookingPageProps) {
     handleOutcome(outcome, v);
   };
 
-  // Rendering helpers.
-  const footer = (
-    <PublicFooterLinks operatorEmail={p.operatorEmail} showPrivacyPolicy={Boolean(p.privacyUrl)} privacyUrl={p.privacyUrl} />
+  // Rendering helpers. Like Calendly, the card footer has no "Report abuse" link: on this single-owner instance the
+  // operator mailbox is the host's own (docs/SCOPE.md, live capture item 6). Phones show only "Cookie settings"; that
+  // copy leaves the cookie-settings window event to the panel's copy so one event opens one dialog.
+  const footer = <PublicFooterLinks showPrivacyPolicy privacyUrl={p.privacyUrl} />;
+  const phoneFooter = (align: "center" | "start") => (
+    <PublicFooterLinks
+      showPrivacyPolicy={false}
+      listenForOpenEvent={false}
+      className={cn("px-4 pb-[21px]", align === "center" ? "justify-center pt-[76px]" : "justify-start pt-2")}
+    />
   );
   const lockedZoneName = event.lockedTimeZone ? friendlyZoneName(event.lockedTimeZone) : null;
   const end = start ? new Date(Date.parse(start) + duration * 60_000).toISOString() : null;
@@ -563,6 +577,8 @@ export function BookingFlow(p: BookingPageProps) {
     step === "calendar" && p.initial.back && p.landingPath
       ? { href: withCarried(p.landingPath, landingForwardParams(new URLSearchParams(p.carry))), label: bt("page.backToLanding") }
       : null;
+  // Details step: the back arrow sits at the top-left of the details panel on every screen size (live capture item 1).
+  const calendarBack = step === "details" ? { onClick: backToCalendar, label: bt("page.backToCalendar") } : null;
   const side = (
     <EventDetailsPanel
       event={event}
@@ -572,8 +588,10 @@ export function BookingFlow(p: BookingPageProps) {
       onDurationChange={step === "calendar" ? changeDuration : undefined}
       when={step === "details" && whenText ? { text: whenText, zoneName: friendlyZoneName(dataZone) } : null}
       lockedZoneName={lockedZoneName}
-      back={landingBack}
+      back={calendarBack ?? landingBack}
       footer={footer}
+      footerClassName="max-[599px]:hidden"
+      step={step}
       namePlaceholder={p.preview ? bt("preview.untitled") : undefined}
     />
   );
@@ -601,11 +619,14 @@ export function BookingFlow(p: BookingPageProps) {
     return (
       <div data-booking-flow="details">
         {banners}
-        <BookingCard side={side} ribbon={p.ribbon} embed={embed} hideSide={hideSide}>
-          <BookingMainSection>
-            <div className="mb-5">
-              <BackButton onClick={backToCalendar} label={bt("page.backToCalendar")} />
-            </div>
+        <BookingCard side={side} wide ribbon={p.ribbon} embed={embed} hideSide={hideSide} phoneFooter={phoneFooter("start")}>
+          <BookingMainSection className="pt-[25px] max-[599px]:px-[15px] min-[600px]:px-[30px]">
+            {hideSide && (
+              // Without the details panel the back arrow stays above the heading.
+              <div className="mb-5">
+                <BackButton onClick={backToCalendar} label={bt("page.backToCalendar")} />
+              </div>
+            )}
             <BookingPanelHeading as={hideSide ? "h1" : "h2"}>
               <span ref={detailsHeadingRef} tabIndex={-1} className="outline-none">
                 {bt("details.title")}
@@ -627,7 +648,7 @@ export function BookingFlow(p: BookingPageProps) {
                 </Button>
               </div>
             )}
-            <div className="mt-6">
+            <div className={redirecting || verification ? "mt-6" : hideSide && whenText ? "mt-5" : "mt-0.5"}>
               {redirecting ? (
                 <div role="status" className="flex flex-col items-start gap-3" data-testid="redirecting">
                   <p className="text-[18px] font-bold text-public-text">{bt("details.redirecting")}</p>
@@ -700,11 +721,37 @@ export function BookingFlow(p: BookingPageProps) {
     ? troubleshootHref({ eventTypeId: p.troubleshootEventTypeId, date: effectiveDate ?? todayDate, durationMinutes: duration !== event.defaultDuration ? duration : null })
     : null;
 
+  const zonePicker = (className?: string) =>
+    event.lockedTimeZone ? (
+      <div className={cn("flex flex-col items-start gap-1", className)} data-testid="locked-zone">
+        <span className="text-[14px] leading-5 font-bold text-ink">{bt("page.timeZone")}</span>
+        <LockedZone zone={event.lockedTimeZone} hour12={hour12} />
+      </div>
+    ) : zoneReady ? (
+      <TimeZoneButton value={zone} onChange={changeZone} hour12={hour12} onHour12Change={changeFormat} label={bt("page.timeZone")} className={className} />
+    ) : (
+      <div className={cn("flex flex-col gap-2", className)} aria-hidden="true">
+        <Skeleton width={80} height={14} />
+        <Skeleton width={260} height={20} />
+      </div>
+    );
+
   const times = effectiveDate ? (
     <div className="flex min-w-0 flex-col">
-      <div className="flex items-center gap-3 px-5 pt-5 min-[600px]:hidden">
-        <BackButton onClick={() => setPhoneView("main")} label={bt("page.backToCalendar")} />
-        <span className="min-w-0 truncate text-[16px] font-bold text-public-text">{event.name}</span>
+      {/* Phones: Calendly's times screen header (live capture item 20). */}
+      <div className="relative min-[600px]:hidden" data-testid="phone-times-header">
+        <div className="absolute top-[17px] left-[17px]">
+          <BackButton onClick={() => setPhoneView("main")} label={bt("page.backToCalendar")} />
+        </div>
+        <div className="border-b border-line px-[17px] pt-[23px] pb-6 text-center">
+          <h2 className="px-12 text-[22px] leading-7 font-bold text-public-text">{weekdayTitle(effectiveDate, LOCALE)}</h2>
+          <p className="mt-[5px] text-[14px] leading-5 text-public-text">{longDate(effectiveDate, LOCALE)}</p>
+          <div className="mt-3 flex justify-center">{zonePicker("max-w-full")}</div>
+        </div>
+        <div className="px-[17px] pt-4 text-center">
+          <p className="text-[21px] leading-7 font-bold text-public-text">{bt("page.selectTimeHeading")}</p>
+          <p className="mt-3.5 text-[14px] leading-5 text-public-text">{bt("page.durationLine", { duration: formatDuration(duration) })}</p>
+        </div>
       </div>
       {troubleshoot ? (
         <TroubleshootList
@@ -725,13 +772,14 @@ export function BookingFlow(p: BookingPageProps) {
           onNext={goDetails}
           loading={!data}
           stickyHeader
-          className={SLOT_LIST_TALL}
+          dateLabelClassName="max-[599px]:hidden"
+          className={cn(SLOT_LIST_TALL, "max-[599px]:pt-[21px]")}
           emptyText={bt("page.noTimes")}
           aria-label={bt("page.selectTime")}
         />
       )}
       {previewNotice && (
-        <p role="status" className="px-5 pb-5 text-[13px] text-ink-2 min-[1000px]:pr-6 min-[1000px]:pl-0">
+        <p role="status" className="px-5 pb-5 text-[13px] text-ink-2 min-[1000px]:pr-[18px] min-[1000px]:pl-2.5">
           {bt("page.previewDisabled")}
         </p>
       )}
@@ -741,9 +789,22 @@ export function BookingFlow(p: BookingPageProps) {
   return (
     <div data-booking-flow="calendar">
       {banners}
-      <BookingCard side={side} times={times} expanded={Boolean(effectiveDate)} mobileView={effectiveDate ? phoneView : "main"} ribbon={p.ribbon} embed={embed} hideSide={hideSide}>
-        <BookingMainSection className="pb-[32px]">
-          <BookingPanelHeading as={hideSide ? "h1" : "h2"}>{bt("page.selectDateTime")}</BookingPanelHeading>
+      <BookingCard
+        side={side}
+        times={times}
+        expanded={Boolean(effectiveDate)}
+        mobileView={effectiveDate ? phoneView : "main"}
+        ribbon={p.ribbon}
+        embed={embed}
+        hideSide={hideSide}
+        phoneFooter={phoneFooter("center")}
+      >
+        <BookingMainSection className="pb-[30px] max-[599px]:pt-[27px] max-[599px]:pb-5">
+          <BookingPanelHeading as={hideSide ? "h1" : "h2"} className="max-[599px]:text-center">
+            {/* Phones title the step "Select a Day" (the times come on their own screen). */}
+            <span className="max-[599px]:hidden">{bt("page.selectDateTime")}</span>
+            <span className="min-[600px]:hidden">{bt("page.selectDay")}</span>
+          </BookingPanelHeading>
           {slotTaken && (
             <p role="alert" className="mt-4 rounded-[var(--radius-card)] border border-danger-soft bg-danger-soft px-4 py-3 text-[14px] font-semibold text-danger-text">
               {bt("slotTaken.title")} <span className="font-normal">{bt("slotTaken.body")}</span>
@@ -767,7 +828,7 @@ export function BookingFlow(p: BookingPageProps) {
             </div>
           )}
         </BookingMainSection>
-        <div className="relative px-3 min-[600px]:px-5">
+        <div className="relative mx-auto w-full max-w-[316px] min-[600px]:max-w-none min-[600px]:px-5">
           <MonthCalendar
             month={month}
             onMonthChange={changeMonth}
@@ -802,20 +863,8 @@ export function BookingFlow(p: BookingPageProps) {
             </div>
           )}
         </div>
-        <BookingMainSection className="pt-[29px]">
-          {event.lockedTimeZone ? (
-            <div className="flex flex-col items-start gap-1" data-testid="locked-zone">
-              <span className="text-[14px] leading-5 font-bold text-ink">{bt("page.timeZone")}</span>
-              <LockedZone zone={event.lockedTimeZone} hour12={hour12} />
-            </div>
-          ) : zoneReady ? (
-            <TimeZoneButton value={zone} onChange={changeZone} hour12={hour12} onHour12Change={changeFormat} label={bt("page.timeZone")} />
-          ) : (
-            <div className="flex flex-col gap-2" aria-hidden="true">
-              <Skeleton width={80} height={14} />
-              <Skeleton width={260} height={20} />
-            </div>
-          )}
+        <BookingMainSection className="pt-[29px] max-[599px]:px-[35px] max-[599px]:pt-5">
+          {zonePicker()}
           {troubleshootDayUrl && (
             <a href={troubleshootDayUrl} className="mt-4 inline-block text-[14px] font-semibold text-brand-strong hover:underline" data-testid="troubleshoot-link">
               {bt("page.troubleshoot")}

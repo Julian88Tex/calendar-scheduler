@@ -13,7 +13,7 @@ export function HostHeaderView({ header, compact, className }: { header: HostHea
     return (
       <div className={cn("flex flex-col max-[999px]:items-center", className)} data-testid="host-header">
         <Avatar src={src} name={name} alt="" size={size} />
-        <BookingHostName className="mt-1.5">{name}</BookingHostName>
+        <BookingHostName className="mt-2">{name}</BookingHostName>
       </div>
     );
   }
@@ -36,7 +36,7 @@ export function HostHeaderView({ header, compact, className }: { header: HostHea
           </span>
         )}
       </span>
-      {header.label && <BookingHostName className="mt-1.5">{header.label}</BookingHostName>}
+      {header.label && <BookingHostName className="mt-2">{header.label}</BookingHostName>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // BK-23 state cards (SPEC BK-23, ET-09, OO-04): unknown pages ("This page isn't available"), event types turned off,
-// single-use links already used and expired links. Rendered inside PublicPageShell with the host's branding. Server and
-// client safe.
+// single-use links already used and expired links. Rendered inside PublicPageShell with the host's branding; the footer
+// has "Cookie settings" and "Privacy Policy" like the booking card. Server and client safe.
 import Link from "next/link";
 import { PublicCard } from "@/components/public/public-card";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
@@ -23,12 +23,11 @@ export type StateCardProps = {
   hostName?: string | null;
   ribbon?: boolean;
   embed?: boolean;
-  operatorEmail?: string | null;
   privacyUrl?: string | null;
   className?: string;
 };
 
-export function StateCard({ kind, hostName, ribbon = true, embed, operatorEmail, privacyUrl, className }: StateCardProps) {
+export function StateCard({ kind, hostName, ribbon = true, embed, privacyUrl, className }: StateCardProps) {
   const copy = COPY[kind];
   return (
     <PublicCard width="narrow" ribbon={ribbon} embed={embed} className={cn("min-[600px]:min-h-[360px]", className)}>
@@ -44,7 +43,7 @@ export function StateCard({ kind, hostName, ribbon = true, embed, operatorEmail,
         )}
       </div>
       <div className="flex justify-center px-6 pb-6">
-        <PublicFooterLinks operatorEmail={operatorEmail} showPrivacyPolicy={Boolean(privacyUrl)} privacyUrl={privacyUrl} />
+        <PublicFooterLinks showPrivacyPolicy privacyUrl={privacyUrl} />
       </div>
     </PublicCard>
   );

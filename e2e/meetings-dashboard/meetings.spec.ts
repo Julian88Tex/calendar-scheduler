@@ -109,6 +109,20 @@ test.describe("meetings page", () => {
     await page.getByRole("button", { name: "Next week" }).click();
     await expect(page).toHaveURL(/start=2030-10-13&end=2030-10-19/);
     await expect(page.getByTestId("meetings-counter")).toHaveText("Displaying 1 - 2 of 2 Events", SLOW);
+
+    // Leaving the tab through the browser history while its calendar is open closes it: coming back with Forward
+    // shows the range without popping the calendar open again.
+    await page.getByTestId("meetings-tab-past").click();
+    await expect(page.getByRole("heading", { name: "No Past Events" })).toBeVisible(SLOW);
+    await page.getByTestId("meetings-tab-range").click();
+    await expect(presets).toBeVisible(SLOW);
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "No Past Events" })).toBeVisible(SLOW);
+    await expect(page.getByTestId("meetings-range")).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByTestId("meetings-range")).toBeVisible(SLOW);
+    await expect(page.getByTestId("meetings-counter")).toHaveText("Displaying 1 - 3 of 3 Events", SLOW);
+    await expect(presets).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 

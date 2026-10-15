@@ -165,7 +165,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
         )}
       </div>
       <div className="flex flex-col items-center gap-3 border-t border-line px-6 py-5">
-        <PublicFooterLinks operatorEmail={v.operatorEmail} showPrivacyPolicy={Boolean(v.privacyUrl)} privacyUrl={v.privacyUrl} />
+        <PublicFooterLinks showPrivacyPolicy privacyUrl={v.privacyUrl} />
         {v.ribbon && <p className="text-[12px] text-ink-2">{bt("confirmation.poweredBy", { appName: v.appName })}</p>}
       </div>
     </PublicCard>

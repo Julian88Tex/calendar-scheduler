@@ -1,8 +1,10 @@
 // OWNER: foundation-ui.
 //
-// TimeSlotList (SPEC BK-06, walkthrough 11.3): the times column. A date subtitle ("Wednesday, October 14", 16px,
-// 38px tall, sticky on tablet) and a scrollable list of 52px time buttons (1px --primary-color border, bold
-// #004EBA-derived text, 4px radius, 10px gaps; hover and focus 2px border). Choosing a time splits it: the selected
+// TimeSlotList (SPEC BK-06, walkthrough 11.3, docs/research/calendly-live-capture.md item 4): the times column. A date
+// subtitle ("Wednesday, October 14", 15px, 38px tall, sticky on tablet) and a scrollable list of 52px time buttons (1px
+// --primary-color border, bold #004EBA-derived text, 4px radius, 10px gaps; hover and focus 2px border). On desktop the
+// column lines up with the calendar like Calendly's: the subtitle sits on the month navigation row and the first time
+// on the weekday row, with the buttons inset 10px from the subtitle and 18px from the card edge. Choosing a time splits it: the selected
 // time on rgba(10,37,64,0.5) with white text (48.5%) and the blue "Next" button (48.5%, 3% gap, slide-in from
 // translateX(40px)). Choosing another time moves the split. Keyboard: Tab to a time, Enter selects it and focuses
 // "Next" (focus also moves there after a click, since the clicked button is replaced); Enter on "Next" continues. Group events can show "{n} spots left" under the time.
@@ -44,6 +46,8 @@ export type TimeSlotListProps = {
   className?: string;
   /** Keep the date subtitle visible while the list scrolls (tablet). */
   stickyHeader?: boolean;
+  /** Classes for the date subtitle (for example hiding it where the page shows the date elsewhere). */
+  dateLabelClassName?: string;
   /** Maximum list height on desktop in px (default 450). */
   maxHeight?: number;
 };
@@ -60,6 +64,7 @@ export function TimeSlotList({
   emptyText = "No times available",
   className,
   stickyHeader,
+  dateLabelClassName,
   maxHeight = 450,
   ...aria
 }: TimeSlotListProps) {
@@ -75,12 +80,13 @@ export function TimeSlotList({
   }, [selected]);
 
   return (
-    <div className={cn("flex min-w-0 flex-col pt-7 pb-6 min-[1000px]:pr-6 max-[999px]:px-5 min-[600px]:max-[999px]:px-8", className)}>
+    <div className={cn("flex min-w-0 flex-col pt-7 pb-6 max-[599px]:px-[17px] min-[600px]:max-[999px]:px-8 min-[1000px]:pt-[81px] min-[1000px]:pr-[18px]", className)}>
       {dateLabel && (
         <h3
           className={cn(
-            "mb-2 flex h-[38px] shrink-0 items-center text-[16px] leading-6 font-normal text-public-text",
-            stickyHeader && "sticky top-0 z-10 bg-public-bg max-[999px]:shadow-[0_6px_6px_-6px_rgba(10,37,64,0.15)]",
+            "mb-2 flex h-[38px] shrink-0 items-center text-[15px] leading-6 font-normal text-public-text min-[1000px]:mb-[26px]",
+            stickyHeader && "sticky top-0 z-10 bg-public-bg",
+            dateLabelClassName,
           )}
         >
           {dateLabel}
@@ -95,7 +101,7 @@ export function TimeSlotList({
       ) : (
         <ul
           aria-label={aria["aria-label"] ?? "Select a time"}
-          className="scrollbar-thin -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:max-h-[var(--slot-list-max)]"
+          className="scrollbar-thin -mx-0.5 flex min-w-0 flex-col gap-2.5 overflow-y-auto px-0.5 py-0.5 min-[1000px]:ml-2 min-[1000px]:max-h-[var(--slot-list-max)]"
           style={{ ["--slot-list-max" as string]: `${maxHeight}px` }}
         >
           {slots.map((slot) => {
@@ -157,7 +163,7 @@ export function TimeSlotList({
                     "disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3 disabled:hover:shadow-none",
                   )}
                 >
-                  <span className="text-[16px] leading-5 font-bold tabular-nums">{slot.label}</span>
+                  <span className="text-[16px] leading-5 font-bold">{slot.label}</span>
                   {slot.detail && <span className="text-[12px] leading-4 font-semibold text-ink-2">{slot.detail}</span>}
                 </button>
               </li>

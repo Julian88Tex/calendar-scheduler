@@ -86,6 +86,7 @@ describe("Troubleshoot end to end", () => {
     expect(views.get("8:00am")?.reasons[0]).toBe('Outside your working hours (schedule "Working hours").');
     // 4 hours of notice at 7:59am: starts before 11:59am are too soon.
     expect(views.get("11:45am")?.status).toBe("TOOSOON");
+    expect(views.get("11:45am")?.chip).toBe("TOO SOON");
     expect(views.get("11:45am")?.reasons).toContain("Too soon: invitees must schedule at least 4 hours in advance.");
     expect(views.get("12:00pm")?.status).toBe("available");
     // Dentist 1:00pm to 2:00pm on the calendar, 15/15 buffers.

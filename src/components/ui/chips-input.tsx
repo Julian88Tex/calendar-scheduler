@@ -27,9 +27,11 @@ export type ChipsInputProps = {
   size?: "md" | "lg";
   /** Lowercases values before validation (emails). Default false. */
   lowercase?: boolean;
+  /** Classes for the bordered field box (the booking form's taller, top-aligned guests field). */
+  boxClassName?: string;
 };
 
-export function ChipsInput({ value, onChange, validate, placeholder, max, disabled, invalid, id, className, size = "md", lowercase, ...aria }: ChipsInputProps) {
+export function ChipsInput({ value, onChange, validate, placeholder, max, disabled, invalid, id, className, size = "md", lowercase, boxClassName, ...aria }: ChipsInputProps) {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const errorId = `${base}-error`;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,9 +57,10 @@ export function ChipsInput({ value, onChange, validate, placeholder, max, disabl
         className={cn(
           "flex w-full min-w-0 cursor-text flex-wrap items-center gap-1.5 rounded-[var(--radius-input)] border border-line bg-white px-2 py-1.5 transition-colors",
           "hover:border-ink-2 focus-within:border-primary focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-focus",
+          size === "lg" ? "min-h-[46px]" : "min-h-10",
+          boxClassName,
           (invalid || error) && "border-danger hover:border-danger",
           disabled && "cursor-not-allowed bg-pebble",
-          size === "lg" ? "min-h-[46px]" : "min-h-10",
         )}
       >
         <ul className="contents" aria-label="Added values">

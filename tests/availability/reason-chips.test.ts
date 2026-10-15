@@ -22,7 +22,8 @@ vi.mock("@/lib/polls", () => ({ getPollReservedIntervals: async () => ({}), mark
 vi.mock("@/lib/events/registry", () => ({ subscriberKeysFor: () => [], SUBSCRIBER_KEYS: [] }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }), usePathname: () => "/app/availability" }));
 
-const { REASON_CODES } = await import("@/lib/slots");
+const { REASON_CODES, reasonLabel } = await import("@/lib/slots");
+const { chipLabel } = await import("@/lib/availability/troubleshoot-view");
 const { REASON_CHIP_LABELS, ReasonChip, reasonChipLabel } = await import("@/components/availability/reason-chip");
 const { setFakeNow, resetFakeTime } = await import("@/lib/time/now");
 const { getTroubleshootDay } = await import("@/lib/availability/troubleshoot");
@@ -64,6 +65,14 @@ describe("reason chip labels", () => {
     expect(reasonChipLabel("BUFFER")).toBe("BUFFER");
     // A code added later still reads with spaces.
     expect(reasonChipLabel("NEW_CODE")).toBe("NEW CODE");
+  });
+
+  it("match the slot engine's labels and the Troubleshoot view's chips (also on the booking page host Troubleshoot list)", () => {
+    for (const code of REASON_CODES) {
+      expect(reasonLabel(code), code).toBe(REASON_CHIP_LABELS[code]);
+      expect(chipLabel(code), code).toBe(REASON_CHIP_LABELS[code]);
+    }
+    expect([reasonLabel("TOOSOON"), reasonLabel("NOCAL"), reasonLabel("ROUNDROBIN")]).toEqual(["TOO SOON", "NO CALENDAR", "ROUND ROBIN"]);
   });
 
   it("renders the dashed chip in both tones", () => {

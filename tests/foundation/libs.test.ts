@@ -6,10 +6,10 @@ import { users } from "@/db/schema";
 import { APP_NAME, appName, toAppNameSlug } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { embedDisplayParams, isEmbedRequest, postEmbedEvent } from "@/lib/embed-events";
-import { adminEmails, env, features, getFeatures, isVercel, microsoftTenant, parseEnv } from "@/lib/env";
+import { adminEmails, env, features, getFeatures, isVercel, microsoftTenant, parseEnv, SETUP_TOKEN_MIN_LENGTH } from "@/lib/env";
 import { autolink, escapeHtml, plainToHtml, richTextToPlain, sanitizeRichText } from "@/lib/html";
 import { CODE_ALPHABET, isUuid, jitsiRoom, newId, pollSlug, randomString, routingSlug, shortCode } from "@/lib/ids";
-import { INTEGRATIONS, filterIntegrations, integrationStatus } from "@/lib/integrations/catalog";
+import { INTEGRATIONS, emailTransportLabel, filterIntegrations, integrationStatus } from "@/lib/integrations/catalog";
 import { log, redactValue } from "@/lib/logger";
 import { decodeCursor, encodeCursor, keysetAfter, paginate, type Page } from "@/lib/pagination";
 import { listTemplateVariables, renderTemplate, templateVariablesIn } from "@/lib/template";
@@ -65,6 +65,20 @@ describe("env", () => {
     expect(parsed.MIGRATE_ON_PREVIEW).toBe(true);
     expect("GOOGLE_CLIENT_ID" in parsed).toBe(false);
     expect(warn).toHaveBeenCalled();
+  });
+
+  it("parses the owner bootstrap and email provider variables", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const token = "t".repeat(SETUP_TOKEN_MIN_LENGTH);
+    expect(parseEnv({ SETUP_TOKEN: ` ${token} `, OWNER_EMAIL: " Owner@Example.COM ", EMAIL_PROVIDER: " Gmail " })).toMatchObject({
+      SETUP_TOKEN: token,
+      OWNER_EMAIL: "owner@example.com",
+      EMAIL_PROVIDER: "gmail",
+    });
+    const invalid = parseEnv({ SETUP_TOKEN: token.slice(1), OWNER_EMAIL: "not-an-email", EMAIL_PROVIDER: "carrier-pigeon" });
+    expect([invalid.SETUP_TOKEN, invalid.OWNER_EMAIL, invalid.EMAIL_PROVIDER]).toEqual([undefined, undefined, undefined]);
+    for (const p of ["gmail", "resend", "smtp", "outbox"]) expect(parseEnv({ EMAIL_PROVIDER: p.toUpperCase() }).EMAIL_PROVIDER).toBe(p);
+    expect(SETUP_TOKEN_MIN_LENGTH).toBe(24);
   });
 
   it("derives features live from process.env", () => {
@@ -342,7 +356,15 @@ describe("integrations catalog (CAL-21)", () => {
     expect(integrationStatus(zoom, { ...flags, zoom: true })).toBe("available");
     expect(integrationStatus(zoom, { ...flags, zoom: true }, new Set(["zoom"]))).toBe("connected");
     expect(integrationStatus(INTEGRATIONS.find((t) => t.id === "jitsi")!, flags)).toBe("available");
-    expect(filterIntegrations("gmail").map((t) => t.id)).toEqual(["google-calendar"]);
+    expect(filterIntegrations("gmail").map((t) => t.id)).toEqual(["google-calendar", "email"]);
     expect(filterIntegrations("", "payments").map((t) => t.id)).toEqual(["stripe"]);
+  });
+
+  it("the Email delivery tile is connected whenever something but the outbox sends, Gmail included", () => {
+    const tile = INTEGRATIONS.find((t) => t.id === "email")!;
+    expect(integrationStatus(tile, flags)).toBe("available");
+    for (const email of ["gmail", "resend", "smtp"] as const) expect(integrationStatus(tile, { ...flags, email }), email).toBe("connected");
+    expect(emailTransportLabel("gmail")).toBe("Sending from the owner's Gmail");
+    expect(emailTransportLabel("outbox")).toBe("Stored in the outbox (no email provider configured)");
   });
 });

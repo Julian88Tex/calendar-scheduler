@@ -117,20 +117,35 @@ export type MeetingIcs = {
 /**
  * The local date ("YYYY-MM-DD") of a meeting poll booked from a date-only option (MP-18: an all-day meeting), else
  * null. The meeting must still span exactly that day of the poll zone (local midnight to the next one, 23 to 25 hours
- * across daylight saving changes), so a meeting moved in place to a timed option keeps its times.
+ * across daylight saving changes), so a meeting moved in place to a timed option keeps its times. While the meeting is
+ * the poll's booking, the booked option decides: a timed option covering the same whole day stays a timed meeting.
  */
 export async function meetingAllDayDate(
-  event: Pick<typeof scheduledEvents.$inferSelect, "source" | "pollId" | "startAt" | "endAt">,
+  event: Pick<typeof scheduledEvents.$inferSelect, "id" | "source" | "pollId" | "startAt" | "endAt">,
   db?: DbOrTx,
 ): Promise<string | null> {
   if (event.source !== "poll" || !event.pollId) return null;
   const d = db ?? (await getDb());
-  const [poll] = await d.select({ timezone: meetingPolls.timezone }).from(meetingPolls).where(eq(meetingPolls.id, event.pollId)).limit(1);
+  const [poll] = await d
+    .select({ timezone: meetingPolls.timezone, bookedOptionId: meetingPolls.bookedOptionId, bookedScheduledEventId: meetingPolls.bookedScheduledEventId })
+    .from(meetingPolls)
+    .where(eq(meetingPolls.id, event.pollId))
+    .limit(1);
   if (!poll || !isValidZone(poll.timezone)) return null;
   const date = localDateOf(event.startAt, poll.timezone);
   const dayStart = startOfLocalDay(date, poll.timezone).getTime();
   const dayEnd = startOfLocalDay(addDays(date, 1), poll.timezone).getTime();
   if (event.startAt.getTime() !== dayStart || event.endAt.getTime() !== dayEnd) return null;
+  if (poll.bookedOptionId && poll.bookedScheduledEventId === event.id) {
+    const [booked] = await d
+      .select({ allDayDate: meetingPollOptions.allDayDate, startsAt: meetingPollOptions.startsAt, endsAt: meetingPollOptions.endsAt })
+      .from(meetingPollOptions)
+      .where(and(eq(meetingPollOptions.id, poll.bookedOptionId), eq(meetingPollOptions.pollId, event.pollId)))
+      .limit(1);
+    if (booked?.allDayDate === date) return date;
+    if (booked && !booked.allDayDate && booked.startsAt?.getTime() === dayStart && booked.endsAt?.getTime() === dayEnd) return null;
+    // Otherwise the meeting is not at its booked option's time yet (a rebook moving it): any date-only option decides.
+  }
   const [option] = await d
     .select({ id: meetingPollOptions.id })
     .from(meetingPollOptions)

@@ -20,7 +20,7 @@ import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { calendarConnections, instanceSettings, users } from "@/db/schema";
 import { hasGmailSendScope } from "@/lib/integrations/google/scopes";
-import { getEnv } from "../env";
+import { getEnv, type EmailProvider } from "../env";
 import { log } from "../logger";
 import { now } from "../time/now";
 import { sanitizeHeaderValue } from "./address";
@@ -31,10 +31,9 @@ export const EMAIL_PROVIDER_SETTING_KEY = "email_provider";
 /** instance_settings key: the Google connection the owner picked to send from (when several granted gmail.send). */
 export const GMAIL_SENDER_SETTING_KEY = "gmail_sender_connection";
 
-export type EmailProviderChoice = "gmail" | "resend" | "smtp" | "outbox";
+export type EmailProviderChoice = EmailProvider;
 export type GmailSendingSetting = "auto" | "outbox";
 
-const CHOICES: readonly EmailProviderChoice[] = ["gmail", "resend", "smtp", "outbox"];
 const warned = new Set<string>();
 
 function warnOnce(event: string, message: string): void {
@@ -44,14 +43,15 @@ function warnOnce(event: string, message: string): void {
 }
 
 /**
- * EMAIL_PROVIDER, or null when unset or invalid (an invalid value logs one warning). Read from process.env directly:
- * src/lib/env.ts does not list it yet.
+ * EMAIL_PROVIDER (src/lib/env.ts, case-insensitive), or null when unset or invalid. An invalid value reads as unset
+ * there; it also logs one warning here, since it is ignored.
  */
 export function emailProviderFromEnv(): EmailProviderChoice | null {
-  const raw = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
-  if (!raw) return null;
-  if ((CHOICES as readonly string[]).includes(raw)) return raw as EmailProviderChoice;
-  warnOnce("email.invalid_email_provider", "EMAIL_PROVIDER must be gmail, resend, smtp or outbox; ignoring it.");
+  const forced = getEnv().EMAIL_PROVIDER;
+  if (forced) return forced;
+  if (process.env.EMAIL_PROVIDER?.trim()) {
+    warnOnce("email.invalid_email_provider", "EMAIL_PROVIDER must be gmail, resend, smtp or outbox; ignoring it.");
+  }
   return null;
 }
 

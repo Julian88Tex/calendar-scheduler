@@ -12,6 +12,8 @@ const messages = {
   },
   page: {
     selectDateTime: "Select a Date & Time",
+    /** Phones title the calendar step "Select a Day" (live capture item 20). */
+    selectDay: "Select a Day",
     noTimes: "No times available",
     noTimesInMonth: "No times available in {month}",
     viewNextMonth: "View next month",
@@ -21,6 +23,9 @@ const messages = {
     backToCalendar: "Back to calendar",
     timeZone: "Time zone",
     selectTime: "Select a time",
+    /** The visible heading of the phone times view (the list keeps the "Select a time" accessible name). */
+    selectTimeHeading: "Select a Time",
+    durationLine: "Duration: {duration}",
     loadingTimes: "Loading times",
     loadError: "We couldn't load the available times. Check your connection and try again.",
     retry: "Try again",
@@ -68,8 +73,8 @@ const messages = {
     firstName: "First Name",
     lastName: "Last Name",
     email: "Email",
-    addGuests: "Add Guests",
-    guestEmails: "Guest Email(s)",
+    addGuests: "Add guests",
+    guestEmails: "Guest email(s)",
     guestsHint: "Notify up to 10 additional guests of the scheduled event.",
     guestsPlaceholder: "Enter email addresses",
     schedule: "Schedule Event",
@@ -79,7 +84,10 @@ const messages = {
     otherPlaceholder: "Please specify",
     marketing: "I'd like to subscribe to future emails.",
     terms: "By proceeding, you confirm that you have read and agree to {appName}'s {terms} and {privacy}.",
-    termsOfUse: "Terms of Use",
+    termsOfUse: "Participant Terms",
+    /** The booking form's terms line: the possessive brand belongs to the first link, as on Calendly. */
+    termsNotice: "By proceeding, you confirm that you have read and agree to {terms} and {privacy}.",
+    termsLink: "{appName}'s Participant Terms",
     privacyNotice: "Privacy Notice",
     notYou: "Not you?",
     autofilled: "Welcome back, {name}.",

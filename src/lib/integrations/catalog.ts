@@ -37,7 +37,11 @@ export type IntegrationFeatureFlags = {
   zoom: boolean;
   stripe: boolean;
   sms: boolean;
-  email: "resend" | "smtp" | "outbox";
+  /**
+   * The email transport that delivers (src/lib/email resolveEmailTransport: EMAIL_PROVIDER, Resend, SMTP, the owner's
+   * Gmail, else the outbox). The Email delivery tile is connected unless it is the outbox.
+   */
+  email: "resend" | "smtp" | "gmail" | "outbox";
 };
 
 export type IntegrationTile = {
@@ -164,7 +168,7 @@ export const INTEGRATIONS: readonly IntegrationTile[] = [
     category: "messaging",
     logo: "email",
     href: null,
-    keywords: ["resend", "smtp", "outbox"],
+    keywords: ["gmail", "resend", "smtp", "outbox"],
   },
   {
     id: "webhooks",
@@ -247,7 +251,19 @@ export function filterIntegrations(query: string, category: IntegrationCategory 
   });
 }
 
-/** Human description of the email transport (Email delivery tile). */
+/**
+ * Short description of an email transport for the Email delivery tile when the full one (describeEmailTransport in
+ * src/lib/email, with the Gmail address) cannot be computed.
+ */
 export function emailTransportLabel(transport: IntegrationFeatureFlags["email"]): string {
-  return transport === "resend" ? "Sending with Resend" : transport === "smtp" ? "Sending with SMTP" : "Stored in the outbox (no email provider configured)";
+  switch (transport) {
+    case "resend":
+      return "Sending with Resend";
+    case "smtp":
+      return "Sending with SMTP";
+    case "gmail":
+      return "Sending from the owner's Gmail";
+    case "outbox":
+      return "Stored in the outbox (no email provider configured)";
+  }
 }

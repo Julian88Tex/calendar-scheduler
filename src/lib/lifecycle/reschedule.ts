@@ -37,12 +37,17 @@ const fail = (code: Failure["code"], message: string): Failure => ({ ok: false, 
 
 export const requestReminderGroup = (inviteeId: string) => `lifecycle:rr:${inviteeId}`;
 
-/** A poll meeting moved past MAX_POLL_DURATION_MINUTES (poll options last at most a day). */
-const POLL_MOVE_TOO_LONG = "A meeting poll time can last at most one day.";
-
-/** The longest a meeting of this source may last after an in-place move: poll meetings may fill a whole day. */
+/**
+ * The longest a meeting of this source may last after a move (in place, or from the connected calendar): poll meetings
+ * may fill a whole day (MAX_POLL_DURATION_MINUTES), others last at most MAX_DURATION_MINUTES.
+ */
 export function maxMoveMinutes(source: (typeof scheduledEvents.$inferSelect)["source"]): number {
   return source === "poll" ? MAX_POLL_DURATION_MINUTES : MAX_DURATION_MINUTES;
+}
+
+/** The error of a move longer than maxMoveMinutes(source). */
+export function moveTooLongMessage(source: (typeof scheduledEvents.$inferSelect)["source"]): string {
+  return source === "poll" ? messages.errors.pollMoveTooLong : messages.errors.moveTooLong;
 }
 
 /** Whether the event type still offers a meeting's duration (its default or one of its duration options). */
@@ -239,7 +244,7 @@ export async function moveScheduledEvent(p: { scheduledEventId: string; start: D
     .limit(1);
   if (!m0) throw new AppError("not_found", messages.errors.notFound);
   await assertCanManageMeeting(db, p.actor, m0.id);
-  if (minutes > maxMoveMinutes(m0.source)) throw new AppError("validation", m0.source === "poll" ? POLL_MOVE_TOO_LONG : messages.errors.moveTooLong);
+  if (minutes > maxMoveMinutes(m0.source)) throw new AppError("validation", moveTooLongMessage(m0.source));
   const hostIds = await meetingHostIds(db, [m0.id]);
   const at = now();
   try {

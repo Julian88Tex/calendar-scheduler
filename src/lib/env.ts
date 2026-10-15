@@ -26,6 +26,23 @@ const list = z
       .filter(Boolean),
   );
 const emailList = list.transform((items) => items.map((s) => s.toLowerCase()));
+/** One email address, lowercased (the same rules as zEmail and normalizeEmail in src/lib/validation.ts). */
+const email = z
+  .string()
+  .trim()
+  .max(254, "Email address is too long")
+  .pipe(z.email("expected an email address"))
+  .transform((v) => v.toLowerCase());
+
+/**
+ * Shortest SETUP_TOKEN the owner bootstrap accepts (src/lib/setup/config.ts applies the same minimum to CRON_SECRET
+ * there): the token authorizes claiming a fresh instance, so a secret anyone could guess must not.
+ */
+export const SETUP_TOKEN_MIN_LENGTH = 24;
+
+/** EMAIL_PROVIDER values (src/lib/email/gmail-sender.ts). */
+export const EMAIL_PROVIDERS = ["gmail", "resend", "smtp", "outbox"] as const;
+export type EmailProvider = (typeof EMAIL_PROVIDERS)[number];
 
 const SCHEMA = {
   DATABASE_URL: str,
@@ -39,6 +56,13 @@ const SCHEMA = {
   SESSION_SECRET: str,
   ENCRYPTION_KEY: str,
   CRON_SECRET: str,
+  // Owner bootstrap (docs/DEPLOY.md, src/lib/setup/config.ts). SETUP_TOKEN: the bearer secret that authorizes
+  // POST /api/setup/bootstrap ("Authorization: Bearer <SETUP_TOKEN>"); shorter than SETUP_TOKEN_MIN_LENGTH counts as
+  // unset. OWNER_EMAIL: the only email the bootstrap accepts, and the only one that becomes instance admin by signing
+  // up first (src/lib/auth/policy.ts). A set but malformed OWNER_EMAIL reads as unset here; src/lib/setup/config.ts
+  // then disables the bootstrap and the first-account exception instead of accepting any email.
+  SETUP_TOKEN: z.string().trim().min(SETUP_TOKEN_MIN_LENGTH, `must be at least ${SETUP_TOKEN_MIN_LENGTH} characters`),
+  OWNER_EMAIL: email,
   ADMIN_EMAILS: emailList,
   SIGNUP_POLICY: z.enum(["invite_only", "open", "domains"]),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]),
@@ -50,6 +74,9 @@ const SCHEMA = {
   ZOOM_CLIENT_ID: str,
   ZOOM_CLIENT_SECRET: str,
   JITSI_BASE_URL: url,
+  // Forces one email transport (src/lib/email/gmail-sender.ts): gmail (the owner's Gmail even when Resend or SMTP is
+  // configured), resend or smtp (ignored without their variables), outbox (store, never send). Case-insensitive.
+  EMAIL_PROVIDER: z.string().trim().toLowerCase().pipe(z.enum(EMAIL_PROVIDERS, "expected gmail, resend, smtp or outbox")),
   RESEND_API_KEY: str,
   SMTP_HOST: str,
   SMTP_PORT: intIn(1, 65535),
@@ -166,7 +193,11 @@ export type Features = {
   googleOAuth: boolean;
   microsoftOAuth: boolean;
   zoom: boolean;
-  /** Which email transport sends: Resend, SMTP, or the database outbox (GEN-15). */
+  /**
+   * The email transport the provider variables configure: Resend, SMTP, or none (the database outbox, GEN-15). Not
+   * what actually sends: EMAIL_PROVIDER and the owner's Gmail need the database, see resolveEmailTransport() in
+   * src/lib/email.
+   */
   email: EmailTransport;
   sms: boolean;
   stripe: boolean;

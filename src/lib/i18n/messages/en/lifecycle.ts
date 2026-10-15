@@ -99,6 +99,7 @@ const messages = {
     reassignNotRoundRobin: "Only round robin meetings can be reassigned to another host.",
     moveInvalid: "The end time must be after the start time.",
     moveTooLong: "A meeting can last at most 12 hours.",
+    pollMoveTooLong: "A meeting poll time can last at most one day.",
     overrideMultiHost: "Override available times works for events with a single host only.",
     retryNotNeeded: "This meeting doesn't need to be provisioned again.",
     requestPast: "You can only ask for a new time before the meeting starts.",

@@ -108,6 +108,7 @@ export function GoogleCalendarIntegration({ view, appName, isAdmin }: GoogleCale
           <ul className="mt-3 flex list-disc flex-col gap-2 pl-5 text-body-md text-ink-2">
             <li>See your calendars and the events on them, to find busy times.</li>
             <li>Create, change and delete the events you schedule here.</li>
+            <li>Send booking emails from your Gmail address (send only: it can&apos;t read your mail).</li>
           </ul>
           <p className="mt-3 text-body-sm text-ink-2">Disconnecting revokes this access.</p>
         </Card>

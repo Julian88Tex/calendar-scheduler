@@ -30,12 +30,11 @@ import { now } from "@/lib/time/now";
 import { recordActivity } from "./activity";
 import { cancelMeeting } from "./cancel";
 import { meetingHostIds } from "./load";
-import { moveScheduledEvent } from "./reschedule";
+import { maxMoveMinutes, moveScheduledEvent, moveTooLongMessage } from "./reschedule";
 import { meetingMetaOf, type ExternalCalendarChange, type LifecycleActor, type LifecycleMeetingMeta } from "./types";
 
 const SYSTEM: LifecycleActor = { type: "system", name: "Connected calendar" };
 const MAX_BUFFER_MINUTES = 720;
-const MAX_MEETING_MINUTES = 720;
 
 /** CAL-14 / CR-17 (see the file header). */
 export async function applyExternalCalendarChange(p: { linkedEventId: string; change: ExternalCalendarChange }): Promise<void> {
@@ -63,8 +62,9 @@ export async function applyExternalCalendarChange(p: { linkedEventId: string; ch
   const start = new Date(p.change.start);
   const end = new Date(p.change.end);
   if (!(end > start) || (start.getTime() === m.startAt.getTime() && end.getTime() === m.endAt.getTime())) return;
-  if (end.getTime() - start.getTime() > MAX_MEETING_MINUTES * 60_000) {
-    log.warn("lifecycle.external_move_too_long", { scheduledEventId: m.id });
+  // The same limit as an in-place move (maxMoveMinutes): long and all-day poll meetings may fill a whole day.
+  if (end.getTime() - start.getTime() > maxMoveMinutes(m.source) * 60_000) {
+    log.warn("lifecycle.external_move_too_long", { scheduledEventId: m.id, message: moveTooLongMessage(m.source) });
     return;
   }
   if (m.source === "poll" || m.source === "one_off" || m.isGroup) {

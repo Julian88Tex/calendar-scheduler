@@ -12,7 +12,9 @@ describe("reasonLabel", () => {
     expect(reasonLabel("MONTHLY_MAX")).toBe("MONTHLY MAX");
     expect(reasonLabel("MEETING_LIMIT")).toBe("MEETING LIMIT");
     expect(reasonLabel("CALENDAR")).toBe("CALENDAR");
-    expect(reasonLabel("ROUNDROBIN")).toBe("ROUNDROBIN");
+    expect(reasonLabel("ROUNDROBIN")).toBe("ROUND ROBIN");
+    expect(reasonLabel("TOOSOON")).toBe("TOO SOON");
+    expect(reasonLabel("NOCAL")).toBe("NO CALENDAR");
   });
 });
 

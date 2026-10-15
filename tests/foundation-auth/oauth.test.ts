@@ -107,6 +107,7 @@ beforeAll(() => Object.assign(env, OAUTH_ENV));
 afterAll(() => {
   for (const k of Object.keys(OAUTH_ENV)) delete env[k];
   delete env.SIGNUP_POLICY;
+  delete env.OWNER_EMAIL;
 });
 beforeEach(async () => {
   resetRequest();
@@ -114,6 +115,7 @@ beforeEach(async () => {
   calls.connect.length = 0;
   calls.poll.length = 0;
   delete env.SIGNUP_POLICY;
+  delete env.OWNER_EMAIL;
   await t.db.delete(users);
   await t.db.delete(organizations);
   await t.db.delete(instanceSettings);
@@ -182,7 +184,7 @@ describe("start route", () => {
     expect(q.get("code_challenge_method")).toBe("S256");
     expect(q.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(q.get("scope")).toBe(
-      "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+      "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.send",
     );
     expect(q.get("access_type")).toBe("offline");
     expect(q.get("prompt")).toBe("consent");
@@ -328,6 +330,18 @@ describe("login and signup intents (AU-02, CAL-17)", () => {
     expect(oauthErrorMessage("signups_closed")).toBe("Sign ups are closed. Ask an admin for an invitation.");
     expect(await t.db.select().from(users)).toHaveLength(1);
     expect(calls.linkCalendar).toHaveLength(0);
+  });
+
+  it("with OWNER_EMAIL set, only the owner's Google signup claims a fresh instance (and becomes instance admin)", async () => {
+    env.OWNER_EMAIL = " gina@gmail.EXAMPLE ";
+    const stranger = await flow("google", "intent=signup", googleClaims({ sub: "google-sub-9", email: "eve@evil.example", name: "Eve" }));
+    expect(locationOf(stranger.callback!)).toBe("/signup?error=signups_closed&provider=google");
+    expect(await t.db.select().from(users)).toHaveLength(0);
+    const owner = await flow("google", "intent=signup", googleClaims());
+    expect(locationOf(owner.callback!)).toBe("/app/scheduling");
+    const all = await t.db.select().from(users);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ email: "Gina@Gmail.example", isInstanceAdmin: true });
   });
 
   it("rejects a callback whose state does not match the cookie, or without a cookie", async () => {

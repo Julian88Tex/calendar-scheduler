@@ -26,7 +26,7 @@ export function BookingPageView({ result }: { result: BookingPageResult }) {
     const s = result.shell;
     return (
       <PublicPageShell branding={s.branding} embed={s.embed.embed} showFooterLinks={false} hideGdprBanner={s.embed.hideGdprBanner}>
-        <StateCard kind={result.state} hostName={s.hostName} ribbon={s.ribbon} embed={s.embed.embed} operatorEmail={s.operatorEmail} privacyUrl={s.privacyUrl} />
+        <StateCard kind={result.state} hostName={s.hostName} ribbon={s.ribbon} embed={s.embed.embed} privacyUrl={s.privacyUrl} />
       </PublicPageShell>
     );
   }
