@@ -6,7 +6,8 @@
 //   3. lock order step 2: the invitee being rescheduled (FOR UPDATE), then at most one target row (the group slot, the
 //      single-use link or one-off through links.consumeLinkInTx, or the poll through polls.markPollBookedInTx)
 //   4. recheck of the exact slot with meetings and holds read inside the transaction and external busy fetched just
-//      before it (submit freshness, 60 seconds)
+//      before it (submit freshness, 60 seconds); a slot taken by the same email's own active booking of it answers
+//      already_booked instead of slot_unavailable (a refresh and a new submit, see hasOwnActiveBooking)
 //   5. inserts (scheduled event, hosts with buffered times and assigned_at, invitees, guests, activity), the reschedule
 //      cancel and link, and publishEvent(booking.created | booking.rescheduled) in the same transaction
 //   6. after the commit: runJobsAfterResponse for the event's subscriber jobs (provisioning and emails start at once)
@@ -173,6 +174,36 @@ async function findByClientRequestId(db: DbOrTx, clientRequestId: string, key: R
     (key.emailNormalized === null || row.email === key.emailNormalized);
   if (!same) return fail("validation", MESSAGES.staleForm);
   return resultForInvitee(db, row.id);
+}
+
+/**
+ * True when the submitted email already holds an active booking of exactly this slot (same normalized email, event
+ * type, start and duration, invitee and meeting both active): the invitee refreshed the page after booking and
+ * submitted again with a new client request id. The caller answers already_booked ("You've already booked this
+ * time.") instead of slot_unavailable. It never returns the booking or its id: the submitted email is unproven, and
+ * the invitee id is the capability for the cancel and reschedule pages. Reschedules, poll bookings and bookings by a
+ * host or the API never take this path.
+ */
+async function hasOwnActiveBooking(db: DbOrTx, plan: Pick<Plan, "target" | "v" | "input" | "actor">): Promise<boolean> {
+  if (plan.actor.type !== "invitee" || plan.input.reschedule || plan.input.pollContext) return false;
+  const eventTypeId = plan.target.eventType.id;
+  const [row] = await db
+    .select({ id: invitees.id })
+    .from(invitees)
+    .innerJoin(scheduledEvents, eq(scheduledEvents.id, invitees.scheduledEventId))
+    .where(
+      and(
+        eq(invitees.emailNormalized, plan.v.emailNormalized),
+        eq(invitees.eventTypeId, eventTypeId),
+        eq(invitees.status, "active"),
+        eq(scheduledEvents.eventTypeId, eventTypeId),
+        eq(scheduledEvents.status, "active"),
+        eq(scheduledEvents.startAt, plan.v.start),
+        eq(scheduledEvents.durationMinutes, plan.v.durationMinutes),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** BK-28: true when any of the hosts blocked this email or its domain. */
@@ -664,7 +695,14 @@ async function runBookingTransaction(plan: Plan, preferHostIds?: string[]): Prom
             prefer = (await tx.select({ userId: scheduledEventHosts.userId }).from(scheduledEventHosts).where(eq(scheduledEventHosts.scheduledEventId, old.scheduledEventId))).map((h) => h.userId);
           }
           const check = await recheckInTx(tx, plan, { ignoreInviteeId: old?.id, preferHostIds: prefer });
-          if ("ok" in check) throw new BookingAbort(check);
+          if ("ok" in check) {
+            // Taken by this email's own booking of the slot (a refresh and a new submit): say so instead of "no longer
+            // available", without returning the booking. Under the host locks, a concurrent first submit has committed.
+            if (check.code === "slot_unavailable" && (await hasOwnActiveBooking(tx, plan))) {
+              throw new BookingAbort(fail("already_booked", MESSAGES.alreadyBooked));
+            }
+            throw new BookingAbort(check);
+          }
           const inserted = await insertBookingInTx(tx, plan, check, old);
           return { inserted };
         },

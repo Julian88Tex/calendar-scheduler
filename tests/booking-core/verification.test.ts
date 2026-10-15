@@ -1,6 +1,7 @@
 // Email verification (BK-17) and payment reservations (SCH-19, ARCHITECTURE section 9) on PGlite: holds under the
 // booking locks, HMAC-stored codes sent by the job with the code encrypted at rest, wrong, expired and exhausted
-// codes, resend, remember this device, completion at most once, recheck at completion, and the status endpoint data.
+// codes, resend, remember this device, completion at most once, recheck at completion, a refresh and a new submit of
+// one's own booking (never a new hold or code, never the booking's ids), and the status endpoint data.
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +24,7 @@ const { bookingReservations, emailOutbox, invitees, jobs, trustedDevices, verifi
 const create = await import("@/lib/booking/create");
 const { createBooking, completeReservation, createReservation, verifyReservationCode, resendReservationCode, getReservationStatus } = create;
 const { handlers } = await import("@/lib/booking/jobs");
+const { MESSAGES } = await import("@/lib/booking/validate");
 const { log } = await import("@/lib/logger");
 const factories = await import("../factories");
 const { useTestDb } = await import("../helpers/db");
@@ -127,6 +129,28 @@ describe("email verification (BK-17)", () => {
     await expect(resendReservationCode(reservationId, { now: new Date(NOW.getTime() + 7 * 60_000) })).rejects.toMatchObject({ code: "rate_limited" });
   });
 
+  it("a new submit of one's own verified booking makes no new hold or code and never returns the booking", async () => {
+    const fx = await setupSolo(t.db, { eventType: { requireEmailVerification: true } });
+    const start = la("2030-10-08 13:00");
+    const invitee = { name: "Ana", email: "ana@example.com", timezone: "UTC" };
+    const r = await createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "verify-1" }), { now: NOW });
+    if (r.ok || !r.reservationId) throw new Error("expected a reservation");
+    const ok = await verifyReservationCode(r.reservationId, await runCodeJob(r.reservationId), { now: NOW, rememberDevice: true });
+    if (!ok.ok || !ok.trustedDevice) throw new Error("expected a booking and a remembered device");
+
+    // The email is not proven without the device: the generic answer, no new hold and no new code.
+    const later = new Date(NOW.getTime() + 60_000);
+    const unproven = await createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "verify-2" }), { now: later });
+    expect(unproven).toEqual({ ok: false, code: "slot_unavailable", message: MESSAGES.slotTaken });
+    expect(await t.db.select().from(bookingReservations).where(eq(bookingReservations.eventTypeId, fx.target.eventType.id))).toHaveLength(1);
+    expect(await t.db.select().from(verificationCodes).where(eq(verificationCodes.contextId, r.reservationId))).toHaveLength(1);
+
+    // With the remembered device the email is proven, so the answer says it is already booked (still without ids).
+    const proven = await createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "verify-3" }), { now: later, trustedDeviceTokens: [ok.trustedDevice.value] });
+    expect(proven).toEqual({ ok: false, code: "already_booked", message: MESSAGES.alreadyBooked });
+    expect(await t.db.select().from(invitees).where(eq(invitees.eventTypeId, fx.target.eventType.id))).toHaveLength(1);
+  });
+
   it("never asks for verification on reschedules", async () => {
     const fx = await setupSolo(t.db);
     const first = await createBooking(bookingInput(fx.target, la("2030-10-08 09:00")), { now: NOW });
@@ -162,6 +186,24 @@ describe("reservations (SCH-19)", () => {
     expect((await t.db.select().from(bookingReservations).where(eq(bookingReservations.id, id2)))[0]!.status).toBe("canceled");
     const refunds = await t.db.select().from(jobs).where(eq(jobs.type, "payments.refund"));
     expect(refunds.map((j) => (j.payload as { reservationId: string }).reservationId)).toContain(id2);
+  });
+
+  it("a paid booking submitted again after a refresh makes no new hold and never returns the booking", async () => {
+    pay.configured = true;
+    const fx = await setupSolo(t.db, { eventType: { paymentEnabled: true, priceMinor: 5000, currency: "USD" } });
+    const start = la("2030-10-09 14:00");
+    const invitee = { name: "Ana", email: "ana@example.com", timezone: "UTC" };
+    const r = await createBooking(bookingInput(fx.target, start, { invitee, clientRequestId: "pay-1" }), { now: NOW });
+    if (r.ok || !r.reservationId) throw new Error("expected a payment hold");
+    const done = await completeReservation(r.reservationId, { paymentId: "pay_ana", now: NOW });
+    expect(done.ok).toBe(true);
+
+    const again = await createBooking(bookingInput(fx.target, start, { invitee: { ...invitee, email: "ANA@example.com" }, clientRequestId: "pay-2" }), { now: NOW });
+    expect(again).toEqual({ ok: false, code: "slot_unavailable", message: MESSAGES.slotTaken });
+    const other = await createBooking(bookingInput(fx.target, start, { clientRequestId: "pay-3" }), { now: NOW });
+    expect(other).toEqual({ ok: false, code: "slot_unavailable", message: MESSAGES.slotTaken });
+    const holds = await t.db.select().from(bookingReservations).where(eq(bookingReservations.eventTypeId, fx.target.eventType.id));
+    expect(holds.map((h) => h.status)).toEqual(["completed"]);
   });
 
   it("an expired payment hold can still complete while the slot is free; expiry jobs mark holds expired", async () => {

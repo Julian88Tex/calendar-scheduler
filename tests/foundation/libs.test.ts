@@ -259,8 +259,17 @@ describe("pagination", () => {
   });
 
   it("paginates a real query with keyset row comparisons", async () => {
-    for (let i = 0; i < 7; i++) await createUser(t.db, { name: `Page ${i}` });
+    // Timestamps the test writes (millisecond precision, like the app's now()): the database default stores
+    // microseconds on real Postgres, which a JS Date cursor cannot round-trip (see keysetAfter). Two users share
+    // 12:00:00.000, three 12:00:01.250 and two 12:00:02.500, inserted out of order, so the id breaks the ties that
+    // straddle both page boundaries (pages of 3: A A B | B B C | C).
+    const base = Date.UTC(2030, 0, 15, 12, 0, 0, 0);
+    const offsets = [1250, 0, 2500, 1250, 0, 2500, 1250];
+    for (const [i, ms] of offsets.entries()) {
+      await createUser(t.db, { name: `Page ${i}`, overrides: { createdAt: new Date(base + ms) } });
+    }
     const all = await t.db.select({ id: users.id, createdAt: users.createdAt }).from(users).orderBy(asc(users.createdAt), asc(users.id));
+    expect(all.map((r) => r.createdAt.getTime() - base)).toEqual([0, 0, 1250, 1250, 1250, 2500, 2500]);
     const pages: string[][] = [];
     let cursor: string | null = null;
     do {
@@ -278,7 +287,7 @@ describe("pagination", () => {
       cursor = page.nextCursor;
     } while (cursor);
     expect(pages.flat()).toEqual(all.map((r) => r.id));
-    expect(pages[0]).toHaveLength(3);
+    expect(pages.map((p) => p.length)).toEqual([3, 3, 1]);
     expect(() => keysetAfter([users.id], [])).toThrow();
   });
 });

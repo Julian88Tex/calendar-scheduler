@@ -76,7 +76,7 @@ async function goneVoterPage(request: NextRequest, pathname: string, search: str
   try {
     const state = await fetch(new URL(`/api/public/polls/${match[1]}/state`, origin), {
       headers,
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(1000),
       cache: "no-store",
     });
     // Only the status matters: release the body (an unread body holds its pooled connection until garbage collection,
