@@ -29,7 +29,9 @@ Also decide:
   to Google Calendar with). It becomes `OWNER_EMAIL` and `ADMIN_EMAILS`, and you sign in to Kairos with it.
 - **Your production address** (`APP_URL`): the Vercel address such as `https://kairos-julian.vercel.app`, or a custom
   domain you add later. No trailing slash. If you are not sure of the Vercel address yet, finish step 1 first: the
-  project page shows it under **Domains**.
+  project page shows it under **Domains**. Use that domain, not a deployment URL with a hash in it
+  (`kairos-julian-abc123-you.vercel.app`): those are behind Vercel Authentication, so Google, your invitees and the
+  reminder dispatcher would get a Vercel login page.
 
 The shell commands in this guide read these variables, so set them once in your terminal:
 
@@ -47,7 +49,7 @@ export SETUP_TOKEN="the SETUP_TOKEN you generated"
 2. Framework preset: **Next.js** (detected). Leave the build command as is: `npm run build` applies the database
    migrations and then builds. Leave the root directory empty. The Node.js version comes from `package.json` (22.x).
 3. You can already add the variables of step 4 under **Environment Variables** on this screen, or click **Deploy** now
-   and add them later: a deployment without a database only shows the setup page.
+   and add them later: a deployment without a database only shows the setup page (nobody can sign up on it).
 4. Production branch: Vercel deploys the repository's default branch to production. If the code you want lives on
    another branch, either merge it into the default branch or set **Settings > Git > Production Branch** to it.
 
@@ -60,7 +62,8 @@ With the Vercel CLI instead: `npx vercel@latest link` in the repository folder, 
 2. Region: pick the one closest to your Vercel functions (new projects run in Washington, D.C., `iad1`, so choose
    `us-east-1`). Plan: Free is enough.
 3. Connect it to the **Production** and **Preview** environments. Vercel then adds `DATABASE_URL`,
-   `DATABASE_URL_UNPOOLED` and the `POSTGRES_*` variables to the project. You do not set them yourself.
+   `DATABASE_URL_UNPOOLED` and the `POSTGRES_*` variables to the project. You do not set them yourself. If Vercel
+   offers to redeploy now, decline: step 5 creates your account before the app sees the database.
 4. Optional, for preview deployments with their own database: turn on Neon's preview branching for Preview in the
    integration settings and add `MIGRATE_ON_PREVIEW=1` for the **Preview** environment only. Without it, previews never
    migrate the database (they may share production's).
@@ -92,7 +95,7 @@ In **Settings > Environment Variables**, add these for **Production**:
 | `SESSION_SECRET` | the generated value | signs sessions; set it so it never depends on the database |
 | `ENCRYPTION_KEY` | the generated value | encrypts the stored Google tokens; never change it (all calendars would need a reconnect) |
 | `CRON_SECRET` | the generated value | protects `/api/cron` (Vercel Cron and the Apps Script send it) |
-| `SETUP_TOKEN` | the generated value | authorizes the one-time owner bootstrap (step 6) |
+| `SETUP_TOKEN` | the generated value | authorizes the one-time owner bootstrap over HTTP (step 6) |
 | `OWNER_EMAIL` | your Google account email | the only email the bootstrap accepts |
 | `ADMIN_EMAILS` | your Google account email | instance admin by email, in addition to the bootstrapped account |
 | `SIGNUP_POLICY` | `invite_only` | nobody else can create an account |
@@ -120,7 +123,51 @@ printf %s "$GOOGLE_CLIENT_SECRET" | npx vercel@latest env add GOOGLE_CLIENT_SECR
 printf %s "gmail"           | npx vercel@latest env add EMAIL_PROVIDER production
 ```
 
-## 5. Deploy
+## 5. Bootstrap the owner before the app goes live (recommended)
+
+Until an account exists, the very first signup of a fresh instance becomes its admin. The first deployment had no
+database, so nobody could sign up on it. Create your account now, straight in the Neon database, before the deployment
+of step 6 connects the app to it: then there is no moment at which anyone else can claim the instance.
+
+You need a checkout of the repository on the branch Vercel deploys to production, Node.js 22, and the database's direct
+connection string: in Vercel open **Storage**, then the Neon database, and copy `DATABASE_URL_UNPOOLED` (or in the Neon
+console: **Connect**, with connection pooling off).
+
+```sh
+git clone https://github.com/YOU/YOUR-REPO.git kairos && cd kairos   # skip if you already have a checkout
+git checkout YOUR-PRODUCTION-BRANCH && npm ci
+APP_URL="$APP_URL" OWNER_EMAIL="$OWNER_EMAIL" DATABASE_URL='postgres://...the direct connection string...' \
+  NODE_OPTIONS=--import=./scripts/server-only-hook.mjs \
+  npx tsx scripts/bootstrap-owner.ts --email="$OWNER_EMAIL"
+```
+
+It applies the database migrations first (the build of step 6 then finds nothing left to do), then prints what it did:
+
+```text
+[bootstrap] database: Postgres from DATABASE_URL / POSTGRES_URL
+{"level":"info","event":"setup.bootstrap",...,"account":"created","snapshot":"applied"}
+[bootstrap] done
+Created the owner account you@gmail.com (...).
+- Created the account you@gmail.com: email verified, no password (sign in with Google), instance admin.
+- Profile: name Julian Joseph, time zone America/Los_Angeles, 12h (am/pm) time and the welcome message "..."
+- Schedules: Working hours (default), Block Off Work, all in America/Los_Angeles.
+- Event types: 30 Minute Virtual (30min), 60 Minute Virtual (60min), In-Person Meal or Coffee (meal).
+- Email reminders to invitees 24 hours before the event on 3 event types.
+...
+```
+
+That is: your account (email verified, no password, instance admin) with the link `/julianjoseph`, time zone
+America/Los_Angeles, 12h time, the welcome message, the schedules "Working hours" (default) and "Block Off Work", and
+the event types "30 Minute Virtual", "60 Minute Virtual" (Google Meet) and "In-Person Meal or Coffee" (your 8 venues
+plus "Somewhere else"), each with the required question "What would you like to discuss?" and an email reminder to the
+invitee 24 hours before. Optional flags: `--name="..."` (default "Julian Joseph") and `--avatar-url=https://...`
+(without it your Google photo is used once you sign in with Google).
+
+Running it again prints "Skipped the Calendly setup: the Calendly setup was already applied to this account." and
+changes nothing: the bootstrap never overwrites edits you make later. Exit code 1 means it refused (it prints why; the
+reasons are the same as in the table of step 6), 2 means a wrong flag.
+
+## 6. Deploy
 
 Open **Deployments**, then on the latest deployment **... > Redeploy** (new variables only apply to new deployments),
 or push a commit to the production branch. Wait for **Ready**, then check:
@@ -133,10 +180,11 @@ curl -fsS "$APP_URL/api/health"
 `"db":"postgres"` means Neon is connected and migrated. A 503 with `setupRequired` means the database variables are
 missing for Production (step 2).
 
-## 6. Bootstrap the owner (right after the first deployment)
+### Bootstrap over HTTP instead (only if you skipped step 5)
 
-Do this before you share the address: until an account exists, the very first signup of a fresh instance becomes its
-admin. The bootstrap creates your account and refuses to run when anyone else got there first.
+Without a checkout you can run the same bootstrap through the deployed app. Do it the moment the deployment is
+**Ready** and before you share the address: until your account exists, whoever signs up first becomes the admin. The
+bootstrap refuses to run when someone got there first.
 
 ```sh
 curl -sS -X POST "$APP_URL/api/setup/bootstrap" \
@@ -145,38 +193,22 @@ curl -sS -X POST "$APP_URL/api/setup/bootstrap" \
   -d "{\"email\":\"$OWNER_EMAIL\"}"
 ```
 
-Optional fields: `"name"` (default "Julian Joseph") and `"avatarUrl"` (an https image link; without it your Google
-photo is used once you sign in with Google).
+Optional fields: `"name"` and `"avatarUrl"` (an https image link), like the flags of step 5. The answers:
 
-What you should get:
+| Answer | Meaning |
+|---|---|
+| **201** with `"account":"created"` and `"snapshot":{"status":"applied",...}` | Done, with everything listed in step 5. The `changes` list says exactly what was done. |
+| **200** with `"snapshot":{"status":"skipped","reason":"already_applied"}` | It ran before; nothing changed. |
+| **401** | The bearer token does not match `SETUP_TOKEN` or `CRON_SECRET` on this deployment (redeploy after adding variables). |
+| **403** | The email is not `OWNER_EMAIL`. |
+| **409**, "another account" | Someone else's account exists. List the accounts in the Neon console (**SQL Editor**): `select id, email, created_at from users;`. If one is not yours and nothing else happened on this instance yet, reset the database (Neon SQL Editor: `drop schema public cascade; create schema public; drop schema if exists drizzle cascade;`), then right away run step 5 (it migrates the empty database and creates your account): the live app migrates an empty database on its own too, and the next signup would claim it again. |
+| **409**, "never verified" | An account with your email exists, created with email and password without proving the address. If you created it, choose **Continue with Google** on `{APP_URL}/login` with that address (that verifies the address and removes the password), then bootstrap again. If you did not, someone else did: reset the database as in the row above. |
+| **429** | Too many attempts (10 per 15 minutes per address, 30 per hour in all). Wait, or use step 5, which has no limit. |
+| **501** | Neither `SETUP_TOKEN` nor `CRON_SECRET` is set, or both are shorter than 24 characters. |
 
-- **201** with `"account":"created"` and `"snapshot":{"status":"applied",...}`: your account (email verified, no
-  password, instance admin) with the link `/julianjoseph`, time zone America/Los_Angeles, 12h time, the welcome
-  message, the schedules "Working hours" (default) and "Block Off Work", and the event types "30 Minute Virtual",
-  "60 Minute Virtual" (Google Meet) and "In-Person Meal or Coffee" (your 8 venues plus "Somewhere else"), each with
-  the required question "What would you like to discuss?" and an email reminder to the invitee 24 hours before.
-  The `changes` list says exactly what was done.
-- Running it again answers **200** with `"snapshot":{"status":"skipped","reason":"already_applied"}` and changes
-  nothing. The bootstrap never overwrites edits you make later.
-- **401**: the bearer token does not match `SETUP_TOKEN` or `CRON_SECRET` on this deployment (redeploy after adding
-  variables). **403**: the email is not `OWNER_EMAIL`. **501**: neither `SETUP_TOKEN` nor `CRON_SECRET` is set.
-  **429**: too many attempts (10 per 15 minutes per IP); wait and retry.
-- **409**: another account already exists. List the accounts in the Neon console (**SQL Editor**):
-  `select id, email, created_at from users;`. If one is not yours and nothing else happened on this instance yet,
-  reset the database (Neon SQL Editor: `drop schema public cascade; create schema public; drop schema if exists
-  drizzle cascade;`), redeploy (the build migrates the empty database) and run the bootstrap again.
-
-Alternative without the deployed endpoint: run the same bootstrap from a checkout of the repository against the Neon
-database (Neon console > **Connection string**):
-
-```sh
-DATABASE_URL='postgres://...' NODE_OPTIONS=--import=./scripts/server-only-hook.mjs \
-  npx tsx scripts/bootstrap-owner.ts --email="$OWNER_EMAIL"
-```
-
-After the bootstrap you may delete `SETUP_TOKEN` from Vercel. The endpoint stays harmless either way: it only ever
-accepts `OWNER_EMAIL`, refuses when other accounts exist, and never overwrites your setup (it also accepts
-`CRON_SECRET`).
+The command line bootstrap of step 5 refuses for the same reasons (exit code 1). After the bootstrap you may delete
+`SETUP_TOKEN` from Vercel. The endpoint stays harmless either way: it only ever accepts `OWNER_EMAIL`, refuses when
+other accounts exist, and never overwrites your setup (it also accepts `CRON_SECRET`).
 
 ## 7. Sign in with Google and connect the calendar
 
@@ -253,7 +285,9 @@ property too.
 
 Optional second trigger: the repository's GitHub Actions workflow (`.github/workflows/cron.yml`, every 10 minutes)
 runs once you set the repository variable `APP_URL` and the secret `CRON_SECRET`:
-`gh variable set APP_URL --body "$APP_URL"` and `gh secret set CRON_SECRET --body "$CRON_SECRET"`.
+`gh variable set APP_URL --body "$APP_URL"` and `gh secret set CRON_SECRET --body "$CRON_SECRET"`. On a private
+repository with GitHub's free plan, each run bills at least a minute (about 4,320 minutes a month against 2,000
+included), so leave it off there or change its schedule to `*/30 * * * *`; the Apps Script alone is enough.
 
 ## 9. Verify that reminders are being dispatched
 

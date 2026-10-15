@@ -5,8 +5,9 @@
 //   curl -X POST "$APP_URL/api/setup/bootstrap" -H "Authorization: Bearer $SETUP_TOKEN" \
 //        -H "Content-Type: application/json" -d '{"email":"owner@example.com"}'
 //
-// - Authorization: "Bearer {SETUP_TOKEN}" or "Bearer {CRON_SECRET}" (constant-time comparison). With neither variable
-//   set the endpoint is disabled (501 not_configured). Wrong or missing header: 401.
+// - Authorization: "Bearer {SETUP_TOKEN}" or "Bearer {CRON_SECRET}" (constant-time comparison; each counts only when at
+//   least 24 characters long). With neither usable the endpoint is disabled (501 not_configured). Wrong or missing
+//   header: 401.
 // - Rate limited per IP (10 per 15 minutes) and overall (30 per hour), counted before the token is checked.
 // - Body { email, name?, avatarUrl? }; email must equal OWNER_EMAIL when that is set (403).
 // - 201 when the account was created, 200 when it existed; 409 when another account already exists.

@@ -67,10 +67,12 @@ Open **Google Auth Platform** (APIs & Services > OAuth consent screen). If Googl
      then show "Action required" every week, and booking emails would wait in the outbox, until you reconnect.
    - For your own deployment, click **Publish app** to move it to **In production**: refresh tokens then stop expiring
      after 7 days. You do not need Google's verification for that.
-   - Without verification, Google shows a warning screen once, when you connect: "Google hasn't verified this app".
-     That is expected for your own private app. Click **Advanced**, then **Go to {app name} (unsafe)**, then allow the
-     permissions. You see it again only if you disconnect and connect again. Unverified apps with sensitive scopes are
-     limited to 100 users, which is plenty for personal use.
+   - Without verification, Google shows a warning screen when you connect: "Google hasn't verified this app". That is
+     expected for your own private app (you are its developer). Click **Advanced**, then **Go to {app name} (unsafe)**,
+     then allow the permissions. Once connected, Kairos keeps working in the background without showing it again; you
+     may see it again only when you go through Google's consent screen yourself (**Continue with Google**, **Reconnect**
+     or **Allow Gmail sending**). Unverified apps with sensitive scopes are limited to 100 users, which is plenty for
+     personal use.
    - If other people will use your deployment, submit the app for verification from the same page.
 
 ## 4. Create the OAuth client
@@ -169,11 +171,14 @@ If Gmail stops accepting the emails:
 - **Access revoked or expired** (you removed Kairos at <https://myaccount.google.com/permissions>, changed your Google
   password, or the app is still in Testing after 7 days): the dashboard shows "There is a problem with your calendar
   connection", and the card says "Action required". Emails wait in the outbox, marked "Waiting for Gmail", and are sent
-  automatically once you click **Reconnect Google** (or **Reconnect** on Calendar settings). Emails that are no longer
-  useful by then are not sent: anything older than 24 hours, reminders and notices about meetings that already
-  started, and sign in codes or links older than 10 minutes. The outbox shows why each one was not sent.
+  automatically once you click **Reconnect Google** (or **Reconnect** on Calendar settings; then they go out with the
+  next background job run, within about 15 minutes). Emails that are no longer useful by then are not sent: anything
+  older than 24 hours, reminders and notices about meetings that already started, confirmations and reminders of
+  meetings that were canceled meanwhile (the cancellation email is still sent), and sign in links and verification
+  codes older than 10 minutes. The outbox shows why each one was not sent.
 - **Rate limits or a Google outage** (HTTP 429 or 5xx): Kairos retries with increasing delays, about 8 times over an
-  hour or more, and never sends the same email twice.
+  hour or more. Each email is sent once; the rare exception is a request cut off after Gmail already accepted it (a
+  timeout), which is retried and can arrive twice with the same Message-ID.
 - **A rejected message** (for example an invalid recipient address): it fails for good with Google's reason.
 
 Other ways to send: when `RESEND_API_KEY` or `SMTP_HOST` is set, that service sends instead of Gmail. Set
@@ -223,6 +228,7 @@ Kairos notices moved and deleted meeting events in two ways:
 | "Gmail sending wasn't allowed" or the card says "Not allowed yet" | "Send email on your behalf" was unchecked on Google's consent screen. Click **Allow Gmail sending** and keep it checked. |
 | Emails stay in the outbox with "The Gmail API is not enabled in this server's Google Cloud project" | Enable the Gmail API (step 2). The waiting emails are sent on the next retry. |
 | Emails stay in the outbox marked "Waiting for Gmail" | Your Google access was revoked or expired. Click **Reconnect Google** on Integrations > Google Calendar; the emails go out automatically. If it happens every week, publish the app (step 3.5). |
+| Google Workspace account: Google says your administrator restricted access, or shows `admin_policy_enforced` | Your Workspace admin limits third-party access to Gmail or Calendar. In the Google Admin console, open Security > Access and data control > API controls > Manage third-party app access, add the app by its Client ID (step 4) and mark it **Trusted**, then connect again. |
 | The consent screen does not list "Send email on your behalf" | Add the `gmail.send` scope on the Data access page (step 3.3), then connect again. |
 | Emails say they are sent with Resend or SMTP instead of Gmail | `RESEND_API_KEY` or `SMTP_HOST` is set on this deployment. Remove it, or set `EMAIL_PROVIDER=gmail`. |
 | "Sign in with Google is not configured on this server" or the tile says "Not configured on this server" | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing on this deployment. Add both and redeploy. |

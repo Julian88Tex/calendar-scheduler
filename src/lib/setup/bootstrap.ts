@@ -8,26 +8,34 @@
 // 2. Creates the account when missing: email verified, no password, instance admin, the owner's link and time zone.
 //    "Continue with Google" with the same verified email then links to it (resolveOAuthLogin step 2, which also adopts
 //    the Google profile picture when the account has none) and connects the calendar.
-//    An existing account becomes instance admin; when its email was never verified, everything set before the address
-//    was proven is dropped (password, two-factor authentication, sessions, emailed tokens), exactly as a Google
-//    sign-in into such an account does (pre-account hijacking: an email signup needs no proof of the address).
+//    An existing account with a verified email (for example a Google sign-in before the bootstrap) becomes instance
+//    admin. One whose email was never verified is refused with 409: an email signup needs no proof of the address, so
+//    it may be a squatter's who, as the first account, was instance admin (see secureExistingAccount).
 // 3. Applies the snapshot (src/lib/setup/owner-snapshot.ts) only when the account has no event types of its own yet,
 //    so later edits are never overwritten. "None yet" means no event type row at all (live or deleted) or only the
 //    untouched default that account creation adds (created in the same transaction as the account, never edited,
-//    never booked), and no availability changes (only the untouched default schedule, no date-specific hours). The
-//    snapshot then replaces that default and is applied through the domain services (profile, link, schedules, event
-//    types through the editor's create path, reminders through the reminders service), so it gets the same
-//    validation as the UI. Applying stores a marker on the account; later runs never apply it again.
+//    never booked, no reminders or workflows), and no availability changes (only the untouched default schedule, no
+//    date-specific hours). The snapshot then replaces that default and is applied through the domain services
+//    (profile, link, schedules, event types through the editor's create path, reminders through the reminders
+//    service), so it gets the same validation as the UI. Applying stores a marker on the account; later runs never
+//    apply it again.
 // The result says what was done (`changes`, human readable) and why the snapshot was skipped when it was.
 import "server-only";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { getDb, withTx, type DB, type DbOrTx } from "@/db";
 import { advisoryXactLock } from "@/db/helpers";
-import { authTokens, availabilityDateOverrides, availabilitySchedules, eventTypes, scheduledEvents, twoFactorRecoveryCodes, users } from "@/db/schema";
+import {
+  availabilityDateOverrides,
+  availabilitySchedules,
+  eventTypes,
+  scheduledEvents,
+  users,
+  workflowEventTypes,
+  workflows,
+} from "@/db/schema";
 import type { LocationConfig } from "@/db/types";
 import { audit } from "@/lib/audit";
 import { auditAuth, primaryOrganizationId } from "@/lib/auth/flows/audit";
-import { revokeAllSessions } from "@/lib/auth/session";
 import { createUserAccount, DEFAULT_EVENT_TYPE, findUserByEmail, SIGNUP_LOCK_KEY, type UserRow } from "@/lib/auth/signup";
 import { loadActorCtx } from "@/lib/authz";
 import { createSchedule, ensureDefaultSchedule, renameSchedule, setMeetingLimits, updateScheduleTimezone, updateWeeklyHours } from "@/lib/availability";
@@ -50,6 +58,9 @@ import { BootstrapOwnerInputSchema, type BootstrapOwnerInput, type BootstrapOwne
 
 export const OTHER_ACCOUNT_MESSAGE =
   "This instance already has another account, so the owner bootstrap cannot run. It only configures the owner of a fresh instance.";
+
+export const UNVERIFIED_ACCOUNT_MESSAGE =
+  'An account with this email already exists, but its address was never verified, so someone else may have created it. If it is yours, sign in with "Continue with Google" using this address (that verifies it), then run the bootstrap again. If it is not, reset the database (docs/DEPLOY.md).';
 
 export type SnapshotSkipReason = "already_applied" | "has_event_types" | "has_schedules";
 
@@ -128,28 +139,17 @@ async function lockUser(tx: DbOrTx, userId: string): Promise<UserRow> {
   return user;
 }
 
-/** Brings an existing owner account to the bootstrap's guarantees (verified email, instance admin). */
+/**
+ * Brings an existing owner account to the bootstrap's guarantees (instance admin). Refuses (409) an account whose email
+ * was never verified: an email signup needs no proof of the address, so it may be a squatter's, and as the first
+ * account of the instance it was instance admin and could have left ways back in that no reset of the password or
+ * sessions removes (a linked sign-in method, a pending invitation, a connected calendar, an API token).
+ */
 async function secureExistingAccount(tx: DbOrTx, stale: UserRow, input: BootstrapOwnerParsedInput, changes: string[]): Promise<UserRow> {
   const user = await lockUser(tx, stale.id);
+  if (!user.emailVerifiedAt) throw new AppError("conflict", UNVERIFIED_ACCOUNT_MESSAGE);
   const at = now();
   const set: Partial<typeof users.$inferInsert> = {};
-  if (!user.emailVerifiedAt) {
-    // Pre-account hijacking: whoever registered this address without proving it loses what they set.
-    set.emailVerifiedAt = at;
-    set.passwordHash = null;
-    set.twoFactorEnabled = false;
-    set.twoFactorSecretEnc = null;
-    await tx.delete(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, user.id));
-    await tx.update(authTokens).set({ usedAt: at }).where(and(eq(authTokens.userId, user.id), isNull(authTokens.usedAt)));
-    await revokeAllSessions(user.id, tx);
-    const details = { via: "owner_bootstrap" };
-    if (user.passwordHash) await auditAuth("user.password_changed", { user, details, tx });
-    if (user.twoFactorEnabled) await auditAuth("user.two_factor_disabled", { user, details, tx });
-    await auditAuth("user.email_verified", { user, details, tx });
-    changes.push(
-      "Verified the email of the existing account and removed the password, two-factor authentication and sessions set before the address was proven. Sign in with Google.",
-    );
-  }
   if (!user.isInstanceAdmin) {
     set.isInstanceAdmin = true;
     changes.push("Made the existing account an instance admin.");
@@ -214,6 +214,16 @@ async function snapshotEligibility(tx: DbOrTx, user: UserRow): Promise<Eligibili
     if (!isUntouchedSignupDefault(only, user)) return { eligible: false, reason: "has_event_types" };
     const [booked] = await tx.select({ id: scheduledEvents.id }).from(scheduledEvents).where(eq(scheduledEvents.eventTypeId, only.id)).limit(1);
     if (booked) return { eligible: false, reason: "has_event_types" };
+    // Reminders and workflows save on their own (the editor's Notifications section) without touching the event type
+    // row, and deleting the default would take them along: they count as the owner's own setup.
+    const [reminder] = await tx.select({ id: workflows.id }).from(workflows).where(eq(workflows.basicEventTypeId, only.id)).limit(1);
+    if (reminder) return { eligible: false, reason: "has_event_types" };
+    const [assigned] = await tx
+      .select({ id: workflowEventTypes.workflowId })
+      .from(workflowEventTypes)
+      .where(eq(workflowEventTypes.eventTypeId, only.id))
+      .limit(1);
+    if (assigned) return { eligible: false, reason: "has_event_types" };
     signupDefaultId = only.id;
   }
 
@@ -401,7 +411,8 @@ async function applySnapshot(
 /**
  * Creates or secures the owner account and applies the Calendly snapshot when the account has none of its own yet
  * (see the file header). Throws AppError: validation (400), forbidden (403, not OWNER_EMAIL), conflict (409, another
- * account exists), not_configured (501, malformed OWNER_EMAIL).
+ * account exists, or the owner's existing account has an unverified email), not_configured (501, malformed
+ * OWNER_EMAIL).
  */
 export async function bootstrapOwner(
   raw: BootstrapOwnerInput,

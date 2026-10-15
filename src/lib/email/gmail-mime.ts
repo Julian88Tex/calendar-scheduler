@@ -27,6 +27,39 @@ export type GmailMimeInput = {
   date: Date;
 };
 
+/**
+ * Headers the message structure owns. The Gmail API reads the recipients from the message itself (there is no SMTP
+ * envelope), so an extra header must never add a recipient, replace the sender or change the MIME structure.
+ */
+const RESERVED_HEADERS = new Set([
+  "from",
+  "sender",
+  "to",
+  "cc",
+  "bcc",
+  "reply-to",
+  "subject",
+  "date",
+  "message-id",
+  "in-reply-to",
+  "references",
+  "return-path",
+  "mime-version",
+  "content-type",
+  "content-transfer-encoding",
+  "content-disposition",
+]);
+
+/** True for a header the message structure owns (recipients, sender, subject, Message-ID, MIME headers). */
+export function isReservedHeader(name: string): boolean {
+  return RESERVED_HEADERS.has(name.trim().toLowerCase());
+}
+
+/** The extra headers of a message (Auto-Submitted, List-Unsubscribe and so on) without the reserved ones. */
+export function extraHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !isReservedHeader(name)));
+}
+
 /** Builds the raw message (bytes, CRLF line breaks). */
 export async function buildGmailMime(p: GmailMimeInput): Promise<Buffer> {
   const { default: MailComposer } = await import("nodemailer/lib/mail-composer");
@@ -40,7 +73,7 @@ export async function buildGmailMime(p: GmailMimeInput): Promise<Buffer> {
     subject: msg.subject,
     text: msg.text,
     html: msg.html,
-    headers: msg.headers,
+    headers: extraHeaders(msg.headers),
     messageId: p.messageId,
     date: p.date,
     ...(msg.ics ? { icalEvent: { method: msg.ics.method, filename: msg.ics.filename, content: msg.ics.content } } : {}),

@@ -23,7 +23,7 @@ import { withConnection } from "@/lib/calendars/credentials";
 import { isProviderAuthError, isProviderTransientError, ProviderAuthError } from "@/lib/calendars/providers/types";
 import { now } from "../time/now";
 import { buildGmailMime, toBase64Url } from "./gmail-mime";
-import { reconnectHoldReason, type GmailSender } from "./gmail-sender";
+import { gmailFromName, reconnectHoldReason, type GmailSender } from "./gmail-sender";
 import type { DeliveryResult, OutgoingEmail } from "./transports";
 
 export const GMAIL_API_ORIGIN = "https://gmail.googleapis.com";
@@ -164,7 +164,7 @@ export type GmailDeliveryOptions = {
 export async function deliverWithGmail(msg: OutgoingEmail, sender: GmailSender, opts: GmailDeliveryOptions): Promise<DeliveryResult> {
   let raw: Buffer;
   try {
-    raw = await buildGmailMime({ msg, from: { name: sender.ownerName, address: sender.address }, messageId: opts.messageId, date: now() });
+    raw = await buildGmailMime({ msg, from: { name: gmailFromName(sender), address: sender.address }, messageId: opts.messageId, date: now() });
   } catch (e) {
     return { ok: false, retryable: false, error: `gmail: the message could not be built: ${e instanceof Error ? e.message : String(e)}` };
   }

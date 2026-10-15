@@ -21,7 +21,10 @@ const {
   workflows,
   workflowSteps,
 } = schema;
-const { bootstrapOwner, OTHER_ACCOUNT_MESSAGE, SNAPSHOT_MARKER_KEY } = await import("@/lib/setup/bootstrap");
+const { bootstrapOwner, OTHER_ACCOUNT_MESSAGE, SNAPSHOT_MARKER_KEY, UNVERIFIED_ACCOUNT_MESSAGE } = await import("@/lib/setup/bootstrap");
+const { loadActorCtx } = await import("@/lib/authz");
+const { saveEventTypeReminders } = await import("@/lib/workflows");
+const { SaveRemindersSchema } = await import("@/lib/workflows/schemas");
 const { OWNER_EMAIL_MISMATCH_MESSAGE } = await import("@/lib/setup/config");
 const { OWNER_SNAPSHOT } = await import("@/lib/setup/owner-snapshot");
 const { createUserAccount, DEFAULT_EVENT_TYPE } = await import("@/lib/auth/signup");
@@ -363,7 +366,9 @@ describe("existing owner account", () => {
     expect((await liveEventTypes(created.id)).map((e) => e.name)).toEqual([DEFAULT_EVENT_TYPE.name]);
   });
 
-  it("secures an unverified account: the password, 2FA, sessions and emailed tokens set before the proof stop working", async () => {
+  it("refuses (409) an account whose email was never verified, and changes nothing", async () => {
+    // A squatter's email signup with the owner's address: as the first account it was instance admin and may have left
+    // ways back in (a linked sign-in method, an invitation, a calendar) that no password reset removes.
     const squatter = await createUser(t.db, {
       email: OWNER,
       passwordHash: await hashPassword("pw-123456"),
@@ -371,16 +376,44 @@ describe("existing owner account", () => {
     });
     const session = await createSessionRecord(t.db, squatter.id);
     await t.db.insert(authTokens).values({ userId: squatter.id, purpose: "email_change", tokenHash: "h".repeat(64), expiresAt: new Date(Date.now() + 3_600_000) });
+    const before = await ownerRow();
+
+    await expect(bootstrapOwner({ email: OWNER }, { db: t.db })).rejects.toMatchObject({ code: "conflict", status: 409, message: UNVERIFIED_ACCOUNT_MESSAGE });
+    const u = await ownerRow();
+    expect(u).toMatchObject({ emailVerifiedAt: null, passwordHash: before.passwordHash, isInstanceAdmin: before.isInstanceAdmin, metadata: before.metadata });
+    expect(await lookupSession(t.db, session.token)).not.toBeNull();
+    expect(await liveEventTypes(u.id)).toHaveLength(0);
+    expect(await t.db.select().from(auditLog).where(eq(auditLog.action, "instance.owner_bootstrap"))).toHaveLength(0);
+    const live = (await t.db.select().from(sessions).where(eq(sessions.userId, squatter.id))).filter((s) => !s.revokedAt);
+    expect(live).toHaveLength(1);
+  });
+
+  it("skips the snapshot when the untouched default event type has reminders of its own", async () => {
+    const created = await withTx(t.db, (tx) => createUserAccount(tx, { email: OWNER, name: "Julian", emailVerifiedAt: new Date() }));
+    const [defaultType] = await liveEventTypes(created.id);
+    const actor = await loadActorCtx(t.db, created);
+    // The editor's Notifications section saves reminders on its own, without updating the event type row.
+    await saveEventTypeReminders(
+      actor,
+      SaveRemindersSchema.parse({
+        eventTypeId: defaultType!.id,
+        kind: "invitee",
+        enabled: true,
+        timings: [{ amount: 2, unit: "hours" }],
+        subject: null,
+        bodyHtml: null,
+        includeCancelRescheduleLinks: true,
+      }),
+      t.db,
+    );
+    const [afterReminder] = await liveEventTypes(created.id);
+    expect(afterReminder!.updatedAt.getTime()).toBe(afterReminder!.createdAt.getTime());
 
     const result = await bootstrapOwner({ email: OWNER }, { db: t.db });
-    expect(result.user).toMatchObject({ id: squatter.id, emailVerified: true, hasPassword: false, isInstanceAdmin: true });
-    const u = await ownerRow();
-    expect(u).toMatchObject({ passwordHash: null, twoFactorEnabled: false, twoFactorSecretEnc: null });
-    expect(await lookupSession(t.db, session.token)).toBeNull();
-    const tokens = await t.db.select().from(authTokens).where(eq(authTokens.userId, squatter.id));
-    expect(tokens.every((tk) => tk.usedAt !== null)).toBe(true);
-    const live = (await t.db.select().from(sessions).where(eq(sessions.userId, squatter.id))).filter((s) => !s.revokedAt);
-    expect(live).toHaveLength(0);
+    expect(result.snapshot).toMatchObject({ status: "skipped", reason: "has_event_types" });
+    expect((await liveEventTypes(created.id)).map((e) => e.id)).toEqual([defaultType!.id]);
+    const kept = await t.db.select().from(workflows).where(eq(workflows.basicEventTypeId, defaultType!.id));
+    expect(kept.map((w) => w.offsetMinutes)).toEqual([120]);
   });
 });
 

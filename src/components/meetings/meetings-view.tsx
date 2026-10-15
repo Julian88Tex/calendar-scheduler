@@ -3,8 +3,8 @@
 // and "Filter" (opens the filter row), the date range picker on the Date Range tab (choosing the tab opens its calendar
 // right away, like Calendly), the meetings grouped under date headers, "Previous" / "Next" pages and the empty states
 // with "Share your link". The state lives in the URL: tabs, filters and pages navigate (keeping the current view until
-// the next one arrives); "Details" only rewrites ?event={id} in place. docs/SCOPE.md: one person, so no "My {AppName}" switch, no Unconfirmed or Pending tabs and no
-// buffers toggle. Client component.
+// the next one arrives); "Details" only rewrites ?event={id} in place. docs/SCOPE.md: one person, so no "My {AppName}"
+// switch, no Unconfirmed or Pending tabs and no buffers toggle. Client component.
 "use client";
 
 import { ChevronDown, ChevronLeft, ChevronRight, ListFilter } from "lucide-react";

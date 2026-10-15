@@ -192,7 +192,7 @@ describe("Book meeting (MP-18, MP-19)", () => {
     expect(r.mode).toBe("booked");
   });
 
-  it("refuses past times, empty invitee lists and times longer than a meeting can be", async () => {
+  it("refuses past times and empty invitee lists; all-day times can be booked (long ones: long-options.test.ts)", async () => {
     const host = await setupHost(t.db);
     const p = await votedPoll(host, {
       options: [
@@ -203,10 +203,7 @@ describe("Book meeting (MP-18, MP-19)", () => {
     });
     await expect(bookPoll(host.actor, { pollId: p.pollId, optionId: p.options[0]!, invitees: [] })).rejects.toBeDefined();
     const allDay = (await t.db.select().from(meetingPollOptions).where(eq(meetingPollOptions.pollId, p.pollId))).find((o) => o.allDayDate)!;
-    expect((await bookingPreview(host.actor, p.pollId, allDay.id)).unbookableReason).toBe(
-      "Meetings can be at most 12 hours long, so this time can't be booked. Add a shorter time and book that one.",
-    );
-    await expect(bookPoll(host.actor, { pollId: p.pollId, optionId: allDay.id, invitees: [{ email: "x@example.com" }] })).rejects.toMatchObject({ code: "validation" });
+    expect((await bookingPreview(host.actor, p.pollId, allDay.id)).unbookableReason).toBeNull();
     setFakeNow(new Date(la("2030-10-09 10:05").getTime()));
     await expect(bookPoll(host.actor, { pollId: p.pollId, optionId: p.options[0]!, invitees: [{ email: "x@example.com" }] })).rejects.toMatchObject({ message: "That time has already passed." });
   });

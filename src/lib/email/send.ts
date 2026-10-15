@@ -15,14 +15,16 @@
 //
 // Held emails (Gmail): when the owner's Google connection needs a reconnect (revoked or expired token, gmail.send
 // missing) the email is kept as "failed" with a reason starting with GMAIL_HOLD_PREFIX, the connection shows "Action
-// required" with the dashboard's calendar connection banner, and no retry with backoff burns its attempts. Its
-// email.retry job (which carries the delivery headers) waits until the hold window ends. Once Gmail can send again (the
-// owner reconnected, or another transport was configured) the sweep, or a visit to Integrations > Google Calendar,
-// makes those jobs due and the emails go out, except emails that are no longer useful: older than 24 hours, about a
-// meeting that already started, time sensitive codes and links older than 10 minutes, and system notices. Those are
-// marked failed for good with the reason.
+// required" with the dashboard's calendar connection banner, and no attempt is spent while Gmail cannot send (an
+// earlier retryable failure is held as well). Its email.retry job (which carries the delivery headers) waits until the
+// hold window ends. Once Gmail can send again (the owner reconnected, or another transport was configured) the sweep,
+// or a visit to Integrations > Google Calendar, makes those jobs due and the emails go out, except emails that are no
+// longer useful: older than 24 hours, about a meeting that already started, confirmations, updates and reminders of a
+// meeting canceled meanwhile (its cancellation still goes out), time sensitive codes and links older than 10 minutes,
+// and system notices. Those are marked failed for good with the reason. A retryable failure after the release is
+// retried with backoff (the hold job is brought forward).
 import "server-only";
-import { and, count, eq, inArray, isNull, like, lt, notLike, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNull, like, lt, notLike, or, sql } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
 import { emailOutbox, jobs, scheduledEvents } from "@/db/schema";
 import { appName } from "../brand";
@@ -33,7 +35,8 @@ import { log } from "../logger";
 import { now, nowMs } from "../time/now";
 import { absoluteUrl, appHost } from "../url";
 import { formatAddress, isValidEmailAddress, normalizeRecipients, parseAddress, sanitizeHeaderValue } from "./address";
-import { configuredTransport, NOT_CONNECTED_HOLD_REASON, resolveEmailTransport, type EmailTransportResolution } from "./gmail-sender";
+import { configuredTransport, gmailFromName, NOT_CONNECTED_HOLD_REASON, resolveEmailTransport, type EmailTransportResolution } from "./gmail-sender";
+import { isReservedHeader } from "./gmail-mime";
 import { isAbsoluteHttpUrl } from "./html";
 import { deliverWithResend, deliverWithSmtp, type DeliveryResult, type OutgoingEmail } from "./transports";
 import type { EmailMessage, EmailTransportName, IcsMethod, SendEmailResult } from "./types";
@@ -55,8 +58,23 @@ export const GMAIL_HOLD_TIME_SENSITIVE_MS = 10 * 60 * 1000;
 const PERMANENT_PREFIX = "permanent: ";
 const RETRY_BASE_MS = 30_000;
 const MAX_RETRY_DELAY_MS = 6 * 60 * 60 * 1000;
-/** Templates whose content expires within minutes (released only within GMAIL_HOLD_TIME_SENSITIVE_MS). */
-const TIME_SENSITIVE_TEMPLATES = new Set(["booking.verification_code"]);
+
+/**
+ * Content that expires within minutes (released only within GMAIL_HOLD_TIME_SENSITIVE_MS): sign in, password and
+ * verification emails, and every verification code (booking.verification_code and polls.verification_code last 10
+ * minutes).
+ */
+function isTimeSensitive(row: Pick<OutboxRow, "category" | "template">): boolean {
+  return row.category === "auth" || row.template === "verification_code" || row.template.endsWith(".verification_code");
+}
+
+/**
+ * True when the email is about the meeting's cancellation (or asks the invitee to book again), so it still matters once
+ * the meeting is canceled: cancellation templates, request reschedule, and anything carrying a CANCEL invitation.
+ */
+function isAboutCancellation(row: Pick<OutboxRow, "template" | "icsMethod">): boolean {
+  return row.icsMethod === "CANCEL" || /cancel|request_reschedule/i.test(row.template);
+}
 
 /**
  * Which transport the environment selects (GEN-15): EMAIL_PROVIDER when usable, else Resend, else SMTP, else the
@@ -151,8 +169,8 @@ function outgoingFrom(row: OutboxRow, headers: Record<string, string>): Outgoing
 type Delivery = {
   result: DeliveryResult | "outbox";
   transport: EmailTransportName;
-  /** The mailbox the message was sent as, when the transport chose it (Gmail: the owner's address). */
-  from: { name: string; address: string } | null;
+  /** The mailbox the message was sent as, when the transport chose it (Gmail: the owner's name and address). */
+  from: { name: string | null; address: string } | null;
 };
 
 async function deliverRow(row: OutboxRow, headers: Record<string, string>, resolution: EmailTransportResolution): Promise<Delivery> {
@@ -166,7 +184,7 @@ async function deliverRow(row: OutboxRow, headers: Record<string, string>, resol
     // Loaded on demand: the Gmail transport uses the calendar connection helpers, which send email themselves.
     const { deliverWithGmail } = await import("./gmail-transport");
     const result = await deliverWithGmail(outgoingFrom(row, headers), sender, { messageId: outboxMessageId(row.id) });
-    return { result, transport, from: { name: sanitizeHeaderValue(sender.ownerName, 200) || appName(), address: sender.address } };
+    return { result, transport, from: { name: gmailFromName(sender), address: sender.address } };
   }
   const outgoing = outgoingFrom(row, headers);
   if (transport === "resend") return { result: await deliverWithResend(outgoing, getEnv().RESEND_API_KEY!), transport, from: null };
@@ -236,14 +254,23 @@ async function finishDelivery(db: DbOrTx, row: OutboxRow, headers: Record<string
 async function scheduleRetry(db: DbOrTx, row: OutboxRow, headers: Record<string, string>, retryAfterMs: number | null = null): Promise<void> {
   // One retry job per row: revived when an earlier one already finished, so a later failure always gets its retry.
   const delay = Math.min(Math.max(backoffMs(row.attempts), retryAfterMs ?? 0), MAX_RETRY_DELAY_MS);
-  await enqueueOrReviveJob(db, {
+  const runAt = new Date(nowMs() + delay);
+  const remaining = Math.max(1, EMAIL_MAX_ATTEMPTS - row.attempts);
+  const id = await enqueueOrReviveJob(db, {
     type: "email.retry",
     payload: { outboxId: row.id, headers },
-    runAt: new Date(nowMs() + delay),
+    runAt,
     idempotencyKey: retryJobKey(row.id),
-    maxAttempts: Math.max(1, EMAIL_MAX_ATTEMPTS - row.attempts),
+    maxAttempts: remaining,
     priority: 5,
   });
+  if (id) return;
+  // A pending job already holds the key, typically the hold job of a row that waited for Gmail (due only at the end of
+  // the 24 hour hold window): bring it forward so this failure is retried with backoff, not a day later.
+  await db
+    .update(jobs)
+    .set({ runAt, maxAttempts: sql`${jobs.attempts} + ${remaining}`, payload: { outboxId: row.id, headers }, updatedAt: now() })
+    .where(and(eq(jobs.idempotencyKey, retryJobKey(row.id)), eq(jobs.status, "pending"), gt(jobs.runAt, runAt)));
 }
 
 /**
@@ -266,12 +293,16 @@ const retryJobKey = (outboxId: string) => `email.retry:${outboxId}`;
 
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
 
-/** Header map from untrusted input (job payloads): valid names, sanitized string values. */
+/**
+ * Header map from untrusted input (job payloads): valid names, sanitized string values, and none of the headers the
+ * message structure owns (recipients, sender, subject, Message-ID, MIME headers), so a payload can never add a
+ * recipient or replace the sender.
+ */
 export function cleanHeaders(input: unknown): Record<string, string> {
   if (!input || typeof input !== "object" || Array.isArray(input)) return {};
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
-    if (typeof v !== "string" || !HEADER_NAME.test(k)) continue;
+    if (typeof v !== "string" || !HEADER_NAME.test(k) || isReservedHeader(k)) continue;
     const value = sanitizeHeaderValue(v, 998);
     if (value) out[k] = value;
   }
@@ -287,18 +318,37 @@ async function storedRetryHeaders(db: DbOrTx, outboxId: string): Promise<Record<
   return cleanHeaders((job?.payload as { headers?: unknown } | undefined)?.headers);
 }
 
+/** Rows that may be (re)delivered: failed or queued, plus interrupted "sending" ones when includeStale. */
+function claimableStatus(at: Date, includeStale: boolean | undefined) {
+  const stale = new Date(at.getTime() - EMAIL_STALE_SENDING_MS);
+  return includeStale
+    ? or(inArray(emailOutbox.status, ["failed", "queued"]), and(eq(emailOutbox.status, "sending"), lt(emailOutbox.updatedAt, stale)))
+    : inArray(emailOutbox.status, ["failed", "queued"]);
+}
+
 /** Claims an existing row for delivery (failed or queued, or interrupted "sending"), counting the attempt. */
 async function claimRow(db: DbOrTx, id: string, opts: { includeStale?: boolean } = {}): Promise<OutboxRow | null> {
   const at = now();
-  const stale = new Date(at.getTime() - EMAIL_STALE_SENDING_MS);
-  const statusCond = opts.includeStale
-    ? or(inArray(emailOutbox.status, ["failed", "queued"]), and(eq(emailOutbox.status, "sending"), lt(emailOutbox.updatedAt, stale)))
-    : inArray(emailOutbox.status, ["failed", "queued"]);
   const [row] = await db
     .update(emailOutbox)
     .set({ status: "sending", attempts: sql`${emailOutbox.attempts} + 1`, updatedAt: at })
-    .where(and(eq(emailOutbox.id, id), statusCond, isNull(emailOutbox.bodyPurgedAt)))
+    .where(and(eq(emailOutbox.id, id), claimableStatus(at, opts.includeStale), isNull(emailOutbox.bodyPurgedAt)))
     .returning();
+  return row ?? null;
+}
+
+/**
+ * Makes a row wait for Gmail without spending a delivery attempt (Gmail is the transport but cannot send right now):
+ * failed, with the hold reason. Returns the row, or null when another worker changed it meanwhile.
+ */
+async function holdRow(db: DbOrTx, id: string, reason: string, opts: { includeStale?: boolean } = {}): Promise<OutboxRow | null> {
+  const at = now();
+  const [row] = await db
+    .update(emailOutbox)
+    .set({ status: "failed", provider: "gmail", lastError: `${GMAIL_HOLD_PREFIX}${reason}`.slice(0, 2000), updatedAt: at })
+    .where(and(eq(emailOutbox.id, id), claimableStatus(at, opts.includeStale), isNull(emailOutbox.bodyPurgedAt)))
+    .returning();
+  if (row) log.warn("email.held", { id, template: row.template, error: reason, outbox: outboxLink() });
   return row ?? null;
 }
 
@@ -309,13 +359,20 @@ async function claimRow(db: DbOrTx, id: string, opts: { includeStale?: boolean }
 async function heldGiveUpReason(db: DbOrTx, row: OutboxRow): Promise<string | null> {
   const age = nowMs() - row.createdAt.getTime();
   if (age > GMAIL_HOLD_MAX_MS) return "Not sent: Gmail could not send it within 24 hours.";
-  if ((row.category === "auth" || TIME_SENSITIVE_TEMPLATES.has(row.template)) && age > GMAIL_HOLD_TIME_SENSITIVE_MS) {
+  if (isTimeSensitive(row) && age > GMAIL_HOLD_TIME_SENSITIVE_MS) {
     return "Not sent: it contained a code or link that expires within minutes, and Gmail could not send it in time.";
   }
   if (row.category === "system") return "Not sent: this notice was out of date before Gmail could send it.";
   if (row.scheduledEventId) {
-    const [meeting] = await db.select({ startAt: scheduledEvents.startAt }).from(scheduledEvents).where(eq(scheduledEvents.id, row.scheduledEventId)).limit(1);
+    const [meeting] = await db
+      .select({ startAt: scheduledEvents.startAt, status: scheduledEvents.status })
+      .from(scheduledEvents)
+      .where(eq(scheduledEvents.id, row.scheduledEventId))
+      .limit(1);
     if (meeting && meeting.startAt.getTime() <= nowMs()) return "Not sent: the meeting started before Gmail could send it.";
+    // A confirmation, update or reminder of a meeting canceled meanwhile would contradict the cancellation email (and its
+    // invitation could put the canceled meeting back in the invitee's calendar).
+    if (meeting?.status === "canceled" && !isAboutCancellation(row)) return "Not sent: the meeting was canceled before Gmail could send it.";
   }
   return null;
 }
@@ -393,7 +450,7 @@ export async function sendEmail(msg: EmailMessage): Promise<SendEmailResult> {
       bccAddresses: bcc.valid,
       fromAddress: gmailFrom?.address ?? sender.address,
       fromName: gmailFrom
-        ? sanitizeHeaderValue(gmailFrom.ownerName, 200) || sender.name
+        ? gmailFromName(gmailFrom)
         : msg.fromName?.trim()
           ? sanitizeHeaderValue(msg.fromName, 200)
           : sender.name,
@@ -465,6 +522,11 @@ export async function sendEmail(msg: EmailMessage): Promise<SendEmailResult> {
         await giveUpHeld(db, existing, giveUp);
         return { id: existing.id, status: "failed", deduplicated: true };
       }
+    } else if (transport === "gmail" && resolution.hold) {
+      // An earlier failure, but Gmail cannot send right now: wait for it without spending an attempt.
+      const heldNow = await holdRow(db, existing.id, resolution.hold);
+      if (heldNow) await scheduleHoldJob(db, heldNow, headers);
+      return { id: existing.id, status: "failed", deduplicated: true };
     }
     const claimed = await claimRow(db, existing.id);
     if (claimed) {
@@ -518,6 +580,13 @@ export async function retryEmailDelivery(outboxId: string, headers?: Record<stri
       .where(and(eq(emailOutbox.id, outboxId), inArray(emailOutbox.status, ["failed", "queued", "sending"])));
     log.warn("email.gave_up", { id: outboxId, template: current.template, attempts: current.attempts });
     return "failed";
+  }
+  if (resolution.name === "gmail" && resolution.hold) {
+    // Not held yet (an earlier retryable failure), but Gmail cannot send right now: wait without spending an attempt.
+    // The sweep (releaseHeldEmails) makes its job due again once Gmail can send.
+    if (await holdRow(db, outboxId, resolution.hold, { includeStale: true })) return "held";
+    const [fresh] = await db.select({ status: emailOutbox.status }).from(emailOutbox).where(eq(emailOutbox.id, outboxId));
+    return fresh?.status === "sending" ? "in_flight" : "skipped";
   }
   const claimed = await claimRow(db, outboxId, { includeStale: true });
   if (!claimed) {

@@ -134,7 +134,8 @@ async function hostIcs(db: DB, b: MeetingBundle, host: MeetingHost, inv: Invitee
   return buildMeetingIcs({ scheduledEventId: b.meeting.id, inviteeId: perInvitee, method, audience: "host", sequence, db });
 }
 
-function addToCalendar(b: MeetingBundle, inv: InviteeRow, ctx: TemplateContext, locale: string) {
+/** "Add to calendar" links; an all-day poll meeting (the invite's allDayDate) is added as an all-day event. */
+function addToCalendar(b: MeetingBundle, inv: InviteeRow, ctx: TemplateContext, locale: string, allDayDate?: string | null) {
   const t = getT(locale, "common");
   const title = t("meeting.titleWith", { eventName: b.meeting.name, hostName: String(ctx.my_name ?? "") });
   const urls = inviteeUrls(inv.id);
@@ -146,6 +147,7 @@ function addToCalendar(b: MeetingBundle, inv: InviteeRow, ctx: TemplateContext, 
     details: urls.confirmation,
     icsUrl: urls.ics,
     locale,
+    allDayDate: allDayDate ?? null,
   });
 }
 
@@ -231,7 +233,7 @@ async function sendBooked(db: DB, b: MeetingBundle, inv: InviteeRow, brand: Emai
       locale,
       location: m.location,
       includeAnswers: snap.includeAnswersInNotifications !== false,
-      addToCalendar: addToCalendar(b, inv, ctx, locale),
+      addToCalendar: addToCalendar(b, inv, ctx, locale, ics?.allDayDate),
       subjectTemplate: snap.templates?.confirmationSubject ?? null,
       bodyTemplate: cleanBody(snap.templates?.confirmationBody),
       facts: { pollTitle: b.poll?.title ?? null },
@@ -320,7 +322,7 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
       locale,
       location: m.location,
       includeAnswers: snap.includeAnswersInNotifications !== false,
-      addToCalendar: addToCalendar(b, inv, ctx, locale),
+      addToCalendar: addToCalendar(b, inv, ctx, locale, ics?.allDayDate),
       former: { ctx: formerCtx, reason },
     };
     await deliver(db, b, {
@@ -595,7 +597,7 @@ export async function notifyMoved(db: DB, p: { scheduledEventId: string; fromSta
       const formerCtx = formerOf(ctx, from, inv.timezone ?? organizerZone, locale, inv.timeFormat);
       const ics = await inviteeIcs(db, b, inv, "REQUEST");
       const sender = await meetingSender({ hostUserId: m.organizerUserId, audience: "invitee", db });
-      const common = { brand, locale, location: m.location, includeAnswers: snap.includeAnswersInNotifications !== false, addToCalendar: addToCalendar(b, inv, ctx, locale) };
+      const common = { brand, locale, location: m.location, includeAnswers: snap.includeAnswersInNotifications !== false, addToCalendar: addToCalendar(b, inv, ctx, locale, ics?.allDayDate) };
       await deliver(db, b, {
         to: inv.email,
         email: bookingEmail("invitee_rescheduled", { ...common, ctx, former: { ctx: formerCtx, reason: null }, questions: inv.questionsAndAnswers, manageLinks: snap.includeCancelRescheduleLinks !== false }),

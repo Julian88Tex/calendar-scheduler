@@ -33,7 +33,7 @@ vi.mock("@/lib/events/registry", async () => {
 });
 vi.mock("@/lib/lifecycle/jobs", async () => ({ handlers: (await import("@/lib/lifecycle/job-handlers")).lifecycleJobHandlers, periodic: [] }));
 
-const { domainEvents, eventTypes, inviteeGuests, scheduledEventHosts } = await import("@/db/schema");
+const { domainEvents, eventTypes, inviteeGuests, scheduledEventHosts, scheduledEvents } = await import("@/db/schema");
 const { setFakeNow, resetFakeTime } = await import("@/lib/time/now");
 const { loadActorCtx } = await import("@/lib/authz");
 const { getAvailability } = await import("@/lib/booking/availability");
@@ -291,5 +291,36 @@ describe("moveScheduledEvent (MP-21)", () => {
     expect(mail!.text).toContain("9:00pm - Tuesday, October 8, 2030 (Central European Time)");
     expect(icsProps(mail!.ics)).toMatchObject({ UID: m.icsUid, SEQUENCE: "1" });
     expect(await outbox(t.db, { to: fx.owner.email, template: "lifecycle.host_rescheduled", scheduledEventId: m.id })).toHaveLength(1);
+  });
+
+  it("moves meetings up to 12 hours, and poll meetings up to a whole local day (long and all-day options)", async () => {
+    const fx = await setupHost(t.db, { eventType: { notificationType: "email_confirmation" } });
+    const r = await book(fx, la("2030-10-08 10:00"), { invitee: { name: "Ana Lima", email: "ana.m2@example.com", timezone: "Europe/Berlin" } });
+    const actor = await hostActor(fx);
+    const start = la("2030-10-09 08:00");
+    await expect(moveScheduledEvent({ scheduledEventId: r.scheduledEventId, start, end: new Date(start.getTime() + 13 * HOUR), actor })).rejects.toMatchObject({
+      code: "validation",
+      message: "A meeting can last at most 12 hours.",
+    });
+    await moveScheduledEvent({ scheduledEventId: r.scheduledEventId, start, end: new Date(start.getTime() + 12 * HOUR), actor });
+    expect((await meeting(t.db, r.scheduledEventId)).durationMinutes).toBe(12 * 60);
+
+    // The same meeting booked through a poll: a whole day, also the 25 hour fall-back day of Nov 3, 2030.
+    await t.db.update(scheduledEvents).set({ source: "poll" }).where(eq(scheduledEvents.id, r.scheduledEventId));
+    await moveScheduledEvent({ scheduledEventId: r.scheduledEventId, start: la("2030-10-12 00:00"), end: la("2030-10-13 00:00"), actor });
+    expect((await meeting(t.db, r.scheduledEventId)).durationMinutes).toBe(24 * 60);
+    const fallBack = { start: new Date("2030-11-03T00:00:00-07:00"), end: new Date("2030-11-04T00:00:00-08:00") };
+    await moveScheduledEvent({ scheduledEventId: r.scheduledEventId, ...fallBack, actor });
+    const m = await meeting(t.db, r.scheduledEventId);
+    expect(m.durationMinutes).toBe(25 * 60);
+    expect(m.endAt.toISOString()).toBe(fallBack.end.toISOString());
+    await expect(
+      moveScheduledEvent({ scheduledEventId: r.scheduledEventId, start: fallBack.start, end: new Date(fallBack.start.getTime() + 27 * HOUR), actor }),
+    ).rejects.toMatchObject({ code: "validation", message: "A meeting poll time can last at most one day." });
+    // Nobody but the meeting's hosts learns about the length rule of a meeting they cannot manage.
+    const stranger = await setupHost(t.db, { email: "stranger.m2@example.com" });
+    await expect(
+      moveScheduledEvent({ scheduledEventId: r.scheduledEventId, start, end: new Date(start.getTime() + 30 * HOUR), actor: await hostActor(stranger) }),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });

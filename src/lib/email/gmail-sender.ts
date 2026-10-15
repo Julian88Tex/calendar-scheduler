@@ -23,6 +23,7 @@ import { hasGmailSendScope } from "@/lib/integrations/google/scopes";
 import { getEnv } from "../env";
 import { log } from "../logger";
 import { now } from "../time/now";
+import { sanitizeHeaderValue } from "./address";
 import type { EmailTransportName } from "./types";
 
 /** instance_settings key: "outbox" turns Gmail sending off, "auto" (or no row) leaves it on. */
@@ -175,6 +176,14 @@ export type GmailSender = {
   address: string;
   connectionStatus: GoogleConnectionStatus;
 };
+
+/**
+ * The From display name of Gmail deliveries: the owner's name without control characters, or null (the bare address)
+ * when it is empty. The outbox row records the same name the message carries.
+ */
+export function gmailFromName(sender: Pick<GmailSender, "ownerName">): string | null {
+  return sanitizeHeaderValue(sender.ownerName ?? "", 200) || null;
+}
 
 /** The owner's Gmail sender, or null when the owner has no Google connection that granted gmail.send. */
 export async function getGmailSender(db?: DbOrTx): Promise<GmailSender | null> {

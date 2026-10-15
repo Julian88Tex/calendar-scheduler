@@ -32,7 +32,10 @@ vi.mock("@/lib/calendars", async (importOriginal) => ({
 }));
 
 const { eventTypes, handles, instanceSettings, oauthAccounts, organizations, users } = await import("@/db/schema");
-const { bootstrapOwner } = await import("@/lib/setup/bootstrap");
+const { bootstrapOwner, UNVERIFIED_ACCOUNT_MESSAGE } = await import("@/lib/setup/bootstrap");
+const { createUserAccount } = await import("@/lib/auth/signup");
+const { hashPassword } = await import("@/lib/crypto");
+const { withTx } = await import("@/db");
 const { resolveOAuthLogin } = await import("@/lib/auth/flows/oauth-accounts");
 const { handleOAuthCallback, handleOAuthStart } = await import("@/lib/auth/oauth/flow");
 const { SESSION_COOKIE, lookupSession } = await import("@/lib/auth/session");
@@ -139,6 +142,24 @@ describe("Google sign-in into the bootstrapped account", () => {
     expect(plain.user.avatarUrl).toBeNull();
     const [u] = await t.db.select().from(users).where(eq(users.id, boot.user.id));
     expect(u?.avatarUrl).toBeNull();
+  });
+
+  it("an unverified email signup: the bootstrap refuses it until Continue with Google verifies the address", async () => {
+    const signup = await withTx(t.db, async (tx) =>
+      createUserAccount(tx, { email: OWNER, name: "Julian", passwordHash: await hashPassword("pw-123456"), isInstanceAdmin: true }),
+    );
+    await expect(bootstrapOwner({ email: OWNER }, { db: t.db })).rejects.toMatchObject({ code: "conflict", message: UNVERIFIED_ACCOUNT_MESSAGE });
+
+    const res = await continueWithGoogle(claims());
+    expect(res.status).toBe(303);
+    const [claimed] = await t.db.select().from(users).where(eq(users.id, signup.id));
+    expect(claimed).toMatchObject({ passwordHash: null, avatarUrl: PHOTO });
+    expect(claimed!.emailVerifiedAt).not.toBeNull();
+
+    const boot = await bootstrapOwner({ email: OWNER }, { db: t.db });
+    expect(boot).toMatchObject({ account: "existing", snapshot: { status: "applied" }, user: { id: signup.id, avatarUrl: PHOTO } });
+    const types = await t.db.select().from(eventTypes).where(eq(eventTypes.ownerUserId, signup.id));
+    expect(types.map((e) => e.slug).sort()).toEqual(["30min", "60min", "meal"]);
   });
 
   it("does not let an unverified Google email in", async () => {

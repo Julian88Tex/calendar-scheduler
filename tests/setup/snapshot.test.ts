@@ -115,7 +115,9 @@ describe("bootstrap input and configuration", () => {
 
   it("reads SETUP_TOKEN, CRON_SECRET and OWNER_EMAIL", () => {
     const token = "t".repeat(24);
-    expect(bootstrapSecrets({ SETUP_TOKEN: ` ${token} `, CRON_SECRET: "c" })).toEqual([token, "c"]);
+    expect(bootstrapSecrets({ SETUP_TOKEN: ` ${token} `, CRON_SECRET: "c" })).toEqual([token]);
+    expect(bootstrapSecrets({ SETUP_TOKEN: "s", CRON_SECRET: ` ${"c".repeat(24)} ` })).toEqual(["c".repeat(24)]);
+    expect(bootstrapSecrets({ SETUP_TOKEN: token, CRON_SECRET: "c".repeat(24) })).toEqual([token, "c".repeat(24)]);
     expect(bootstrapSecrets({ SETUP_TOKEN: "", CRON_SECRET: "  " })).toEqual([]);
     expect(bearerMatches(`Bearer ${token}`, bootstrapSecrets({ SETUP_TOKEN: token }))).toBe(true);
     expect(configuredOwnerEmail({ OWNER_EMAIL: " Owner@Example.com " })).toBe("owner@example.com");

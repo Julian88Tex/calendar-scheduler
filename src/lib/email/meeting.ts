@@ -20,8 +20,8 @@ import { DEFAULT_NOTIFICATION_PREFS } from "@/db/types";
 import { appName } from "../brand";
 import { getT, resolveLocale } from "../i18n";
 import { renderTemplate } from "../template";
-import { addDays, isValidZone, localDateOf, startOfLocalDay } from "../time/luxon";
 import { buildMeetingTemplateContext, isConferenceKind, locationText } from "../template-context";
+import { addDays, isValidZone, localDateOf, startOfLocalDay } from "../time/luxon";
 import { appHost, fileAbsoluteUrl, inviteeUrls, joinUrl } from "../url";
 import { htmlToText } from "./html";
 import { buildIcs, icsUid } from "./ical";
@@ -116,8 +116,8 @@ export type MeetingIcs = {
 
 /**
  * The local date ("YYYY-MM-DD") of a meeting poll booked from a date-only option (MP-18: an all-day meeting), else
- * null. The meeting must still span exactly that day of the poll zone (local midnight to the next one), so a meeting
- * moved to a timed option, and the CANCEL of a former timed time, keep their own times.
+ * null. The meeting must still span exactly that day of the poll zone (local midnight to the next one, 23 to 25 hours
+ * across daylight saving changes), so a meeting moved in place to a timed option keeps its times.
  */
 export async function meetingAllDayDate(
   event: Pick<typeof scheduledEvents.$inferSelect, "source" | "pollId" | "startAt" | "endAt">,

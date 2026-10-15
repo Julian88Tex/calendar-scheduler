@@ -14,7 +14,7 @@ const { createUser } = await import("../factories");
 const t = useTestDb();
 const env = process.env as Record<string, string | undefined>;
 const SETUP_TOKEN = "setup-token-0123456789-abcdefghij";
-const CRON_SECRET = "cron-secret-9876543210";
+const CRON_SECRET = "cron-secret-9876543210-zyxwvutsrq";
 const OWNER = "julian@example.com";
 let ipCounter = 0;
 
@@ -58,6 +58,17 @@ describe("authorization", () => {
     expect(bootstrapSecrets()).toEqual([]);
     expect((await call({ email: OWNER }, { auth: "Bearer short" })).status).toBe(501);
     expect(SETUP_TOKEN_MIN_LENGTH).toBeGreaterThanOrEqual(24);
+  });
+
+  it("ignores a CRON_SECRET that is too short to claim the instance (it still protects /api/cron)", async () => {
+    resetEnv();
+    env.CRON_SECRET = "short-cron";
+    expect(bootstrapSecrets()).toEqual([]);
+    expect((await call({ email: OWNER }, { auth: "Bearer short-cron" })).status).toBe(501);
+    env.SETUP_TOKEN = SETUP_TOKEN;
+    expect(bootstrapSecrets()).toEqual([SETUP_TOKEN]);
+    expect((await call({ email: OWNER }, { auth: "Bearer short-cron" })).status).toBe(401);
+    expect(await t.db.select().from(users)).toHaveLength(0);
   });
 
   it("answers 401 without the header, with a wrong token or another scheme, and creates nothing", async () => {
