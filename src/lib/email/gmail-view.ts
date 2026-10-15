@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // The "Send emails from your Gmail" card on Integrations > Google Calendar:
 // - getGmailSendingView(actor): what the card shows (null for anyone but the instance owner, whose Google account is

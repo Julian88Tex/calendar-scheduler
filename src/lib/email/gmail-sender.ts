@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // Which transport delivers email (owner decision, docs/SCOPE.md priority 5: booking emails are sent from the owner's
 // own Gmail, so no Resend or SMTP account is needed). resolveEmailTransport() applies, in order:

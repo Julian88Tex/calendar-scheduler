@@ -4,9 +4,11 @@
 // (src/lib/setup/config.ts, the same check as the owner bootstrap) that exception applies only to that address
 // (case-insensitive, trimmed) and only when the signup proves it (a verified Google or Microsoft email): any other first
 // signup follows the policy like everyone else and never becomes instance admin, so nobody can claim a fresh instance by
-// signing up before the owner. A password signup proves nothing (anyone can type the owner's address), so with the
-// owner's address it follows the policy too, like the bootstrap, which refuses an unverified owner account as possibly
-// a squatter's. A set but malformed OWNER_EMAIL gives the exception to nobody, like it disables the bootstrap.
+// signing up before the owner. A password signup proves nothing (anyone can type the owner's address), so on a fresh
+// instance one with the owner's address is refused whatever the policy (open, domains or ADMIN_EMAILS included): the
+// first account bearing that address is always the owner's, as the bootstrap requires (it refuses an unverified owner
+// account as possibly a squatter's, who could have linked their own sign-in method or calendar to it). A set but
+// malformed OWNER_EMAIL gives the exception to nobody, like it disables the bootstrap.
 // ADMIN_EMAILS addresses may always sign up (they become instance admins once their email is verified,
 // src/lib/authz.ts). Invitation acceptance bypasses the policy.
 //
@@ -30,7 +32,7 @@ export type SignupDecision =
 
 export const SIGNUPS_CLOSED_MESSAGE = "Sign ups are closed. Ask an admin for an invitation.";
 
-/** The owner's address on a fresh instance, refused because the signup does not prove it (a password signup). */
+/** The owner's address on a fresh instance, refused (whatever the policy) because the signup does not prove it. */
 export const OWNER_SIGNUP_NEEDS_PROOF_MESSAGE =
   'To create the owner account, use "Continue with Google" (or Microsoft) with this address. A password signup does not prove the address is yours.';
 
@@ -131,6 +133,12 @@ export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } & 
   const n = await countLiveUsers(db);
   const policy = await getSignupPolicy(db);
   if (n === 0 && firstAccountExceptionAllows(email, opts)) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
+  if (n === 0 && !opts.emailVerified) {
+    // The owner's address without proof on a fresh instance (a password signup): refused whatever the policy, so the
+    // first account bearing it is always the owner's (see the file header).
+    const owner = ownerEmail();
+    if (owner && normalizeEmail(email) === owner) return { allowed: false, firstUser: false, policy, message: OWNER_SIGNUP_NEEDS_PROOF_MESSAGE };
+  }
   if (policy === "open") return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
   let domainMatch = false;
   if (policy === "domains") {
@@ -139,10 +147,7 @@ export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } & 
     if (domainMatch) return { allowed: true, firstUser: false, policy, joinOrganizationId: await firstOrganizationId(db) };
   }
   if (isAdminEmail(email)) return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
-  // Only the owner's unproven signup of a fresh instance gets here with the owner's address: tell them how to proceed.
-  const owner = n === 0 ? ownerEmail() : null;
-  const message = owner && normalizeEmail(email) === owner ? OWNER_SIGNUP_NEEDS_PROOF_MESSAGE : SIGNUPS_CLOSED_MESSAGE;
-  return { allowed: false, firstUser: false, policy, message };
+  return { allowed: false, firstUser: false, policy, message: SIGNUPS_CLOSED_MESSAGE };
 }
 
 export type SignupAvailability = {

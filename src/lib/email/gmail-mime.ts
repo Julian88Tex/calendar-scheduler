@@ -1,4 +1,4 @@
-// OWNER: gmail (email sending from the owner's Gmail).
+// OWNER: foundation-platform. Gmail sending (email sending from the owner's Gmail, added at go-live).
 //
 // The raw RFC 5322 message the Gmail transport hands to users.messages.send (src/lib/email/gmail-transport.ts), built
 // with nodemailer's MailComposer, the same MIME composer the SMTP transport uses, so every transport produces the same

@@ -143,10 +143,11 @@ describe("OWNER_EMAIL and the first-account exception", () => {
     expect(owner.decision).toMatchObject({ allowed: true, firstUser: true });
   });
 
-  it("never lets a password signup with the owner's address (not proven) claim the fresh instance", async () => {
+  it("never lets a password signup with the owner's address (not proven) be the first account, whatever the policy", async () => {
     env.OWNER_EMAIL = "owner@example.com";
     // A password signup needs no proof of the address: anyone can type the owner's email (pre-account hijacking). The
-    // bootstrap refuses such an account as possibly a squatter's, so the policy must not make it instance admin.
+    // bootstrap refuses such an account as possibly a squatter's (who could link their own sign-in method or calendar
+    // to it before the owner claims it), so the policy never creates it.
     expect(await signupPolicyAllows("Owner@Example.com", { db: t.db })).toEqual({
       allowed: false,
       firstUser: false,
@@ -156,19 +157,21 @@ describe("OWNER_EMAIL and the first-account exception", () => {
     const squatted = await caught(create("Owner@Example.com"));
     expect(isAppError(squatted) && squatted.code).toBe("forbidden");
     expect((squatted as Error).message).toBe(OWNER_SIGNUP_NEEDS_PROOF_MESSAGE);
-    expect(await t.db.select().from(users)).toHaveLength(0);
 
-    // ADMIN_EMAILS listing the owner (docs/DEPLOY.md) lets the address sign up, as an ordinary account: the instance
-    // admin rights of ADMIN_EMAILS wait for a verified email (src/lib/authz.ts).
+    // Not even through a rule that lets anyone else in: ADMIN_EMAILS listing the owner (docs/DEPLOY.md), open, domains.
     env.ADMIN_EMAILS = "owner@example.com";
-    const listed = await create("owner@example.com");
-    expect(listed.decision).toMatchObject({ allowed: true, firstUser: false });
-    expect(listed.user.isInstanceAdmin).toBe(false);
-    expect(isInstanceAdminUser(listed.user)).toBe(false);
+    expect(await signupPolicyAllows("owner@example.com", { db: t.db })).toMatchObject({ allowed: false, message: OWNER_SIGNUP_NEEDS_PROOF_MESSAGE });
+    for (const policy of ["open", "domains"] as const) {
+      env.SIGNUP_POLICY = policy;
+      await setSetting("signup_domains", ["example.com"]);
+      expect(await signupPolicyAllows("owner@example.com", { db: t.db })).toMatchObject({ allowed: false, policy, message: OWNER_SIGNUP_NEEDS_PROOF_MESSAGE });
+      expect((await caught(create("owner@example.com"))) as Error).toMatchObject({ code: "forbidden", message: OWNER_SIGNUP_NEEDS_PROOF_MESSAGE });
+      // Someone else still follows the policy (both let them in, as an ordinary account).
+      expect(await signupPolicyAllows("eve@example.com", { db: t.db })).toMatchObject({ allowed: true, firstUser: false });
+    }
+    delete env.SIGNUP_POLICY;
 
     // The real email and password signup (both steps) refuses it the same way.
-    await wipe();
-    delete env.ADMIN_EMAILS;
     const meta = { ip: "198.51.100.77", userAgent: null };
     const step1 = await caught(checkSignupEmail({ email: " OWNER@example.com ", meta, db: t.db }));
     expect(isAppError(step1) && step1.fieldErrors?.email).toEqual([OWNER_SIGNUP_NEEDS_PROOF_MESSAGE]);
@@ -176,10 +179,20 @@ describe("OWNER_EMAIL and the first-account exception", () => {
     expect(isAppError(step2) && step2.code).toBe("forbidden");
     expect(await t.db.select().from(users)).toHaveLength(0);
 
+    // The owner proving the address (Google or Microsoft) claims the instance even with ADMIN_EMAILS listing it.
+    const owner = await create("owner@example.com", {}, verified);
+    expect(owner.user.isInstanceAdmin).toBe(true);
+    expect(isInstanceAdminUser(owner.user)).toBe(true);
+  });
+
+  it("refuses the owner's unproven signup only on a fresh instance (later the address is taken or follows the policy)", async () => {
+    env.OWNER_EMAIL = "owner@example.com";
     env.SIGNUP_POLICY = "open";
-    const open = await create("owner@example.com");
-    expect(open.decision).toMatchObject({ allowed: true, firstUser: false });
-    expect(open.user.isInstanceAdmin).toBe(false);
+    await create("eve@example.com");
+    // Under open a non-owner was first (ordinary account); the owner's address then follows the policy like any other.
+    const later = await create("owner@example.com");
+    expect(later.decision).toMatchObject({ allowed: true, firstUser: false });
+    expect(later.user.isInstanceAdmin).toBe(false);
   });
 
   it("a first signup allowed by the policy itself (open, domains, ADMIN_EMAILS) is not made instance admin", async () => {
