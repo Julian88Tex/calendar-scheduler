@@ -288,11 +288,12 @@ of trigger runtime and 20,000 URL fetches per day; this uses about 288 fetches).
 failed or late run is harmless: the next run catches up. If you change `CRON_SECRET` on Vercel, update the script
 property too.
 
-Optional second trigger: the repository's GitHub Actions workflow (`.github/workflows/cron.yml`, every 10 minutes)
-runs once you set the repository variable `APP_URL` and the secret `CRON_SECRET`:
-`gh variable set APP_URL --body "$APP_URL"` and `gh secret set CRON_SECRET --body "$CRON_SECRET"`. On a private
-repository with GitHub's free plan, each run bills at least a minute (about 4,320 minutes a month against 2,000
-included), so leave it off there or change its schedule to `*/30 * * * *`; the Apps Script alone is enough.
+The Apps Script is the dispatcher: nothing else needs to call `/api/cron` on a schedule. The repository's GitHub
+Actions workflow (`.github/workflows/cron.yml`) has no schedule; it is a manual "run the jobs now" button. To use it,
+set the repository variable `APP_URL` and the secret `CRON_SECRET` once
+(`gh variable set APP_URL --body "$APP_URL"` and `gh secret set CRON_SECRET --body "$CRON_SECRET"`), then start it
+from **Actions > cron > Run workflow** or with `gh workflow run cron.yml`. It calls `/api/cron` once, exactly like a
+run of the script.
 
 ## 9. Verify that reminders are being dispatched
 

@@ -2,7 +2,7 @@
 // OAuth state cookie (ARCHITECTURE 18.4).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loginMethodCodeTemplate, resetPasswordTemplate, verifyEmailTemplate, welcomeTemplate } from "@/lib/auth/emails";
-import { backgroundStatus, configurationChecklist, oauthRedirectUris } from "@/lib/auth/flows/setup-status";
+import { backgroundStatus, configurationChecklist, instanceHasAccount, oauthRedirectUris } from "@/lib/auth/flows/setup-status";
 import { checkOAuthState, sealOAuthState, unsealOAuthState } from "@/lib/auth/oauth/state";
 import { resetFakeTime, setFakeNow } from "@/lib/time/now";
 
@@ -29,12 +29,13 @@ afterEach(() => {
   resetFakeTime();
 });
 
-const item = (id: string) => configurationChecklist().find((i) => i.id === id)!;
+/** A row of a fresh instance's checklist (no account yet, so the owner bootstrap row is listed). */
+const item = (id: string) => configurationChecklist({ instanceHasAccount: false }).find((i) => i.id === id)!;
 
 describe("configuration checklist (GEN-09, ADM-03)", () => {
   it("lists every GEN-09 entry with gray Not configured by default", () => {
     for (const k of touched) delete env[k];
-    const ids = configurationChecklist().map((i) => i.id);
+    const ids = configurationChecklist({ instanceHasAccount: false }).map((i) => i.id);
     expect(ids).toEqual(["database", "session_secret", "encryption_key", "google", "microsoft", "email", "cron_secret", "owner_bootstrap"]);
     expect(item("owner_bootstrap")).toMatchObject({ status: "off", value: "Not configured", envVars: ["SETUP_TOKEN", "OWNER_EMAIL"] });
     expect(item("google")).toMatchObject({ status: "off", value: "Not configured", envVars: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] });
@@ -83,14 +84,30 @@ describe("configuration checklist (GEN-09, ADM-03)", () => {
     env.OWNER_EMAIL = "not-an-email";
     expect(item("owner_bootstrap")).toMatchObject({ status: "warning", value: "OWNER_EMAIL is not a valid email address" });
     env.OWNER_EMAIL = "owner@example.com";
-    expect(JSON.stringify(configurationChecklist())).not.toContain("owner@example.com");
+    expect(JSON.stringify(configurationChecklist({ instanceHasAccount: false }))).not.toContain("owner@example.com");
     vi.restoreAllMocks();
+  });
+
+  it("lists the owner bootstrap only while the instance is known to have no account", () => {
+    for (const k of touched) delete env[k];
+    env.SETUP_TOKEN = "s".repeat(24);
+    env.OWNER_EMAIL = "owner@example.com";
+    expect(item("owner_bootstrap")).toMatchObject({ status: "ok", value: "Enabled for OWNER_EMAIL" });
+    for (const instanceHasAccount of [true, null, undefined]) {
+      const items = configurationChecklist({ instanceHasAccount });
+      expect(items.map((i) => i.id), String(instanceHasAccount)).toEqual(["database", "session_secret", "encryption_key", "google", "microsoft", "email", "cron_secret"]);
+      const text = JSON.stringify(items);
+      for (const hidden of ["OWNER_EMAIL", "owner@example.com", "SETUP_TOKEN", "/api/setup/bootstrap", "Owner bootstrap"]) expect(text).not.toContain(hidden);
+    }
+    expect(configurationChecklist().some((i) => i.id === "owner_bootstrap")).toBe(false);
   });
 
   it("flags the missing database on Vercel and skips database reads in setup mode", async () => {
     env.VERCEL = "1";
     expect(item("database")).toMatchObject({ status: "warning", value: "Required: connect a Postgres database" });
     expect(await backgroundStatus()).toBeNull();
+    // No database means no account yet: the setup page shows the owner bootstrap row without touching the database.
+    expect(await instanceHasAccount()).toBe(false);
   });
 
   it("builds the exact redirect URIs from APP_URL", () => {

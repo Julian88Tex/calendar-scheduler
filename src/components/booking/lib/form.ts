@@ -301,6 +301,49 @@ export function interpretBookingResponse(status: number, body: unknown): SubmitO
   }
 }
 
+/**
+ * One "Schedule Event" request at a time (docs/QA_REPORT.md, "Found outside these paths" item 8). The page asks
+ * start() synchronously before it sends anything: a second click or a fast double tap while a request is in flight gets
+ * false and sends nothing (the disabled button alone cannot stop it, both clicks can run before the re-render that
+ * disables it). finish(outcome) ends the request: after a booking ("ok") the form stays locked while the page navigates
+ * to the confirmation, so no later answer (such as already_booked for the invitee's own new booking) can flash an
+ * error, and finish() then reports false for any further outcome; any other outcome (slot taken, network error,
+ * validation, the email code step) releases it for a retry. release() ends a request that stopped before it was sent
+ * (the bot check failed). Per page instance: a genuinely new submit later (a new page) is not affected.
+ */
+export type SubmitGuard = {
+  /** True when a request may be sent now; marks it in flight. */
+  start(): boolean;
+  /** Ends the request with its outcome; false when the page must ignore it (a booking was already made). */
+  finish(outcome: SubmitOutcome): boolean;
+  /** Ends a request that was never sent. */
+  release(): void;
+  /** "idle", "in_flight" or "booked". */
+  readonly state: "idle" | "in_flight" | "booked";
+};
+
+export function createSubmitGuard(): SubmitGuard {
+  let state: SubmitGuard["state"] = "idle";
+  return {
+    start() {
+      if (state !== "idle") return false;
+      state = "in_flight";
+      return true;
+    },
+    finish(outcome) {
+      if (state === "booked") return false;
+      state = outcome.type === "ok" ? "booked" : "idle";
+      return true;
+    },
+    release() {
+      if (state === "in_flight") state = "idle";
+    },
+    get state() {
+      return state;
+    },
+  };
+}
+
 /** Order of the fields on the page, to focus the first invalid one. */
 export function fieldOrder(ctx: FormContext): string[] {
   const out = ctx.nameFormat === "first_last" ? ["firstName", "lastName"] : ["name"];

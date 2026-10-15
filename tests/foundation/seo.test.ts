@@ -16,8 +16,23 @@ describe("robots.txt", () => {
   });
 });
 
+/** The public home page (for signed-out visitors) and the legal and help pages, in sitemap order. */
+const STATIC_URLS = [
+  "http://localhost:3000/",
+  "http://localhost:3000/privacy",
+  "http://localhost:3000/terms",
+  "http://localhost:3000/cookie-policy",
+  "http://localhost:3000/help",
+];
+
 describe("sitemap.xml", () => {
   const t = useTestDb();
+
+  it("gives the home page the top priority", async () => {
+    const entries = await sitemap();
+    expect(entries.find((e) => e.url === "http://localhost:3000/")).toMatchObject({ priority: 1 });
+    expect(entries.find((e) => e.url === "http://localhost:3000/help")).toMatchObject({ priority: 0.3, changeFrequency: "monthly" });
+  });
 
   it("lists marketing pages, landing pages and public event types only", async () => {
     const owner = await createUser(t.db, { slug: "sitemap-owner" });
@@ -31,6 +46,7 @@ describe("sitemap.xml", () => {
     await createEventType(t.db, { team, slug: "team-60", hosts: [{ userId: owner.id }] });
 
     const urls = (await sitemap()).map((e) => e.url);
+    expect(urls.slice(0, 5)).toEqual(STATIC_URLS);
     expect(urls).toEqual(expect.arrayContaining([
       "http://localhost:3000/privacy",
       "http://localhost:3000/sitemap-owner",
@@ -39,6 +55,7 @@ describe("sitemap.xml", () => {
       "http://localhost:3000/sitemap-team/team-60",
     ]));
     expect(urls).not.toContain("http://localhost:3000");
+    expect(urls.filter((u) => u === "http://localhost:3000/")).toHaveLength(1);
     for (const hidden of ["secret-30", "off-30", "gone-30", "adhoc-30", "shared-30"]) {
       expect(urls.some((u) => u.endsWith(`/${hidden}`)), hidden).toBe(false);
     }
@@ -47,7 +64,7 @@ describe("sitemap.xml", () => {
   it("falls back to the marketing pages when the database is unavailable", async () => {
     setDbForTests({ select: () => { throw new Error("no database"); } } as never);
     const urls = (await sitemap()).map((e) => e.url);
-    expect(urls).toEqual(["http://localhost:3000/privacy", "http://localhost:3000/terms"]);
+    expect(urls).toEqual(STATIC_URLS);
     setDbForTests(t.db);
   });
 });

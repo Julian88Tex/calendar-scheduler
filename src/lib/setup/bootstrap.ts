@@ -21,7 +21,7 @@
 //    apply it again.
 // The result says what was done (`changes`, human readable) and why the snapshot was skipped when it was.
 import "server-only";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb, withTx, type DB, type DbOrTx } from "@/db";
 import { advisoryXactLock } from "@/db/helpers";
 import {
@@ -48,10 +48,10 @@ import { log } from "@/lib/logger";
 import { asDateFormat, changeHandle, ProfileInput, updateProfile } from "@/lib/settings";
 import { now } from "@/lib/time/now";
 import { absoluteUrl, publicBookingUrl } from "@/lib/url";
-import { normalizeEmail } from "@/lib/validation";
 import { saveEventTypeReminders } from "@/lib/workflows";
 import { SaveRemindersSchema } from "@/lib/workflows/schemas";
 import { splitOffset } from "@/lib/workflows/timing";
+import { hasLiveAccount } from "./accounts";
 import { assertOwnerEmailAllowed } from "./config";
 import { OWNER_SNAPSHOT, type OwnerScheduleKey, type OwnerSnapshot, type OwnerSnapshotEventType, type OwnerSnapshotLocation } from "./owner-snapshot";
 import { BootstrapOwnerInputSchema, type BootstrapOwnerInput, type BootstrapOwnerParsedInput } from "./schemas";
@@ -427,13 +427,7 @@ export async function bootstrapOwner(
     // Serializes with every signup (createAccountUnderPolicy takes the same lock): no account can appear between the
     // check below and the writes of this transaction.
     await advisoryXactLock(tx, SIGNUP_LOCK_KEY);
-    const emailNormalized = normalizeEmail(input.email);
-    const [other] = await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(and(isNull(users.deletedAt), ne(users.emailNormalized, emailNormalized)))
-      .limit(1);
-    if (other) throw new AppError("conflict", OTHER_ACCOUNT_MESSAGE);
+    if (await hasLiveAccount({ db: tx, exceptEmail: input.email })) throw new AppError("conflict", OTHER_ACCOUNT_MESSAGE);
 
     const changes: string[] = [];
     const existing = await findUserByEmail(tx, input.email);

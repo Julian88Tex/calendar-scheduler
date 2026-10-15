@@ -1,17 +1,13 @@
-# Background jobs trigger (ARCHITECTURE section 12.3, DECISIONS: about every 10 minutes). Vercel Hobby crons run at
-# most once a day (vercel.json keeps the daily one), so this workflow calls /api/cron more often.
+# Manual background jobs run (ARCHITECTURE section 12.3): calls GET $APP_URL/api/cron once, on demand only
+# (Actions > cron > Run workflow, or `gh workflow run cron.yml`). It has no schedule: the owner's Google Apps Script
+# (docs/DEPLOY.md step 8) is the dispatcher and calls /api/cron every 5 minutes, and Vercel's daily cron (vercel.json)
+# stays as a backstop. A schedule here would only add late runs and billed minutes.
 #
 # Setup: repository variable APP_URL (production URL, for example https://kairos.example.com) and repository secret
 # CRON_SECRET (same value as the CRON_SECRET env var on Vercel). The job is skipped when either is missing.
-# Caveats: GitHub runs scheduled workflows late (often 10 to 60 minutes) and disables them on public repositories after
-# 60 days without activity. On a private repository on the free plan every run bills at least one minute (about 4,320
-# minutes a month against 2,000 included): change the schedule to "*/30 * * * *" or rely on an external pinger
-# (cron-job.org or Upstash QStash calling GET $APP_URL/api/cron every 5 minutes with the Authorization header).
 name: cron
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
 permissions: {}

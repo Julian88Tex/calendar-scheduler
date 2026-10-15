@@ -60,16 +60,22 @@ test.describe("golden path: email outbox", () => {
     await page.getByRole("link", { name: "Show all emails" }).click();
     await expect(rows).toHaveCount(3, SLOW);
 
-    // A page past the end (a stale link, or a typed page number far beyond bigint) shows the last page.
+    // A page past the end (a stale link, or a typed page number far beyond bigint) shows the last page. The redirect
+    // happens after the dashboard shell has streamed, so the browser loads the last page as a second document: wait
+    // for it to hydrate (its server HTML already shows the rows, and a click before hydration is lost in dev mode).
     for (const n of ["2", "1000000000000000000"]) {
       await page.goto(`/app/settings/email-outbox?page=${n}`, SLOW);
       await expect(page).toHaveURL(/\/app\/settings\/email-outbox$/, SLOW);
       await expect(rows).toHaveCount(3, SLOW);
+      await page.waitForLoadState("networkidle");
     }
 
-    // View: the rendered email in a sandboxed frame, then the plain text.
-    await invitee.getByRole("link", { name: /^View / }).click();
-    await expect(page).toHaveURL(/view=[0-9a-f-]{36}/, SLOW);
+    // View: the rendered email in a sandboxed frame, then the plain text. (Clicked again if a slow dev hydration still
+    // dropped the first click: a second click on the same link only repeats the same navigation.)
+    await expect(async () => {
+      if (!/view=/.test(page.url())) await invitee.getByRole("link", { name: /^View / }).click({ timeout: 10_000 });
+      await expect(page).toHaveURL(/view=[0-9a-f-]{36}/, { timeout: 10_000 });
+    }).toPass(SLOW);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("lifecycle.invitee_confirmation", SLOW);
     await expect(dialog).toContainText("Calendar invitation (invite.ics)");

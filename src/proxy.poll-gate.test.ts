@@ -3,7 +3,8 @@
 // (GET with the page HTML, HEAD without a body), everything else renders as usual. The proxy's own requests carry the
 // gate header (no recursion), client navigations, prefetches, actions and other methods are never checked, any error
 // falls back to the normal page, and every response body the proxy does not read is released (the check runs on every
-// voter page view, and an unread body holds its pooled connection).
+// voter page view, and an unread body holds its pooled connection). The state check may be answered by the CDN (no
+// no-store on it) and gives up after 1 second.
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POLL_GATE_HEADER, proxy } from "@/proxy";
@@ -30,13 +31,13 @@ function tracked(body: string, init: ResponseInit): Tracked {
 
 /** Stubs fetch: the state route answers `stateStatus`, the page answers `page` (or the call throws). */
 function stubFetch(p: { stateStatus?: number; stateThrows?: boolean; page?: { status: number; type: string } }) {
-  const calls: { url: string; headers: Headers }[] = [];
+  const calls: { url: string; headers: Headers; cache?: RequestCache; signal?: AbortSignal | null }[] = [];
   const bodies: Tracked[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: URL | string, init?: RequestInit) => {
       const url = String(input);
-      calls.push({ url, headers: new Headers(init?.headers) });
+      calls.push({ url, headers: new Headers(init?.headers), cache: init?.cache, signal: init?.signal });
       if (url.includes("/api/public/polls/")) {
         if (p.stateThrows) throw new Error("timeout");
         const status = p.stateStatus ?? 200;
@@ -72,6 +73,21 @@ describe("proxy: voter page of a gone poll", () => {
     expect(calls.map((c) => c.url)).toEqual([`${ORIGIN}/api/public/polls/abc123def0/state`, `${ORIGIN}/p/abc123def0?i=tok`]);
     expect(calls.every((c) => c.headers.get(POLL_GATE_HEADER) === "1")).toBe(true);
     expect(bodies[0]!.canceled()).toBe(true); // the state body is never read
+  });
+
+  it("lets the CDN answer the state check: no no-store (which would send Cache-Control: no-cache), 1 second timeout", async () => {
+    const { calls } = stubFetch({ stateStatus: 410 });
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await proxy(req("/p/abc123def0"));
+    const [state, page] = calls;
+    expect(state!.cache).toBeUndefined();
+    expect(state!.headers.has("cache-control")).toBe(false);
+    expect(state!.headers.has("pragma")).toBe(false);
+    expect(state!.signal).toBeInstanceOf(AbortSignal);
+    expect(timeout.mock.calls[0]).toEqual([1000]);
+    // The gone page itself is fetched fresh.
+    expect(page!.cache).toBe("no-store");
+    timeout.mockRestore();
   });
 
   it("answers HEAD with 410 and no body, releasing the page body", async () => {

@@ -14,6 +14,22 @@ function trackPageErrors(page: Page): string[] {
   return errors;
 }
 
+/** Collects React hydration mismatch reports (console errors, dev mode) for the current test. */
+function trackHydrationErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && /hydrat/i.test(m.text())) errors.push(m.text().slice(0, 300));
+  });
+  return errors;
+}
+
+/** Waits until React has hydrated the element (the innermost Suspense boundary that holds it is no longer server HTML). */
+async function waitForHydration(locator: Locator): Promise<void> {
+  await expect
+    .poll(() => locator.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"))), { timeout: 30_000 })
+    .toBe(true);
+}
+
 const sidebar = (page: Page) => page.getByRole("complementary", { name: "Sidebar" });
 const mainNav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 
@@ -206,8 +222,14 @@ test.describe("dashboard shell", () => {
   });
 
   test("help menu opens the help center, what's new and report a problem", async ({ page, loginAs }) => {
+    const hydrationErrors = trackHydrationErrors(page);
     await loginAs(page, "owner@example.com");
+    // Wait for hydration before the first click. A click while the page content is still server HTML opens the
+    // (modal) menu, which marks every other element aria-hidden; React then reports a hydration attribute mismatch
+    // (dev only, harmless in production) and the dev overlay's issue badge grows over the sidebar's Help button.
     await page.goto("/app/scheduling");
+    await page.waitForLoadState("networkidle");
+    await waitForHydration(page.getByRole("list", { name: "Personal event types" }));
 
     const help = mainNav(page).getByRole("button", { name: "Help", exact: true });
     await help.click();
@@ -254,6 +276,7 @@ test.describe("dashboard shell", () => {
     await expect(railHelp).toBeFocused();
     await page.getByRole("button", { name: "Expand sidebar" }).click();
     await expect.poll(() => widthOf(sidebar(page))).toBe(240);
+    expect(hydrationErrors, "hydration errors").toEqual([]);
   });
 
   test("create menu offers one-on-one event types and meeting polls only", async ({ page, loginAs }) => {

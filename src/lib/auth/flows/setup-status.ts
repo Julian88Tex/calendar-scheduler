@@ -8,7 +8,9 @@
 // (the owner connects Google and allows Gmail sending; whether they did needs the database, so the Integrations hub
 // shows that), else the outbox. Owner bootstrap: SETUP_TOKEN (or a long CRON_SECRET) enables POST /api/setup/bootstrap;
 // OWNER_EMAIL limits it, and the first-account exception of the signup policy (a signup that verifies the address), to
-// the owner. The page is public, so the owner's address is never shown.
+// the owner. The page is public, so the owner's address is never shown, and the row is listed only while the instance
+// is known to have no account yet (instanceHasAccount() false): once setup is done the page no longer advertises the
+// endpoint or mentions OWNER_EMAIL.
 import "server-only";
 import { and, count, eq, lte } from "drizzle-orm";
 import { getDb, setupRequired } from "@/db";
@@ -17,6 +19,7 @@ import { appName } from "@/lib/brand";
 import { configuredTransport } from "@/lib/email";
 import { getEnv, getFeatures, type Features } from "@/lib/env";
 import { isAppError } from "@/lib/errors";
+import { hasLiveAccount } from "@/lib/setup/accounts";
 import { bootstrapSecrets, configuredOwnerEmail, SETUP_TOKEN_MIN_LENGTH } from "@/lib/setup/config";
 import { now } from "@/lib/time/now";
 import { appUrl } from "@/lib/url";
@@ -126,8 +129,11 @@ function ownerBootstrapItem(): ChecklistItem {
   };
 }
 
-/** The GEN-09 checklist from the environment (never touches the database). */
-export function configurationChecklist(): ChecklistItem[] {
+/**
+ * The GEN-09 checklist from the environment (never touches the database). The owner bootstrap row is included only
+ * when `instanceHasAccount` is false (a fresh instance); unknown (omitted or null) leaves it out.
+ */
+export function configurationChecklist(opts: { instanceHasAccount?: boolean | null } = {}): ChecklistItem[] {
   const e = getEnv();
   const f = getFeatures(e);
   const onVercel = Boolean(e.VERCEL);
@@ -183,8 +189,21 @@ export function configurationChecklist(): ChecklistItem[] {
       envVars: ["CRON_SECRET"],
       hint: f.cronSecret ? undefined : "Recommended: only callers with the secret can trigger /api/cron.",
     },
-    ownerBootstrapItem(),
+    ...(opts.instanceHasAccount === false ? [ownerBootstrapItem()] : []),
   ];
+}
+
+/**
+ * Whether the instance has a live account: false in setup mode (no database, so no account, without touching it), null
+ * when the database cannot be read (the setup page then treats setup as done and does not advertise the bootstrap).
+ */
+export async function instanceHasAccount(): Promise<boolean | null> {
+  if (setupRequired()) return false;
+  try {
+    return await hasLiveAccount();
+  } catch {
+    return null;
+  }
 }
 
 export type BackgroundStatus = {

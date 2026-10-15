@@ -148,13 +148,15 @@ test.describe("forgot password", () => {
 });
 
 test.describe("setup page", () => {
-  test("renders the checklist and the exact redirect URIs", async ({ page, baseURL, axe }) => {
+  test("renders the checklist and the exact redirect URIs", async ({ page, baseURL, api, seed, axe }) => {
+    // A fresh instance (no account yet) lists the owner bootstrap row.
+    await api.reset();
     const res = await page.goto("/setup");
     expect(res?.status()).toBe(200);
     await expect(page.getByRole("heading", { level: 1, name: /^Finish setting up / })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Configuration" })).toBeVisible();
     const config = page.getByRole("region", { name: "Configuration" });
-    for (const label of ["Database", "Session secret", "Encryption key", "Google (sign in, Calendar, Meet)", "Email provider", "Cron secret"]) {
+    for (const label of ["Database", "Session secret", "Encryption key", "Google (sign in, Calendar, Meet, Gmail sending)", "Microsoft (sign in)", "Email provider", "Cron secret", "Owner bootstrap"]) {
       await expect(config.getByText(new RegExp(`^${label.replace(/[()]/g, "\\$&")}`)).first()).toBeVisible();
     }
     await expect(config.getByText("Outbox only")).toBeVisible();
@@ -162,5 +164,13 @@ test.describe("setup page", () => {
     await expect(page.getByText(`${baseURL}/api/auth/microsoft/callback`)).toBeVisible();
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
     await axe(page);
+
+    // Once an account exists the public page no longer advertises the bootstrap or mentions OWNER_EMAIL.
+    await seed("owner");
+    await page.goto("/setup");
+    await expect(config.getByText(/^Cron secret/).first()).toBeVisible();
+    await expect(config.getByText("Owner bootstrap")).toHaveCount(0);
+    await expect(page.getByText("OWNER_EMAIL")).toHaveCount(0);
+    await expect(page.getByText("/api/setup/bootstrap")).toHaveCount(0);
   });
 });
