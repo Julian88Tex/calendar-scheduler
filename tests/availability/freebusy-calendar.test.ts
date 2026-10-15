@@ -1,8 +1,8 @@
 // A work calendar shared with "See only free/busy" blocks booking times end to end on PGlite (docs/SCOPE.md priorities
 // 3 and 4): the real calendars busy layer reads it through a fake Google FreeBusy API, booking-core's availability and
 // createBooking (the submission recheck) refuse times inside its busy blocks, and Troubleshoot names the block
-// "Busy ({calendar name})" since free/busy gives no title. Only the credentials and the unfinished modules' contracts
-// (links, polls, the event registry) are mocked.
+// "Busy ({calendar name})" since free/busy gives no title (a label of ours that no free/busy rule may match). Only the
+// credentials and the unfinished modules' contracts (links, polls, the event registry) are mocked.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockRequest } from "../helpers/fake-providers";
 
@@ -48,9 +48,11 @@ beforeEach(() => {
   workBusy = [{ start: la("2030-10-08 13:00").toISOString(), end: la("2030-10-08 14:00").toISOString() }];
 });
 
-/** The owner's Google account: the primary calendar (readable, no events) and the work calendar (free/busy only). */
-async function scenario() {
-  const fx = await setupSolo(t.db);
+type MeEvent = { id: string; summary: string; start: string; end: string };
+
+/** The owner's Google account: the primary calendar (readable, `meEvents`) and the work calendar (free/busy only). */
+async function scenario(opts: { eventType?: Partial<typeof eventTypes.$inferInsert>; meEvents?: MeEvent[] } = {}) {
+  const fx = await setupSolo(t.db, { eventType: opts.eventType });
   const g = await setupGoogle(t.db, { user: fx.owner, calendars: [{ externalId: ME, name: ME, isPrimary: true, canWrite: true, checkConflicts: true }] });
   const [work] = await t.db
     .insert(calendars)
@@ -72,7 +74,7 @@ async function scenario() {
       handler: (req: MockRequest) =>
         decodeURIComponent(req.params[0]!) === WORK
           ? mockResponse({ error: { code: 403, message: "You need to have reader access to this calendar.", errors: [{ reason: "requiredAccessLevel" }] } }, { status: 403 })
-          : { items: [] },
+          : { items: (opts.meEvents ?? []).map((e) => ({ status: "confirmed", id: e.id, summary: e.summary, start: { dateTime: e.start }, end: { dateTime: e.end } })) },
     },
   );
   return { fx, g, work: work!, f, actor: { orgId: fx.owner.organizationId, orgRole: fx.owner.orgRole, user: fx.owner } };
@@ -211,6 +213,51 @@ describe("free/busy only calendar blocks", () => {
       expect(views.get("2:00pm")?.status).toBe("available");
     } finally {
       s.f.restore();
+    }
+  });
+
+  it('are never ignored by free/busy rules matching "Busy" or the calendar name, and Troubleshoot still names them', async () => {
+    const NOW = la("2030-10-07 08:00");
+    // A real event on the readable calendar with the very same title: the rules still ignore it (control).
+    const meEvents = [{ id: "lookalike", summary: `Busy (${WORK})`, start: la("2030-10-08 10:00").toISOString(), end: la("2030-10-08 11:00").toISOString() }];
+    const rules = [
+      { mode: "includes", text: "busy" },
+      { mode: "includes", text: "copado" },
+      { mode: "exact", text: `Busy (${WORK})` },
+    ] as const;
+    for (const rule of rules) {
+      resetFakeTime();
+      const s = await scenario({ eventType: { freeBusyExceptions: [{ ...rule }] }, meEvents });
+      try {
+        const r = await getAvailability({ target: s.fx.target, start: la("2030-10-08 00:00"), end: la("2030-10-09 00:00"), now: NOW });
+        const starts = startsOn(r.slots, "2030-10-08");
+        expect(starts, `${rule.mode}: ${rule.text}`).toContain("10:00");
+        expect(starts, `${rule.mode}: ${rule.text}`).not.toContain("13:00");
+        expect(starts, `${rule.mode}: ${rule.text}`).not.toContain("13:30");
+        expect(starts).toContain("14:00");
+        expect(await createBooking(bookingInput(s.fx.target, la("2030-10-08 13:00")), { now: NOW })).toMatchObject({ ok: false, code: "slot_unavailable" });
+
+        setFakeNow(la("2030-10-08 07:59"));
+        const day = await getTroubleshootDay(s.actor, { date: "2030-10-08", eventTypeId: s.fx.target.eventType.id });
+        expect(day.error).toBeNull();
+        const entry = day.result!.entries[0]!;
+        const ctx = {
+          zone: day.zone,
+          hour12: true,
+          eventTypeName: entry.eventType.name,
+          durationMinutes: entry.eventType.durationMinutes,
+          settings: entry.eventType.settings,
+          hostLimits: day.hostLimits,
+        };
+        const views = new Map(entry.candidates.map((c) => [describeCandidate(c, ctx).timeLabel, describeCandidate(c, ctx)]));
+        expect(views.get("10:00am")?.status).toBe("available");
+        const blocked = views.get("1:00pm")!;
+        expect(blocked.status).toBe("CALENDAR");
+        expect(blocked.reasons).toContain(`Conflicts with "Busy (${WORK})" on your calendar (1:00pm - 2:00pm).`);
+        expect(blockerTitle(blocked.candidate.blockers.find((b) => b.code === "CALENDAR")!)).toBe(`Busy (${WORK})`);
+      } finally {
+        s.f.restore();
+      }
     }
   });
 });

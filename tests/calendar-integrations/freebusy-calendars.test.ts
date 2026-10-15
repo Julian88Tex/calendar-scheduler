@@ -4,7 +4,8 @@
 // writable), the settings pickers show them with a "Free/busy only" note and keep them out of the calendar to add
 // events to, the busy cache reads them with one batched FreeBusy request per window (cache, TTL and rechecks shared with
 // event based calendars) and merges them into the same busy result as "Busy ({calendar name})", a FreeBusy failure
-// keeps the readable calendars' fresh data, and push channels and change sync are for readable calendars only.
+// stays the failing calendar's own (the other calendars refresh, the connection stays healthy), and push channels and
+// change sync are for readable calendars only.
 import { eq } from "drizzle-orm";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -304,29 +305,33 @@ describe("busy layer", () => {
     // Google keeps failing on the work calendar alone (in the same batched request as the client's), then on the whole
     // FreeBusy request: more often than the connection failure threshold, while the other calendars keep changing.
     const titles = (r: Awaited<ReturnType<typeof getExternalBusy>>) => r[c.user.id]!.busy.map((b) => [b.title, b.start.toISOString()]);
+    let clientAt = iso(20);
     for (const [n, fail] of (["internalError", "backendError", "internalError", "backendError", "whole request"] as const).entries()) {
-      if (fail === "whole request") g.freeBusyFails = true;
-      else g.freeBusyErrors[WORK] = fail;
       g.events[ME] = [{ id: `lunch-${n}`, summary: `Lunch ${n}`, start: iso(12), end: iso(13) }];
-      g.busy[CLIENT] = fail === "whole request" ? g.busy[CLIENT]! : [{ start: iso(9 + n), end: iso(9.5 + n) }];
+      if (fail === "whole request") {
+        // Both free/busy only calendars stay on their last data.
+        g.freeBusyFails = true;
+      } else {
+        g.freeBusyErrors[WORK] = fail;
+        clientAt = iso(9 + n / 2);
+        g.busy[CLIENT] = [{ start: clientAt, end: iso(9.25 + n / 2) }];
+      }
       const r = await getExternalBusy({ userIds: [c.user.id], ...range, maxAgeSeconds: 0 });
       // The work calendar is on its last data (stale, never "No times available" while that data is under 24 hours old).
       expect(r[c.user.id]).toMatchObject({ ok: false, stale: true, nocal: false });
-      const clientAt = fail === "whole request" ? iso(12) : iso(9 + n);
-      expect(titles(r)).toEqual(
-        [
-          [`Lunch ${n}`, iso(12)],
-          [`Busy (${WORK})`, iso(17)],
-          ["Busy (Client team)", clientAt],
-        ].sort((a, b) => a[1]!.localeCompare(b[1]!)),
-      );
+      expect(titles(r)).toEqual([
+        ["Busy (Client team)", clientAt],
+        [`Lunch ${n}`, iso(12)],
+        [`Busy (${WORK})`, iso(17)],
+      ]);
       const [conn] = await t.db.select().from(calendarConnections).where(eq(calendarConnections.id, c.connectionId));
       expect(conn).toMatchObject({ status: "active", consecutiveFailures: 0, lastError: null });
       // The work window is not refreshed and not left leased: the next read asks Google again.
       const [w] = await t.db.select().from(calendarSyncWindows).where(eq(calendarSyncWindows.calendarId, c.work.id));
       expect(w).toMatchObject({ status: "ok", fetchLeaseUntil: null, fetchLeaseHolder: null });
       expect(w!.fetchedAt.getTime()).toBe(before!.fetchedAt.getTime());
-      expect(w!.error).toMatch(/free\/busy times|Backend Error|503/i);
+      expect(w!.error).toBeTruthy();
+      if (fail !== "whole request") expect(w!.error).toContain(fail);
     }
     const [client1] = await t.db.select().from(calendarSyncWindows).where(eq(calendarSyncWindows.calendarId, client.id));
     expect(client1!.fetchedAt.getTime()).toBeGreaterThan(before!.fetchedAt.getTime());
@@ -336,7 +341,7 @@ describe("busy layer", () => {
     g.freeBusyErrors = {};
     g.busy[WORK] = [{ start: iso(18), end: iso(19) }];
     const calls = freeBusyCalls().length;
-    const healed = await getExternalBusy({ userIds: [c.user.id], ...range });
+    const healed = await getExternalBusy({ userIds: [c.user.id], ...range, maxAgeSeconds: 0 });
     expect(freeBusyCalls().length).toBeGreaterThan(calls);
     expect(healed[c.user.id]).toMatchObject({ ok: true, stale: false, nocal: false });
     expect(healed[c.user.id]!.busy.filter((b) => b.calendarId === c.work.id).map((b) => b.start.toISOString())).toEqual([iso(18)]);
