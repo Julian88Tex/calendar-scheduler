@@ -37,7 +37,7 @@ const docCss = /```css\n([\s\S]*?)```/.exec(section)![1]!;
 describe("design tokens (ARCHITECTURE 20.1)", () => {
   const docRoot = declarations(block(docCss, /:root\s*\{/));
   const docTheme = declarations(block(docCss, /@theme inline\s*\{/));
-  const cssRoot = declarations(block(css, /:root,\s*\[data-force-light\]\s*\{/));
+  const cssRoot = declarations(block(css, /:root,\s*\[data-force-light\],\s*\[data-public-auto\]\s*\{/));
   const cssTheme = declarations(block(css, /@theme inline\s*\{/));
 
   it("parses the documented blocks", () => {
