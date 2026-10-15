@@ -1,6 +1,6 @@
 // Public components (SPEC section 8, GEN-03, GEN-14, GEN-21, BK-03, BK-26): the gallery's landing and booking replicas
 // carry the Powered by ribbon with its exact geometry, the Report abuse mailto to the operator, the 44px day circles
-// tinted from --primary-color (#F4F8FF fill, #004EBA text; primary_color=ff0000 turns them red), the split
+// tinted from --primary-color (#E6F0FF fill, #004EBA text; primary_color=ff0000 turns them red), the split
 // [time][Next] slot at 48.5% each; the cookie banner appears only when a tracker is configured and no tracker request
 // leaves the page before consent; public pages without trackers never show it.
 import type { Locator, Page } from "@playwright/test";
@@ -133,15 +133,14 @@ test.describe("public components", () => {
     const dayBox = (await day.boundingBox())!;
     expect(Math.round(dayBox.width)).toBe(44);
     expect(Math.round(dayBox.height)).toBe(44);
-    expectColorNear(await renderedColor(day, "background-color"), "#f4f8ff", "available day fill");
+    expectColorNear(await renderedColor(day, "background-color"), "#e6f0ff", "available day fill");
     expectColorNear(await renderedColor(day, "color"), "#004eba", "available day text");
     const off = calendar.getByRole("button", { name: "Monday, October 12 - No times available" });
     await expect(off).toBeDisabled();
     expectColorNear(await renderedColor(off, "color"), "#476788", "unavailable day text");
-    // Calendly parity (live captures, commit 648136d): in Figtree, weight 460 carries the ink of Calendly's day numbers,
-    // available and unavailable alike (the compact "sm" pickers keep bold over regular).
-    expect(await off.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("460");
-    expect(await day.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("460");
+    // Available days read at a glance: bold numbers on a #E6F0FF fill, unavailable ones regular with no fill.
+    expect(await off.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("400");
+    expect(await day.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("700");
 
     // The heading and time zone row use the classic ink.
     expectColorNear(await renderedColor(booking.getByRole("heading", { name: "Select a Date & Time" }), "color"), "#0a2540", "heading");
@@ -183,7 +182,7 @@ test.describe("public components", () => {
     expectColorNear(await renderedColor(next, "background-color"), "#ff0000", "branded Next");
     const day14 = calendar.getByRole("button", { name: "Wednesday, October 14 - Times available" });
     expectColorNear(await renderedColor(day14, "color"), "#ba0000", "branded day text");
-    expectColorNear(await renderedColor(day14, "background-color"), "#fff4f4", "branded day fill");
+    expectColorNear(await renderedColor(day14, "background-color"), "#ffe6e6", "branded day fill");
   });
 
   test("cookie banner appears only with a tracker and nothing loads before consent", async ({ page }) => {

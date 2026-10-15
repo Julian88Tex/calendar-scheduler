@@ -29,6 +29,9 @@
   --row-hover: #f0f3f8;
   /* Booking calendar tints derived from --primary-color (#006BFF gives #F4F8FF days, #E6F0FF hover, #004EBA text). */
   --day-tint: 4.5%; --day-hover-tint: 10%; --day-text-pct: 73%; --day-text-mix: #000000;
+  /* Available booking days: a stronger fill than Calendly's #F4F8FF (#E6F0FF, hover #D1E4FF) so they stand out from
+     unavailable days on phones and under a browser's automatic dark mode. */
+  --day-fill: 10%; --day-fill-hover: 18%;
   color-scheme: light;
 }
 
@@ -47,6 +50,7 @@
   --focus: #7ab4ff;
   --row-hover: #1b222b;
   --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -64,6 +68,7 @@
     --focus: #7ab4ff;
     --row-hover: #1b222b;
     --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
     color-scheme: dark;
   }
 }
@@ -270,11 +275,14 @@
 
 /* Brand-derived colors for public pages (SPEC GEN-03: every blue reads from --primary-color). */
 @utility cal-day-available {
-  background-color: color-mix(in srgb, var(--primary-color) var(--day-tint), transparent);
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-fill), transparent);
   color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
 }
 @utility cal-day-hover {
   background-color: color-mix(in srgb, var(--primary-color) var(--day-hover-tint), transparent);
+}
+@utility cal-day-available-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-fill-hover), transparent);
 }
 @utility text-brand-strong {
   color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
