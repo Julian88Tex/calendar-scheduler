@@ -1,15 +1,21 @@
 // OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // OAuth intent dispatch (ARCHITECTURE section 10.4), after the callback validated the state and exchanged the code:
-// - login, signup: resolveOAuthLogin (find, link by verified email, or create under the signup policy), then
-//   calendars.linkCalendarFromOAuth (CAL-17), a session (two_factor_pending when 2FA is on, AU-09), audit entries and
-//   a redirect to the same-site returnTo or /app/scheduling (new accounts: POST_SIGNUP_PATH).
-// - link_login_method: connects the provider to the signed-in user who started the flow, then
-//   linkCalendarFromOAuth, then back to returnTo (default Settings > Login) with ?connected={provider}.
+// - signup: resolveOAuthLogin (find, link by verified email, or create under the signup policy), then
+//   calendars.linkCalendarFromOAuth (CAL-17: a Google signup asks for the calendar scopes and gmail.send, so it also
+//   connects the calendar), a session (two_factor_pending when 2FA is on, AU-09), audit entries and a redirect to the
+//   same-site returnTo or /app/scheduling (new accounts: POST_SIGNUP_PATH).
+// - login: the same without the calendar link. A Google sign-in asks only for openid, email and profile
+//   (src/lib/auth/oauth/google.ts, so Google shows no unverified app warning), and its token is used for nothing but
+//   the id token: the stored calendar connection (tokens, scopes, Gmail send permission, health) is never changed by a
+//   sign-in. The account is still found by Google subject or verified email; a user without a calendar connection
+//   connects one from Calendar settings or Integrations (connect_calendar).
+// - link_login_method: connects the provider to the signed-in user who started the flow (identity only, no calendar
+//   link), then back to returnTo (default Settings > Login) with ?connected={provider}.
 // - accept_invitation: teams.getPendingInvitation, the email match rule ("Use {invited email} to accept this
 //   invitation."), account creation inside the inviting organization without the signup policy, then
-//   teams.acceptInvitationInTx, linkCalendarFromOAuth and a session.
-// - connect_calendar: calendars.handleConnectCallback (signed-in users only).
+//   teams.acceptInvitationInTx and a session (identity only, no calendar link).
+// - connect_calendar: calendars.handleConnectCallback (signed-in users only; first connect and every Reconnect).
 // - poll_freebusy: polls.handleVoterFreeBusyCallback (tokens are never persisted).
 // Failures redirect with an error code (src/lib/auth/oauth/errors.ts), never with free text.
 import "server-only";
@@ -47,7 +53,10 @@ export function isOAuthIntent(value: unknown): value is OAuthIntent {
   );
 }
 
-/** CAL-17: every sign-in creates or refreshes the calendar connection; a failure never blocks the sign-in. */
+/** Only these intents ask for the calendar scopes, so only they may create or refresh a calendar connection. */
+const CALENDAR_LINK_INTENTS: readonly OAuthIntent[] = ["signup"];
+
+/** CAL-17: a signup creates or refreshes the calendar connection; a failure never blocks the sign-in. */
 async function linkCalendar(ctx: OAuthCallbackContext, res: OAuthResolution): Promise<void> {
   try {
     await linkCalendarFromOAuth({
@@ -78,7 +87,7 @@ async function startSession(userId: string, twoFactorPending: boolean): Promise<
 /** Session, audit and redirect after login, signup and invitation acceptance. */
 async function finishSignIn(ctx: OAuthCallbackContext, res: OAuthResolution, opts: { via?: "invitation" } = {}): Promise<Response> {
   const meta = requestMetaFrom(ctx.request);
-  await linkCalendar(ctx, res);
+  if (CALENDAR_LINK_INTENTS.includes(ctx.intent)) await linkCalendar(ctx, res);
   if (res.created) {
     await auditAuth("user.signup", { user: res.user, details: { method: ctx.provider, ...(opts.via ? { via: opts.via } : {}) }, meta });
     await sendWelcomeEmail(res.user);
@@ -119,7 +128,6 @@ export async function dispatchOAuthIntent(ctx: OAuthCallbackContext): Promise<Re
         const session = await getSession().catch(() => null);
         const userId = assertSameUser(ctx.userId, session && !session.session.twoFactorPending ? session.user.id : null);
         const res = await linkOAuthLoginMethod({ userId, provider: ctx.provider, profile: ctx.profile });
-        await linkCalendar(ctx, res);
         if (res.linked) {
           await auditAuth("login_method.connected", {
             user: res.user,

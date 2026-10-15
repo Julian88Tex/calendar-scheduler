@@ -14,6 +14,7 @@ import { parseTheme, THEME_COOKIE, themeAttribute, themedPath } from "@/componen
 import { Toaster } from "@/components/ui/toast";
 import { PATHNAME_HEADER } from "@/lib/auth/session";
 import { APP_NAME } from "@/lib/brand";
+import { GOOGLE_SITE_VERIFICATION } from "@/lib/site-verification";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
   title: { default: APP_NAME, template: `%s - ${APP_NAME}` },
   applicationName: APP_NAME,
   description: `Scheduling made simple with ${APP_NAME}.`,
+  ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),
 };
 
 export const viewport: Viewport = {
