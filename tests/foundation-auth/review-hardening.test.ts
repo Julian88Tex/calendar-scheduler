@@ -3,24 +3,42 @@
 // - login attempts are counted before the password check, so a burst of parallel guesses cannot exceed the window;
 // - second factor guesses are limited per account across pending sessions, and a pending session expires;
 // - signing in with a provider into an unverified account (pre-registered by someone else) drops the credentials
-//   that were set before the address was proven (pre-account hijacking);
+//   that were set before the address was proven, and every other way back in: other linked sign-in methods, calendar
+//   connections, API tokens, calendar feeds, webhooks and pending invitations (pre-account hijacking);
 // - a reset link only works for the address it was sent to;
 // - parallel guesses of a login method code are counted atomically.
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", async () => (await import("./_request")).nextHeadersMock);
 vi.mock("next/cache", async () => (await import("./_request")).nextCacheMock);
 
-const { emailOutbox, organizationInvitations, organizationMemberships, rateLimitBuckets, sessions, twoFactorRecoveryCodes, users, verificationCodes } =
-  await import("@/db/schema");
+const {
+  apiTokens,
+  auditLog,
+  calendarConnections,
+  calendarFeeds,
+  calendars,
+  emailOutbox,
+  oauthAccounts,
+  organizationInvitations,
+  organizationMemberships,
+  rateLimitBuckets,
+  sessions,
+  twoFactorRecoveryCodes,
+  users,
+  verificationCodes,
+  webhookSubscriptions,
+} = await import("@/db/schema");
 const { authenticateWithPassword } = await import("@/lib/auth/login");
 const { verifyTwoFactor } = await import("@/app/(auth)/login/two-factor/actions");
 const { requirePendingTwoFactorSession } = await import("@/lib/auth/guards");
 const { PENDING_TWO_FACTOR_TTL_MS, beginTwoFactorEnrollment, completeTwoFactorChallenge, enableTwoFactor } = await import(
   "@/lib/auth/flows/two-factor"
 );
-const { acceptInvitationWithOAuth, resolveOAuthLogin } = await import("@/lib/auth/flows/oauth-accounts");
+const { acceptInvitationWithOAuth, linkOAuthLoginMethod, resolveOAuthLogin } = await import("@/lib/auth/flows/oauth-accounts");
+const { signUpWithPassword } = await import("@/lib/auth/flows/signup-flow");
+const { isInstanceAdminUser } = await import("@/lib/authz");
 const { sendLoginMethodCode, verifyLoginMethodCode } = await import("@/lib/auth/flows/login-method-code");
 const { peekPasswordResetToken, requestPasswordReset, resetPassword, RESET_LINK_EXPIRED_MESSAGE } = await import("@/lib/auth/password-reset");
 const { SESSION_COOKIE, createSessionRecord, lookupSession } = await import("@/lib/auth/session");
@@ -28,7 +46,9 @@ const { totpCode, totpStep } = await import("@/lib/auth/totp");
 const { hashPassword, verifyPassword } = await import("@/lib/crypto");
 const { nowMs, resetFakeTime, setFakeNow } = await import("@/lib/time/now");
 const { useTestDb } = await import("../helpers/db");
-const { createInvitation, createUser } = await import("../factories");
+const { createApiToken, createCalendarConnection, createCalendarFeed, createInvitation, createUser, createWebhookSubscription } = await import(
+  "../factories"
+);
 const { expectRedirect, form, jar, resetRequest } = await import("./_request");
 
 const t = useTestDb();
@@ -180,14 +200,20 @@ describe("provider sign-in into an unverified account (AU-02, AU-11)", () => {
     expect(await t.db.select().from(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, pre.id))).toHaveLength(0);
   });
 
-  it("keeps the password and sessions of a verified account", async () => {
+  it("keeps the password, sessions, sign-in methods and grants of a verified account", async () => {
     const owner = await createUser(t.db, { email: "kept@example.com", passwordHash });
     const s = await createSessionRecord(t.db, owner.id);
+    await linkOAuthLoginMethod({ userId: owner.id, provider: "microsoft", profile: profile("kept@example.com", "ms-kept"), db: t.db });
+    await createCalendarConnection(t.db, { userId: owner.id });
+    await createApiToken(t.db, { userId: owner.id });
     const res = await resolveOAuthLogin({ provider: "google", profile: profile("kept@example.com", "g-kept"), db: t.db });
     expect(res).toMatchObject({ created: false, linked: true, securedUnverifiedAccount: false });
     const [row] = await t.db.select().from(users).where(eq(users.id, owner.id));
     expect(row?.passwordHash).toBe(passwordHash);
     expect(await lookupSession(t.db, s.token)).not.toBeNull();
+    expect(await t.db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, owner.id))).toHaveLength(2);
+    expect(await t.db.select().from(calendarConnections).where(eq(calendarConnections.userId, owner.id))).toHaveLength(1);
+    expect(await t.db.select().from(apiTokens).where(eq(apiTokens.userId, owner.id))).toHaveLength(1);
   });
 
   it("does the same when an invitation is accepted into an unverified account", async () => {
@@ -199,15 +225,99 @@ describe("provider sign-in into an unverified account (AU-02, AU-11)", () => {
       overrides: { emailVerifiedAt: null },
     });
     const squatter = await createSessionRecord(t.db, pre.id);
+    await linkOAuthLoginMethod({ userId: pre.id, provider: "google", profile: profile("squatter@evil.example", "g-hire-squatter"), db: t.db });
     const { invitation, token } = await createInvitation(t.db, { organizationId: admin.organizationId, email: "new.hire@acme.example", invitedByUserId: admin.id });
     const res = await acceptInvitationWithOAuth({ provider: "google", profile: profile("new.hire@acme.example", "g-hire"), invitationToken: token, db: t.db });
     expect(res).toMatchObject({ created: false, linked: true, securedUnverifiedAccount: true });
     const [row] = await t.db.select().from(users).where(eq(users.id, pre.id));
     expect(row?.passwordHash).toBeNull();
     expect(await lookupSession(t.db, squatter.token)).toBeNull();
+    const logins = await t.db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, pre.id));
+    expect(logins.map((l) => l.providerAccountId)).toEqual(["g-hire"]);
     const [inv] = await t.db.select().from(organizationInvitations).where(eq(organizationInvitations.id, invitation.id));
     expect(inv?.status).toBe("accepted");
     expect(await t.db.select().from(organizationMemberships).where(eq(organizationMemberships.userId, pre.id))).toHaveLength(1);
+  });
+});
+
+describe("a squatted ADMIN_EMAILS address (AU-02, AU-10, AU-11)", () => {
+  const profile = (email: string, sub: string) => ({ providerAccountId: sub, email, emailVerified: true, name: "Ops", avatarUrl: null });
+
+  beforeEach(() => {
+    vi.stubEnv("ADMIN_EMAILS", "ops@example.com");
+    vi.stubEnv("SIGNUP_POLICY", undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("the admin proving the address with Google locks out the squatter's own Google account, calendar, tokens and invitations", async () => {
+    await createUser(t.db, { email: "first.account@example.com" }); // so the squatter is not the instance's first account
+    const { user: pre } = await signUpWithPassword({
+      email: "ops@example.com",
+      name: "Not Ops",
+      password: "attacker-pw1",
+      meta: { ip: "203.0.113.9", userAgent: null },
+      db: t.db,
+    });
+    expect(isInstanceAdminUser(pre)).toBe(false); // the ADMIN_EMAILS grant waits for a verified email
+    const [membership] = await t.db.select().from(organizationMemberships).where(eq(organizationMemberships.userId, pre.id));
+    const organizationId = membership!.organizationId;
+
+    // The squatter links their own Google account (link_login_method only needs a session), which also connects its
+    // calendar, then hands out more access.
+    const squatterGoogle = profile("squatter@evil.example", "g-squatter");
+    const link = await linkOAuthLoginMethod({ userId: pre.id, provider: "google", profile: squatterGoogle, db: t.db });
+    expect(link.linked).toBe(true);
+    const { connection, calendars: cals } = await createCalendarConnection(t.db, {
+      userId: pre.id,
+      accountEmail: "squatter@evil.example",
+      overrides: { providerAccountId: "g-squatter", oauthAccountId: link.oauthAccountId },
+    });
+    await t.db.update(users).set({ destinationCalendarId: cals[0]!.id }).where(eq(users.id, pre.id));
+    await createApiToken(t.db, { userId: pre.id });
+    await createCalendarFeed(t.db, { userId: pre.id });
+    const hook = await createWebhookSubscription(t.db, { owner: { ...pre, organizationId, orgRole: "owner" } });
+    const { invitation } = await createInvitation(t.db, { organizationId, email: "accomplice@evil.example", invitedByUserId: pre.id });
+
+    // The real admin signs in with Google.
+    const opsGoogle = profile("Ops@Example.com", "g-ops");
+    const res = await resolveOAuthLogin({ provider: "google", profile: opsGoogle, db: t.db });
+    expect(res).toMatchObject({ created: false, linked: true, securedUnverifiedAccount: true });
+    expect(res.user).toMatchObject({ id: pre.id, passwordHash: null, destinationCalendarId: null });
+    expect(isInstanceAdminUser(res.user)).toBe(true);
+
+    // Only the admin's Google account signs in to the account now.
+    const logins = await t.db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, pre.id));
+    expect(logins.map((l) => l.id)).toEqual([res.oauthAccountId]);
+    await expect(resolveOAuthLogin({ provider: "google", profile: squatterGoogle, db: t.db })).rejects.toMatchObject({ code: "signups_closed" });
+    expect(await resolveOAuthLogin({ provider: "google", profile: opsGoogle, db: t.db })).toMatchObject({ user: { id: pre.id }, linked: false });
+
+    // Nothing else the squatter set up survives.
+    expect(await t.db.select().from(calendarConnections).where(eq(calendarConnections.userId, pre.id))).toHaveLength(0);
+    expect(await t.db.select().from(calendars).where(eq(calendars.userId, pre.id))).toHaveLength(0);
+    expect(await t.db.select().from(apiTokens).where(eq(apiTokens.userId, pre.id))).toHaveLength(0);
+    expect(await t.db.select().from(calendarFeeds).where(eq(calendarFeeds.userId, pre.id))).toHaveLength(0);
+    expect(await t.db.select().from(webhookSubscriptions).where(eq(webhookSubscriptions.id, hook.id))).toHaveLength(0);
+    const [inv] = await t.db.select().from(organizationInvitations).where(eq(organizationInvitations.id, invitation.id));
+    expect(inv?.status).toBe("revoked");
+
+    // Removals with a catalog action are audited.
+    const unlinked = await t.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "login_method.disconnected"), eq(auditLog.targetId, pre.id)));
+    expect(unlinked.map((e) => e.details)).toEqual([{ provider: "google", email: "squatter@evil.example", via: "unverified_account_claimed" }]);
+    const [calendarEntry] = await t.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "calendar.disconnected"), eq(auditLog.targetId, connection.id)));
+    expect(calendarEntry).toMatchObject({
+      namespace: "calendars",
+      actorUserId: pre.id,
+      organizationId,
+      details: { provider: "google", email: "squatter@evil.example", via: "unverified_account_claimed" },
+    });
   });
 });
 
