@@ -1,8 +1,8 @@
 // Golden path, the email outbox page (docs/SCOPE.md item 15; SPEC GEN-15, ADM-04): with no email provider every email
 // is stored in the outbox; the owner finds the page in the settings navigation, sees the booking's emails newest
-// first with their status, provider, template, recipient and time, filters and searches them, and reads one rendered
-// in a sandboxed frame (and as plain text). A member who is not an owner or instance admin gets neither the entry nor
-// the page.
+// first with their status, provider, template, recipient and time, filters and searches them (a page number past the
+// end shows the last page), and reads one rendered in a sandboxed frame (and as plain text). A member who is not an
+// owner or instance admin gets neither the entry nor the page.
 import { expect, test } from "../fixtures";
 import { book, emailTo, NOW, open, OWNER, SLOW, trackPageErrors } from "./helpers";
 
@@ -59,6 +59,13 @@ test.describe("golden path: email outbox", () => {
     await expect(page.getByRole("heading", { name: "No emails match these filters" })).toBeVisible(SLOW);
     await page.getByRole("link", { name: "Show all emails" }).click();
     await expect(rows).toHaveCount(3, SLOW);
+
+    // A page past the end (a stale link, or a typed page number far beyond bigint) shows the last page.
+    for (const n of ["2", "1000000000000000000"]) {
+      await page.goto(`/app/settings/email-outbox?page=${n}`, SLOW);
+      await expect(page).toHaveURL(/\/app\/settings\/email-outbox$/, SLOW);
+      await expect(rows).toHaveCount(3, SLOW);
+    }
 
     // View: the rendered email in a sandboxed frame, then the plain text.
     await invitee.getByRole("link", { name: /^View / }).click();

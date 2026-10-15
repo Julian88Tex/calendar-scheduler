@@ -12,7 +12,9 @@
 // The row is first marked as resent ("permanent: Resent as a new email. {reason}") with a compare-and-set on its
 // updated_at (the version the page showed), so a double click or a stale page never sends two copies and no retry of
 // the original can follow; then resendOutboxEmail (src/lib/email) sends a fresh copy as a new outbox row, keyed by the
-// original row and that version.
+// original row and that version. When the copy fails with an error, the original is put back as it was (same reason and
+// version), so the page does not claim a resend that never happened and the same "Resend" can be tried again (it lands
+// on the same copy if one was made).
 import "server-only";
 import { and, count, desc, eq, ilike, inArray, isNull, like, notLike, or, sql, type SQL } from "drizzle-orm";
 import { getDb, type DbOrTx } from "@/db";
@@ -29,7 +31,17 @@ import { canSeeEmailOutbox } from "./access";
 import { cleanReason, outboxRowStatus, PERMANENT_PREFIX, type OutboxRowStatus, type OutboxStatusFilter } from "./status";
 
 export const OUTBOX_PAGE_SIZE = 25;
+/**
+ * The highest page number queried (2.5 million rows in): a tampered or stale ?page= must never reach Postgres as an
+ * OFFSET beyond bigint (that fails the whole page). The page itself sends a page past the end to the last one.
+ */
+export const OUTBOX_MAX_PAGE = 100_000;
 const MAX_QUERY_LENGTH = 200;
+
+/** The last page number of `total` rows (1 when there are none). */
+export function lastOutboxPage(total: number): number {
+  return Math.min(OUTBOX_MAX_PAGE, Math.max(1, Math.ceil(total / OUTBOX_PAGE_SIZE)));
+}
 
 /** Rows the actor may see: everything for instance admins, else their organization's emails and the ones about them. */
 function scopeOf(actor: ActorCtx): SQL | undefined {
@@ -125,7 +137,8 @@ const LIST_COLUMNS = {
 export async function loadOutboxPage(actor: ActorCtx, query: OutboxQuery, db?: DbOrTx): Promise<OutboxPageData> {
   if (!canSeeEmailOutbox(actor)) throw new AppError("not_found");
   const d = db ?? (await getDb());
-  const { page, pageSize, limit, offset } = offsetPage({ page: query.page, pageSize: OUTBOX_PAGE_SIZE });
+  const requested = Number.isFinite(query.page) ? Math.min(Math.max(Math.trunc(query.page), 1), OUTBOX_MAX_PAGE) : 1;
+  const { page, pageSize, limit, offset } = offsetPage({ page: requested, pageSize: OUTBOX_PAGE_SIZE });
   const scope = scopeOf(actor);
   const where = and(scope, statusWhere(query.status), searchWhere(query.q));
   const [rows, [totalRow], [waitingRow], resolution] = await Promise.all([
@@ -239,16 +252,27 @@ export async function resendFailedEmail(actor: ActorCtx, input: { id: string; ve
   const reason = cleanReason(row.lastError);
   // Compare-and-set on the version (milliseconds: the precision the page saw): one resend per state of the row, and
   // the original can never be retried after it.
+  const resentNote = `${PERMANENT_PREFIX}Resent as a new email.${reason && !reason.startsWith("Resent as a new email.") ? ` ${reason}` : ""}`.slice(0, 2000);
   const [marked] = await db
     .update(emailOutbox)
-    .set({
-      lastError: `${PERMANENT_PREFIX}Resent as a new email.${reason && !reason.startsWith("Resent as a new email.") ? ` ${reason}` : ""}`.slice(0, 2000),
-      updatedAt: now(),
-    })
+    .set({ lastError: resentNote, updatedAt: now() })
     .where(and(eq(emailOutbox.id, row.id), eq(emailOutbox.status, "failed"), sql`date_trunc('milliseconds', ${emailOutbox.updatedAt}) = ${row.updatedAt.toISOString()}::timestamptz`))
     .returning({ id: emailOutbox.id });
   if (!marked) throw new AppError("conflict", "This email changed since the page loaded. Refresh the page and try again.");
-  const result = await resendOutboxEmail(row.id, { idempotencyKey: `outbox-resend:${row.id}:${row.updatedAt.getTime()}` });
+  let result: Awaited<ReturnType<typeof resendOutboxEmail>>;
+  try {
+    // Keyed by the version the page showed: a retry after a failure here lands on the same copy, never a second one.
+    result = await resendOutboxEmail(row.id, { idempotencyKey: `outbox-resend:${row.id}:${row.updatedAt.getTime()}` });
+  } catch (e) {
+    // No copy was made (a database or provider error): put the original back as it was, so the page neither claims a
+    // resend that never happened nor hides "Resend" behind a changed version.
+    await db
+      .update(emailOutbox)
+      .set({ lastError: row.lastError, updatedAt: row.updatedAt })
+      .where(and(eq(emailOutbox.id, row.id), eq(emailOutbox.lastError, resentNote)))
+      .catch((revertError: unknown) => log.warn("email_outbox.resend_revert_failed", { id: row.id, error: revertError }));
+    throw e;
+  }
   await audit({
     action: "email.resent",
     namespace: "admin",

@@ -10,7 +10,7 @@
 import { Mail, RefreshCw } from "lucide-react";
 import type { Metadata, Route } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Banner } from "@/components/ui/banner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,7 +20,7 @@ import { formatDateShort, formatTime, hour12For, isoDateInZone } from "@/lib/tim
 import { now } from "@/lib/time/now";
 import { zoneOrUtc } from "@/lib/time/zones";
 import { canSeeEmailOutbox } from "./access";
-import { loadOutboxEmail, loadOutboxPage, type OutboxListRow } from "./data";
+import { lastOutboxPage, loadOutboxEmail, loadOutboxPage, OUTBOX_MAX_PAGE, type OutboxListRow } from "./data";
 import { EmailPreviewDialog, OutboxFilters, OutboxPagination, ResendButton, StatusBadge } from "./outbox-client";
 import { OUTBOX_STATUS_FILTERS, parseStatusFilter, providerLabel, type OutboxStatusFilter } from "./status";
 
@@ -46,13 +46,19 @@ function hrefWith(base: { status: OutboxStatusFilter; q: string; page: number },
 export default async function EmailOutboxPage({ searchParams }: Props) {
   const [sp, actor] = await Promise.all([searchParams, getActorCtx()]);
   if (!canSeeEmailOutbox(actor)) notFound();
+  const requestedPage = Math.trunc(Number(first(sp.page)) || 1);
   const query = {
     status: parseStatusFilter(sp.status),
     q: first(sp.q).trim().slice(0, 200),
-    page: Math.max(1, Math.trunc(Number(first(sp.page)) || 1)),
+    page: Number.isFinite(requestedPage) ? Math.min(Math.max(requestedPage, 1), OUTBOX_MAX_PAGE) : 1,
   };
   const viewId = first(sp.view);
   const [data, detail] = await Promise.all([loadOutboxPage(actor, query), viewId ? loadOutboxEmail(actor, viewId) : Promise.resolve(null)]);
+  // A page past the end (an old link after emails were purged, or a typed ?page=): show the last page instead of an
+  // empty "No emails yet".
+  if (data.rows.length === 0 && data.total > 0 && query.page > 1) {
+    redirect(hrefWith({ ...query, page: lastOutboxPage(data.total) }, viewId ? { view: viewId } : {}) as Route);
+  }
 
   const zone = zoneOrUtc(actor.user.timezone);
   const hour12 = hour12For(actor.user.timeFormat, actor.user.locale);

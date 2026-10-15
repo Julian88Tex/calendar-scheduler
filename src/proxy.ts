@@ -55,6 +55,11 @@ async function setupPageResponse(request: NextRequest): Promise<NextResponse> {
   return new NextResponse(fallbackSetupHtml(), { status: 503, headers });
 }
 
+/** Cancels a response body that will not be read (never throws). */
+function discardBody(res: Response): void {
+  res.body?.cancel().catch(() => {});
+}
+
 /**
  * The 410 response of a deleted or canceled poll's voter page, or null to render the page as usual (live or unknown
  * poll, not a full page load, or the state could not be read).
@@ -74,6 +79,9 @@ async function goneVoterPage(request: NextRequest, pathname: string, search: str
       signal: AbortSignal.timeout(3000),
       cache: "no-store",
     });
+    // Only the status matters: release the body (an unread body holds its pooled connection until garbage collection,
+    // and this runs on every voter page view).
+    discardBody(state);
     if (state.status !== 410) return null;
     // The page renders the "no longer available" panel for a gone poll; it is answered here with the 410 status.
     const page = await fetch(new URL(`${pathname}${search}`, origin), {
@@ -81,7 +89,9 @@ async function goneVoterPage(request: NextRequest, pathname: string, search: str
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });
-    if (!page.ok || !(page.headers.get("content-type") ?? "").includes("text/html")) return null;
+    const html = page.ok && (page.headers.get("content-type") ?? "").includes("text/html");
+    if (!html || request.method === "HEAD") discardBody(page);
+    if (!html) return null;
     const body = request.method === "HEAD" ? null : await page.text();
     return new NextResponse(body, {
       status: 410,

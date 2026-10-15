@@ -1,11 +1,29 @@
-// Email outbox page read model and "Resend" on PGlite (golden-path-qa): who may open it, newest first with pagination,
-// filters and search, the "Waiting for Gmail" and failure reasons without internal prefixes, the organization scope of
-// an owner who is not an instance admin, and a resend that sends one new copy per state of the original (stale pages,
-// double clicks, held and retrying emails are refused).
+// Email outbox page read model and "Resend" on PGlite (golden-path-qa): who may open it, newest first with pagination
+// (a tampered page number never fails the query), filters and search, the "Waiting for Gmail" and failure reasons
+// without internal prefixes, the organization scope of an owner who is not an instance admin, and a resend that sends
+// one new copy per state of the original (stale pages, double clicks, held and retrying emails are refused; a failed
+// copy puts the original back so the same page can try again, still with one copy in all). outbox.pg.test.ts runs the
+// same read model on real Postgres through postgres.js.
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/events/registry", () => ({ subscriberKeysFor: () => [], SUBSCRIBER_KEYS: [] }));
+// "before": the copy is never made (the call fails first); "after": the copy row exists but the call still fails.
+const resendFault = vi.hoisted(() => ({ next: null as "before" | "after" | null }));
+vi.mock("@/lib/email", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/email")>();
+  return {
+    ...real,
+    resendOutboxEmail: async (...args: Parameters<typeof real.resendOutboxEmail>) => {
+      const fault = resendFault.next;
+      resendFault.next = null;
+      if (fault === "before") throw new Error("connection reset");
+      const result = await real.resendOutboxEmail(...args);
+      if (fault === "after") throw new Error("connection reset");
+      return result;
+    },
+  };
+});
 
 const { emailOutbox } = await import("@/db/schema");
 const { loadActorCtx } = await import("@/lib/authz");
@@ -14,7 +32,7 @@ const { resetFakeTime, setFakeNow } = await import("@/lib/time/now");
 const { useTestDb } = await import("../../../../../../tests/helpers/db");
 const { createUser } = await import("../../../../../../tests/factories");
 const { canSeeEmailOutbox } = await import("./access");
-const { loadOutboxEmail, loadOutboxPage, resendFailedEmail, OUTBOX_PAGE_SIZE } = await import("./data");
+const { lastOutboxPage, loadOutboxEmail, loadOutboxPage, resendFailedEmail, OUTBOX_MAX_PAGE, OUTBOX_PAGE_SIZE } = await import("./data");
 const { cleanReason, outboxRowStatus, parseStatusFilter } = await import("./status");
 
 type TestUser = Awaited<ReturnType<typeof createUser>>;
@@ -122,6 +140,20 @@ describe("loadOutboxPage", () => {
     expect(p1.transport).toBe("Stored in the outbox (no email provider configured)");
   });
 
+  it("a page number from a tampered or stale URL never fails the query (offset beyond bigint)", async () => {
+    await row();
+    const actor = await actorOf(admin);
+    for (const page of [1e18, 9_007_199_254_740_993, 4e6]) {
+      const p = await loadOutboxPage(actor, { status: "all", q: "", page });
+      expect(p.rows).toHaveLength(0);
+      expect(p.total).toBe(1);
+      expect(p.page).toBe(OUTBOX_MAX_PAGE);
+    }
+    expect(lastOutboxPage(0)).toBe(1);
+    expect(lastOutboxPage(OUTBOX_PAGE_SIZE)).toBe(1);
+    expect(lastOutboxPage(OUTBOX_PAGE_SIZE + 1)).toBe(2);
+  });
+
   it("filters by status and searches recipients, subjects and templates", async () => {
     await row({ status: "sent", subject: "Confirmed: 30 Minute Virtual" });
     await row({ status: "stored", provider: "outbox", attempts: 0 });
@@ -164,6 +196,26 @@ describe("resendFailedEmail", () => {
     // The same (now stale) version again: refused, no second copy.
     await expect(resendFailedEmail(actor, { id: original.id, version: original.updatedAt.toISOString() })).rejects.toMatchObject({ code: "conflict" });
     expect(await t.db.select().from(emailOutbox)).toHaveLength(2);
+  });
+
+  it("puts the original back when the copy fails, and a retry from the same page makes exactly one copy", async () => {
+    const actor = await actorOf(admin);
+    for (const fault of ["before", "after"] as const) {
+      await t.db.delete(emailOutbox);
+      const original = await row({ status: "failed", attempts: 1, lastError: "permanent: 422 invalid" });
+      const version = original.updatedAt.toISOString();
+      resendFault.next = fault;
+      await expect(resendFailedEmail(actor, { id: original.id, version })).rejects.toThrow("connection reset");
+      const [back] = await t.db.select().from(emailOutbox).where(eq(emailOutbox.id, original.id));
+      expect(back!.lastError, fault).toBe("permanent: 422 invalid");
+      expect(back!.updatedAt.getTime(), fault).toBe(original.updatedAt.getTime());
+      expect(outboxRowStatus(back!).canResend).toBe(true);
+      expect(await t.db.select().from(emailOutbox), fault).toHaveLength(fault === "before" ? 1 : 2);
+      // "Resend" again on the same (unchanged) page: one copy in all.
+      const res = await resendFailedEmail(actor, { id: original.id, version });
+      expect(res.id).not.toBe(original.id);
+      expect(await t.db.select().from(emailOutbox), fault).toHaveLength(2);
+    }
   });
 
   it("refuses held, retrying, sent and purged emails, and other organizations' emails", async () => {
