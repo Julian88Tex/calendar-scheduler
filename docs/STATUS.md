@@ -10,8 +10,8 @@ Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free p
 - Your public page is https://calendar-scheduler-smoky.vercel.app/julianjoseph with your 3 event types copied from
   Calendly.
 - Google Calendar is connected: bookings land on your calendar with a Google Meet link, and busy times on Julian -
-  Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is turned on as soon as the
-  next release is live.
+  Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is listed in Availability >
+  Calendar settings since the release of October 15 (commit 7aa99d1); tick it there so work meetings block times too.
 - Emails (confirmations, reminders, reschedules, cancellations, host notifications) are sent from your Gmail.
 - Reminders and other background jobs run every 5 minutes, triggered by a Google Apps Script in your Google account
   (Vercel's free plan only allows a daily cron).
