@@ -3,9 +3,10 @@
 // /setup (ARCHITECTURE section 3.1, SPEC GEN-09, ADM-03, ADM-11). In setup mode (VERCEL=1 without a database URL) the
 // proxy serves this page's HTML with status 503 for every page request, so in that mode it never touches the database.
 // Content: "Finish setting up {AppName}", why a Postgres database is required, the four Vercel steps, the status
-// checklist of detected configuration (green or gray "Not configured", with the env var names), the exact OAuth
-// redirect URIs to register, background jobs (last cron tick and backlog, instance admins only, once a database
-// works) and a link to the optional variables list in the README.
+// checklist of detected configuration (green or gray "Not configured", with the env var names; the owner bootstrap row
+// only while the instance has no account yet), the exact OAuth redirect URIs to register, background jobs (last cron
+// tick and backlog, instance admins only, once a database works) and a link to the optional variables list in the
+// README.
 import { AlertTriangle, CheckCircle2, CircleDashed, ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import {
   CRON_STALE_MESSAGE,
   backgroundStatus,
   configurationChecklist,
+  instanceHasAccount,
   oauthRedirectUris,
   optionalVariablesDocsUrl,
   type ChecklistItem,
@@ -60,7 +62,8 @@ function formatAgo(date: Date, nowMs: number): string {
 export default async function SetupPage({ searchParams }: Props) {
   await searchParams;
   const needsDatabase = setupRequired();
-  const items = configurationChecklist();
+  // The owner bootstrap row only while the instance has no account (setup not done); see setup-status.ts.
+  const items = configurationChecklist({ instanceHasAccount: await instanceHasAccount() });
   const uris = oauthRedirectUris();
   // Database work only outside setup mode, and the job details only for instance admins.
   const user = needsDatabase ? null : await getCurrentUser().catch(() => null);

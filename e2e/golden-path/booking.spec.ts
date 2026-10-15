@@ -16,16 +16,20 @@ test.describe("golden path: invitees", () => {
     await api.setTime(null);
   });
 
-  test("the root URL sends signed-out visitors to the login page and the owner to the app", async ({ page, request, loginAs, baseURL }) => {
+  test("the root URL shows signed-out visitors the home page with a Sign in link and sends the owner to the app", async ({ page, request, loginAs, baseURL }) => {
+    // Signed out: the public home page itself (no redirect), with a "Sign in" link to the login page.
     const anonymous = await request.get("/", { maxRedirects: 0 });
-    expect(anonymous.status()).toBeGreaterThanOrEqual(300);
-    expect(anonymous.status()).toBeLessThan(400);
-    expect(new URL(anonymous.headers().location!, "http://x").pathname).toBe("/login");
+    expect(anonymous.status()).toBe(200);
     // A stale session cookie counts as signed out.
     await page.context().addCookies([{ name: "sid", value: "not-a-real-session", url: baseURL! }]);
-    await page.goto("/", SLOW);
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: "Log in to your account" })).toBeVisible();
+    await open(page, "/");
+    await expect(page).toHaveURL(new URL("/", baseURL!).href);
+    const signIn = page.getByRole("link", { name: "Sign in", exact: true }).first();
+    await expect(signIn).toBeVisible();
+    await expect(signIn).toHaveAttribute("href", /^\/login(\?|$)/);
+    await signIn.click();
+    await expect(page).toHaveURL(/\/login(\?|$)/, SLOW);
+    await expect(page.getByRole("heading", { name: "Log in to your account" })).toBeVisible(SLOW);
     await page.context().clearCookies();
     await loginAs(page, OWNER);
     await page.goto("/", SLOW);

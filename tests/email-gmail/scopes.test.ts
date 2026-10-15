@@ -1,5 +1,6 @@
-// gmail.send is requested together with the calendar scopes whenever Google is connected (sign in and connect, with
-// incremental authorization: include_granted_scopes), never for the poll voter free/busy check; and a token refresh
+// gmail.send is requested together with the calendar scopes whenever Google is connected (signup and connect, with
+// incremental authorization: include_granted_scopes), never for a plain sign in (openid, email and profile only) or
+// the poll voter free/busy check; and a token refresh
 // whose response omits `scope` never claims gmail.send for an account that did not grant it (the stored scopes stay).
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +41,7 @@ describe("Google scopes", () => {
       GMAIL_SEND_SCOPE,
     ]);
     expect(googleScopesFor("connect_calendar")).toContain(GMAIL_SEND_SCOPE);
-    expect(googleScopesFor("login")).toContain(GMAIL_SEND_SCOPE);
+    expect(googleScopesFor("login")).toEqual(["openid", "email", "profile"]);
     expect(googleScopesFor("poll_freebusy")).not.toContain(GMAIL_SEND_SCOPE);
     expect(GOOGLE_AUTHORIZE_PARAMS).toMatchObject({ include_granted_scopes: "true", access_type: "offline", prompt: "consent" });
   });

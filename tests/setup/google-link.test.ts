@@ -106,7 +106,8 @@ describe("Google sign-in into the bootstrapped account", () => {
     expect(all[0]).toMatchObject({ id: boot.user.id, avatarUrl: PHOTO, name: "Julian Joseph", slug: "julianjoseph", isInstanceAdmin: true, passwordHash: null });
     const [link] = await t.db.select().from(oauthAccounts);
     expect(link).toMatchObject({ userId: boot.user.id, provider: "google", providerAccountId: "google-sub-julian", emailNormalized: OWNER });
-    expect(calls.linkCalendar.map((c) => c.userId)).toEqual([boot.user.id]);
+    // A plain sign in asks for openid, email and profile only: the calendar connection is left untouched.
+    expect(calls.linkCalendar).toEqual([]);
     expect((await lookupSession(t.db, cookieJar.get(SESSION_COOKIE)))?.user.id).toBe(boot.user.id);
     const types = await t.db.select().from(eventTypes).where(eq(eventTypes.ownerUserId, boot.user.id));
     expect(types.map((e) => e.slug).sort()).toEqual(["30min", "60min", "meal"]);

@@ -1,8 +1,8 @@
 // sitemap.xml (SPEC GEN-13; ARCHITECTURE section 23: dynamic, never prerendered at build, so a build without a
-// database URL succeeds). Lists the privacy and terms pages, every public landing page (users and teams) and their
-// public event types (active, standard, not secret). Not "/": it only redirects (to /login, or the app when signed
-// in) and is noindex. Not /cookie-policy or /help while they are placeholder pages. Falls back to the legal pages when
-// the database is unavailable (setup mode on Vercel).
+// database URL succeeds). Lists the public pages that need no database ("/", the public home page for signed-out
+// visitors, then the privacy, terms, cookie policy and help pages), every public landing page (users and teams) and
+// their public event types (active, standard, not secret). Falls back to those static pages when the database is
+// unavailable (setup mode on Vercel).
 import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import type { MetadataRoute } from "next";
 import { getDb } from "@/db";
@@ -12,12 +12,12 @@ import { appUrl } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
-const STATIC_PAGES = ["/privacy", "/terms"];
+const STATIC_PAGES = ["/", "/privacy", "/terms", "/cookie-policy", "/help"];
 const LIMIT = 5000;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = appUrl();
-  const entries: MetadataRoute.Sitemap = STATIC_PAGES.map((path) => ({ url: `${base}${path}`, changeFrequency: "monthly", priority: 0.3 }));
+  const entries: MetadataRoute.Sitemap = STATIC_PAGES.map((path) => ({ url: `${base}${path}`, changeFrequency: "monthly", priority: path === "/" ? 1 : 0.3 }));
   try {
     const db = await getDb();
     const userRows = await db

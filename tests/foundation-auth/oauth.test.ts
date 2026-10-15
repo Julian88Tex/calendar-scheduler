@@ -172,7 +172,7 @@ async function flow(
 afterEach(() => vi.unstubAllGlobals());
 
 describe("start route", () => {
-  it("redirects to Google with PKCE S256, the AU-02 scopes and parameters, and a sealed 10 minute state cookie", async () => {
+  it("redirects a signup to Google with PKCE S256, the AU-02 scopes and parameters, and a sealed 10 minute state cookie", async () => {
     const res = await handleOAuthStart(new Request("http://localhost:3000/api/auth/google/start?intent=signup&next=/app/meetings&tz=America/Chicago"), "google");
     expect(res.status).toBe(302);
     const u = new URL(res.headers.get("location")!);
@@ -192,6 +192,17 @@ describe("start route", () => {
     const sealed = jar.get(OAUTH_STATE_COOKIE)!;
     expect(sealed).toMatch(/^v1\./);
     expect(sealed).not.toContain(q.get("state")!);
+  });
+
+  it("a Google login asks only for openid, email and profile with select_account and no offline access", async () => {
+    const res = await handleOAuthStart(new Request("http://localhost:3000/api/auth/google/start?next=/app/meetings"), "google");
+    expect(res.status).toBe(302);
+    const q = new URL(res.headers.get("location")!).searchParams;
+    expect(q.get("scope")).toBe("openid email profile");
+    expect(q.get("prompt")).toBe("select_account");
+    expect(q.get("access_type")).toBeNull();
+    expect(q.get("include_granted_scopes")).toBeNull();
+    expect(q.get("code_challenge_method")).toBe("S256");
   });
 
   it("redirects to Microsoft (tenant common) with the AU-03 scopes", async () => {
@@ -262,16 +273,23 @@ describe("login and signup intents (AU-02, CAL-17)", () => {
     const signupAudit = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "user.signup"), eq(auditLog.targetId, u.id)));
     expect(signupAudit[0]?.details).toMatchObject({ method: "google" });
 
-    // Again: logs in (no duplicate user or account), a refreshed calendar link, the previous session revoked.
+    // Again: logs in (no duplicate user or account), the previous session revoked. A login is a basic sign-in (openid,
+    // email, profile): it never touches the calendar connection.
     const second = await flow("google", "next=/app/meetings", googleClaims({ email: "gina@gmail.example" }), { refreshToken: null });
     expect(locationOf(second.callback!)).toBe("/app/meetings");
     expect(await t.db.select().from(users)).toHaveLength(1);
     expect(await t.db.select().from(oauthAccounts)).toHaveLength(1);
-    expect(calls.linkCalendar).toHaveLength(2);
-    expect((calls.linkCalendar[1] as { tokens: { refreshToken: string | null } }).tokens.refreshToken).toBeNull();
+    expect(calls.linkCalendar).toHaveLength(1);
     expect((await t.db.select().from(sessions)).filter((s) => !s.revokedAt)).toHaveLength(1);
     const logins = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "user.login"), eq(auditLog.targetId, u.id)));
     expect(logins.map((l) => (l.details as { method: string }).method)).toEqual(["google", "google"]);
+
+    // A signup of the same account logs in too and refreshes the calendar link (keeping the stored refresh token).
+    const third = await flow("google", "intent=signup", googleClaims(), { refreshToken: null });
+    expect(locationOf(third.callback!)).toBe("/app/scheduling");
+    expect(await t.db.select().from(users)).toHaveLength(1);
+    expect(calls.linkCalendar).toHaveLength(2);
+    expect(calls.linkCalendar[1]).toMatchObject({ userId: u.id, providerAccountId: "google-sub-1", tokens: { refreshToken: null } });
   });
 
   it("links a password account with the same verified email instead of creating one", async () => {
@@ -447,7 +465,18 @@ describe("accept_invitation (AU-11, TM-03)", () => {
     const [inv] = await t.db.select().from(organizationInvitations).where(eq(organizationInvitations.id, invitation.id));
     expect(inv).toMatchObject({ status: "accepted", acceptedUserId: u!.id });
     expect(await t.db.select().from(organizations)).toHaveLength(1);
-    expect(calls.linkCalendar).toHaveLength(1);
+    // Identity only: accepting an invitation never connects a calendar.
+    expect(calls.linkCalendar).toHaveLength(0);
+  });
+
+  it("asks Google only for openid, email and profile, with the invited email as the login_hint", async () => {
+    const { token } = await setupInvite("gina@gmail.example");
+    const start = await handleOAuthStart(new Request(`http://localhost:3000/api/auth/google/start?intent=accept_invitation&invitation=${token}`), "google");
+    const q = new URL(start.headers.get("location")!).searchParams;
+    expect(q.get("scope")).toBe("openid email profile");
+    expect(q.get("prompt")).toBe("select_account");
+    expect(q.get("access_type")).toBeNull();
+    expect(q.get("login_hint")).toBe("gina@gmail.example");
   });
 
   it("rejects a provider email that differs from the invitation with the documented message", async () => {
@@ -485,6 +514,21 @@ describe("connect_calendar, link_login_method and poll_freebusy", () => {
     expect(await t.db.select().from(oauthAccounts)).toHaveLength(0);
   });
 
+  it("connect_calendar (first connect and every Reconnect) asks for every scope with consent and offline access", async () => {
+    const u = await signIn();
+    const { connection } = await createCalendarConnection(t.db, { userId: u.id, accountEmail: "carla.work@gmail.example" });
+    for (const query of ["", `&reconnect=${connection.id}`]) {
+      const res = await handleOAuthStart(new Request(`http://localhost:3000/api/auth/google/start?intent=connect_calendar${query}`), "google");
+      const q = new URL(res.headers.get("location")!).searchParams;
+      expect(q.get("scope")).toBe(
+        "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.send",
+      );
+      expect(q.get("prompt")).toBe("consent");
+      expect(q.get("access_type")).toBe("offline");
+      expect(q.get("include_granted_scopes")).toBe("true");
+    }
+  });
+
   it("connect_calendar with data.reconnect uses that connection's account email as the login_hint (own connections only)", async () => {
     const u = await signIn();
     const { connection } = await createCalendarConnection(t.db, { userId: u.id, accountEmail: "carla.work@gmail.example" });
@@ -512,6 +556,10 @@ describe("connect_calendar, link_login_method and poll_freebusy", () => {
     expect(locationOf(wrongUser)).toContain("oauth_error=confirmation_required");
     const ok = await handleOAuthStart(new Request(`http://localhost:3000/api/auth/google/start?intent=link_login_method&confirm=${await createLoginMethodConfirmation(u.id)}`), "google");
     expect(ok.status).toBe(302);
+    const q = new URL(ok.headers.get("location")!).searchParams;
+    expect(q.get("scope")).toBe("openid email profile");
+    expect(q.get("prompt")).toBe("select_account");
+    expect(q.get("access_type")).toBeNull();
   });
 
   it("link_login_method connects the provider to the signed-in user and refuses one linked elsewhere", async () => {
@@ -524,7 +572,8 @@ describe("connect_calendar, link_login_method and poll_freebusy", () => {
     expect(locationOf(res.callback!)).toBe("/app/settings/login?connected=google");
     const [acct] = await t.db.select().from(oauthAccounts);
     expect(acct).toMatchObject({ userId: u.id, providerAccountId: "g-link" });
-    expect(calls.linkCalendar).toHaveLength(1);
+    // Identity only: a new login method never connects a calendar.
+    expect(calls.linkCalendar).toHaveLength(0);
     expect(await t.db.select().from(auditLog).where(and(eq(auditLog.action, "login_method.connected"), eq(auditLog.targetId, u.id)))).toHaveLength(1);
 
     resetRequest();

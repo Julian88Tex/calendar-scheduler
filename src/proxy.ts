@@ -8,9 +8,10 @@
 // - Security headers (GEN-08) for normal responses come from next.config.ts headers(); responses generated here get
 //   the same headers from src/lib/net/frame-policy.ts.
 // - Meeting poll voter pages (/p/{slug}, SPEC MP-22): a page view first asks GET /api/public/polls/{slug}/state (one
-//   indexed lookup); for a deleted or canceled poll the page ("This poll is no longer available.") is answered with a
-//   real HTTP 410 instead of 200 (a Server Component cannot set the status). Only full page loads (GET or HEAD without
-//   the RSC header) are checked; any error or timeout falls back to the normal page.
+//   indexed lookup, cached at the CDN for up to 30 seconds, so most views cost no function call); for a deleted or
+//   canceled poll the page ("This poll is no longer available.") is answered with a real HTTP 410 instead of 200 (a
+//   Server Component cannot set the status). Only full page loads (GET or HEAD without the RSC header) are checked; any
+//   error or timeout (1 second) falls back to the normal page.
 // Never import the database, env.ts or "server-only" modules here.
 import { NextResponse, type NextRequest } from "next/server";
 import { securityHeadersFor } from "./lib/net/frame-policy";
@@ -74,10 +75,11 @@ async function goneVoterPage(request: NextRequest, pathname: string, search: str
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   const headers: Record<string, string> = { [POLL_GATE_HEADER]: "1", ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}) };
   try {
+    // No `cache: "no-store"` here: fetch would then send "Cache-Control: no-cache" and "Pragma: no-cache", asking the
+    // CDN to skip the state route's short cached answer (src/app/api/public/polls/[slug]/state/route.ts).
     const state = await fetch(new URL(`/api/public/polls/${match[1]}/state`, origin), {
       headers,
       signal: AbortSignal.timeout(1000),
-      cache: "no-store",
     });
     // Only the status matters: release the body (an unread body holds its pooled connection until garbage collection,
     // and this runs on every voter page view).

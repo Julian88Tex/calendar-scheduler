@@ -6,12 +6,13 @@ Updated after every finished module. Scope was reduced to the features the owner
 ## Live now
 
 Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free plan, Neon Postgres database).
-- Sign in with Google as julian88tex@gmail.com. Sign-ups are invite only, so nobody else can create an account.
+- Sign in with Google as julian88tex@gmail.com (sign in asks only for your name and email; calendar and Gmail access
+  are granted once under Calendar settings). Sign-ups are invite only, so nobody else can create an account.
 - Your public page is https://calendar-scheduler-smoky.vercel.app/julianjoseph with your 3 event types copied from
   Calendly.
 - Google Calendar is connected: bookings land on your calendar with a Google Meet link, and busy times on Julian -
-  Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is turned on as soon as the
-  next release is live.
+  Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is listed in Availability >
+  Calendar settings since the release of October 15 (commit 7aa99d1); tick it there so work meetings block times too.
 - Emails (confirmations, reminders, reschedules, cancellations, host notifications) are sent from your Gmail.
 - Reminders and other background jobs run every 5 minutes, triggered by a Google Apps Script in your Google account
   (Vercel's free plan only allows a daily cron).
@@ -91,3 +92,6 @@ Teams/Webex video, the custom workflow builder and SMS. Any of these can be adde
   there. SMS is skipped right now (it needs a paid SMS provider such as Twilio). Say if you want it added.
 - Should invitees get a Google Calendar invitation (what happens now, sent by Google) or a Calendly-style confirmation
   email from your Gmail with a calendar file attached?
+- Google app verification (removes the "unverified app" screen on the one-time calendar connect): Search Console
+  property and the ownership file are in place; the remaining steps (verify ownership, verify branding, demo video,
+  submit) are written up in docs/GOOGLE_VERIFICATION.md.

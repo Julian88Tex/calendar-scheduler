@@ -67,8 +67,8 @@ function CronSetupSteps({ cronUrl, secretConfigured, lastRun, overdue }: { cronU
   return (
     <div className="flex flex-col gap-4 text-body-md text-ink">
       <p>
-        Reminder emails and other timed jobs run whenever /api/cron is called. The built-in schedules run only every 10 minutes (GitHub Actions) or
-        once a day (Vercel Cron on the Hobby plan), so add a free pinger to send reminders on time.
+        Reminder emails and other timed jobs run whenever /api/cron is called. The built-in schedule runs only once a day (Vercel Cron on the
+        Hobby plan), so a pinger (this site uses a Google Apps Script every 5 minutes) keeps reminders on time.
       </p>
       <ol className="flex list-decimal flex-col gap-3 pl-5">
         <li>Create a free cron job at cron-job.org, or a schedule in Upstash QStash.</li>

@@ -8,7 +8,9 @@
 //   times view (back arrow, the weekday and date, the time zone picker, "Select a Time" and "Duration: {d}")
 // - details step: the URL becomes /{slug}/{eventSlug}/{ISO start} (pushState, Next integrates it), the card keeps its
 //   widened size, and the back button (top-left of the details panel, like Calendly) and the browser back button
-//   return to the calendar with the same month and date
+//   return to the calendar with the same month and date; "Schedule Event" sends one request at a time and none once
+//   a booking is made (createSubmitGuard in lib/form.ts), so a double click or a fast double tap never posts twice and
+//   the navigation to the confirmation never flashes an error
 // - footer: "Cookie settings" and "Privacy Policy" at the bottom of the details panel; phones show only "Cookie
 //   settings" at the bottom of the card (docs/research/calendly-live-capture.md items 6 and 20)
 // - URL state: ?month, &date, &duration and every other parameter (prefill, UTM, display, embed) persist (BK-08)
@@ -44,6 +46,7 @@ import { EventDetailsPanel } from "./event-details-panel";
 import { BRAND_BUTTON } from "./form-parts";
 import {
   buildBookingBody,
+  createSubmitGuard,
   emptyValues,
   fieldOrder,
   interpretBookingResponse,
@@ -283,6 +286,8 @@ export function BookingFlow(p: BookingPageProps) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // One booking request at a time, and none after a booking was made (lib/form.ts createSubmitGuard).
+  const [submitGuard] = useState(createSubmitGuard);
   const [verification, setVerification] = useState<{ reservationId: string; email: string } | null>(null);
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const requestRef = useRef<{ key: string; id: string } | null>(null);
@@ -507,7 +512,7 @@ export function BookingFlow(p: BookingPageProps) {
   };
 
   const submit = async (viaPointer: boolean) => {
-    if (submitting || !start) return;
+    if (submitting || submitGuard.state !== "idle" || !start) return;
     submitByPointer.current = viaPointer;
     if (p.preview) {
       setFormError(bt("page.previewDisabled"));
@@ -521,6 +526,8 @@ export function BookingFlow(p: BookingPageProps) {
       focusFirstError(errs);
       return;
     }
+    // Taken synchronously, before anything is awaited: a second click or a double tap in flight sends nothing.
+    if (!submitGuard.start()) return;
     setErrors({});
     setFormError(null);
     setSubmitting(true);
@@ -533,6 +540,7 @@ export function BookingFlow(p: BookingPageProps) {
       try {
         turnstileToken = await turnstile.token(turnstileRef.current);
       } catch {
+        submitGuard.release();
         setFormError(bt("errors.botCheck"));
         setSubmitting(false);
         return;
@@ -569,6 +577,8 @@ export function BookingFlow(p: BookingPageProps) {
     } catch {
       outcome = { type: "error", message: bt("errors.network") };
     }
+    // After a booking the page is navigating to the confirmation: nothing may show an error any more.
+    if (!submitGuard.finish(outcome)) return;
     handleOutcome(outcome, v);
   };
 

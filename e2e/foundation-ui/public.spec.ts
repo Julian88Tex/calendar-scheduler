@@ -87,10 +87,12 @@ test.describe("public components", () => {
       const cs = getComputedStyle(b);
       return { width: cs.width, height: cs.height, rotate: cs.rotate, transform: cs.transform, top: cs.top, left: cs.left };
     });
+    // Calendly parity (live captures, commit 78253ee): the band is 40px thick, not 32px, and sits at top 18.5px and
+    // left -13.9px so its inner edge still runs corner to corner (it meets the box top 56px from the corner).
     expect(band.width).toBe("160px");
-    expect(band.height).toBe("32px");
-    expect(band.top).toBe("25px");
-    expect(band.left).toBe("-16px");
+    expect(band.height).toBe("40px");
+    expect(band.top).toBe("18.5px");
+    expect(band.left).toBe("-13.9px");
     // Tailwind's rotate-45 sets the individual `rotate` property (or a matrix(cos, sin, -sin, cos, 0, 0) transform).
     expect(band.rotate === "45deg" || /^matrix\(0\.707\d*, 0\.707\d*, -0\.707\d*, 0\.707\d*, 0, 0\)$/.test(band.transform), JSON.stringify(band)).toBe(true);
     await expect(ribbon).toContainText(/Powered by/i);
@@ -136,8 +138,10 @@ test.describe("public components", () => {
     const off = calendar.getByRole("button", { name: "Monday, October 12 - No times available" });
     await expect(off).toBeDisabled();
     expectColorNear(await renderedColor(off, "color"), "#476788", "unavailable day text");
-    expect(await off.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("400");
-    expect(await day.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("700");
+    // Calendly parity (live captures, commit 648136d): in Figtree, weight 460 carries the ink of Calendly's day numbers,
+    // available and unavailable alike (the compact "sm" pickers keep bold over regular).
+    expect(await off.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("460");
+    expect(await day.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("460");
 
     // The heading and time zone row use the classic ink.
     expectColorNear(await renderedColor(booking.getByRole("heading", { name: "Select a Date & Time" }), "color"), "#0a2540", "heading");

@@ -7,11 +7,13 @@
 // tile: "Not configured on this server" when the env vars are missing (beats everything), "Connected" when the user
 // has a live Google connection (Meet follows it), else no badge. The Email delivery tile follows the transport that
 // actually delivers (resolveEmailTransport: EMAIL_PROVIDER, Resend, SMTP, the owner's Gmail, else the outbox): its note
-// is describeEmailTransport ("Sending from owner@gmail.com (Gmail)", ...) and it is "Connected" unless emails only
-// reach the outbox.
+// is describeEmailTransport ("Sending from owner@gmail.com (Gmail)", ...), it is "Connected" unless emails only
+// reach the outbox, and it links to the email outbox page for those who may open it (./email-tile.ts).
 import { and, eq, ne } from "drizzle-orm";
 import type { Metadata } from "next";
 import { IntegrationsHub, type HubTile } from "../_shell/integrations-hub";
+import { canSeeEmailOutbox } from "../settings/email-outbox/access";
+import { hubTileHref } from "./email-tile";
 import { PageHeader } from "@/components/ui/page-header";
 import { getDb } from "@/db";
 import { calendarConnections } from "@/db/schema";
@@ -78,7 +80,7 @@ export default async function IntegrationsPage({ searchParams }: Props) {
     id: t.id,
     name: t.name,
     description: t.description,
-    href: t.href,
+    href: hubTileHref(t.id, t.href, canSeeEmailOutbox(actor)),
     logo: t.logo,
     status: integrationStatus(t, flags, connected),
     note: t.id === "email" ? email.note : null,

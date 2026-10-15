@@ -1,10 +1,10 @@
 // POST /api/setup/bootstrap (src/app/api/setup/bootstrap/route.ts) on PGlite: disabled without secrets, bearer
 // authorization with SETUP_TOKEN or CRON_SECRET (constant-time compare), validation, OWNER_EMAIL, the 409 refusal,
-// idempotent reruns and rate limiting.
+// idempotent reruns, rate limiting, and the write-free refusals once the instance has an account.
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const { eventTypes, handles, instanceSettings, organizations, rateLimitBuckets, users } = await import("@/db/schema");
+const { auditLog, eventTypes, handles, instanceSettings, organizations, rateLimitBuckets, users } = await import("@/db/schema");
 const { POST } = await import("@/app/api/setup/bootstrap/route");
 const { bearerMatches, bootstrapSecrets, SETUP_TOKEN_MIN_LENGTH } = await import("@/lib/setup/config");
 const { resetFakeTime, setFakeNow } = await import("@/lib/time/now");
@@ -32,6 +32,7 @@ beforeEach(async () => {
   await t.db.delete(handles);
   await t.db.delete(instanceSettings);
   await t.db.delete(rateLimitBuckets);
+  await t.db.delete(auditLog);
 });
 afterAll(resetEnv);
 
@@ -134,6 +135,59 @@ describe("input and refusals", () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: "conflict" });
     expect(await t.db.select().from(users).where(eq(users.emailNormalized, OWNER))).toHaveLength(0);
+  });
+});
+
+describe("once the instance has an account (setup done)", () => {
+  /** Rows the refusals must not write: rate limit buckets, audit entries, accounts. */
+  async function writes() {
+    return {
+      buckets: (await t.db.select().from(rateLimitBuckets)).length,
+      audits: (await t.db.select().from(auditLog)).length,
+      users: (await t.db.select().from(users)).length,
+    };
+  }
+
+  it("refuses another email with 409 quickly, writing nothing (no rate limit bucket, no audit, no account)", async () => {
+    await createUser(t.db, { email: "first@example.com" });
+    const before = await writes();
+    for (let i = 0; i < 15; i++) {
+      const res = await call({ email: OWNER }, { ip: "203.0.113.50" });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: "conflict", message: expect.stringContaining("already has another account") });
+    }
+    expect(await writes()).toEqual(before);
+  });
+
+  it("answers wrong tokens and OWNER_EMAIL mismatches without writing or counting them", async () => {
+    await createUser(t.db, { email: "first@example.com" });
+    env.OWNER_EMAIL = OWNER;
+    const before = await writes();
+    for (let i = 0; i < 15; i++) expect((await call({ email: OWNER }, { ip: "203.0.113.51", auth: "Bearer guess" })).status).toBe(401);
+    expect((await call({ email: "someone.else@example.com" }, { ip: "203.0.113.51" })).status).toBe(403);
+    expect((await call({ email: OWNER }, { ip: "203.0.113.51" })).status).toBe(409);
+    expect(await writes()).toEqual(before);
+  });
+
+  it("still reruns for the owner's own account (200), rate limited per IP", async () => {
+    setFakeNow("2035-03-01T12:05:00Z");
+    expect((await call({ email: OWNER })).status).toBe(201);
+    const ip = "203.0.113.52";
+    for (let i = 0; i < 10; i++) {
+      const res = await call({ email: OWNER }, { ip });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ account: "existing", snapshot: { status: "skipped", reason: "already_applied" } });
+    }
+    expect((await call({ email: OWNER }, { ip })).status).toBe(429);
+    resetFakeTime();
+  });
+
+  it("makes an owner who signed in first (verified email) instance admin and applies the snapshot", async () => {
+    const owner = await createUser(t.db, { email: OWNER });
+    const res = await call({ email: OWNER });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ account: "existing", user: { isInstanceAdmin: true } });
+    expect(await t.db.select().from(eventTypes).where(eq(eventTypes.ownerUserId, owner.id))).toHaveLength(3);
   });
 });
 

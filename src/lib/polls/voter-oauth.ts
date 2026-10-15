@@ -7,7 +7,6 @@
 // option goes back to the voter's browser in a short-lived signed cookie and the voter returns to /p/{slug}?calendar=
 // checked. Start link: oauthStartPath("google", { intent: "poll_freebusy", next: `/p/${slug}`, data: { poll: slug } }).
 import "server-only";
-import { revokeGoogleToken } from "@/lib/auth/oauth/google";
 import type { OAuthCallbackContext } from "@/lib/auth/oauth/types";
 import { getDb } from "@/db";
 import { log } from "@/lib/logger";
@@ -30,6 +29,9 @@ export async function handleVoterFreeBusyCallback(ctx: OAuthCallbackContext): Pr
   }
   const poll = found.poll;
   const back = `/p/${encodeURIComponent(poll.slug)}`;
+  // The voter's access token is not revoked: Google revokes the whole grant of this app for that Google account, which
+  // would also cut the owner's stored calendar and Gmail access if the owner checked their own calendar. The token is
+  // never stored, is free/busy only and expires within the hour.
   const token = ctx.tokens.accessToken;
   try {
     const options = await loadOptions(db, poll.id);
@@ -41,7 +43,5 @@ export async function handleVoterFreeBusyCallback(ctx: OAuthCallbackContext): Pr
   } catch (e) {
     log.warn("polls.voter_freebusy_failed", { provider: ctx.provider, error: e });
     return redirect(`${back}?oauth_error=failed&provider=${ctx.provider}`);
-  } finally {
-    if (ctx.provider === "google") await revokeGoogleToken(token).catch(() => undefined);
   }
 }

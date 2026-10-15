@@ -3,11 +3,18 @@
 // Google OAuth (SPEC AU-02, CAL-02, MP-13; tech-reference 5.1): scopes and authorize parameters, the authorize URL
 // (PKCE S256 through the arctic client from clients.ts), code exchange, refresh (Google usually returns no new refresh
 // token: callers keep the stored one when refreshToken is null), revoke, and the profile from the id token.
-// Sign-in and calendar connect share one client and one redirect URI; the voter free/busy check (poll_freebusy) asks
-// for the free/busy scope only and no offline access.
-// gmail.send is requested with the calendar scopes (owner decision: booking emails are sent from the owner's own Gmail,
-// src/lib/email/gmail-transport.ts); include_granted_scopes keeps earlier grants, and a grant without it (the box
-// unchecked on Google's consent screen) still connects the calendar.
+// Sign-in, calendar connect and the voter check share one client and one redirect URI; each intent asks for what it
+// needs (googleAccessFor):
+// - "sign_in" (login, link_login_method, accept_invitation): openid, email and profile only, prompt=select_account, no
+//   offline access and no include_granted_scopes. These scopes are not sensitive, so Google never shows its
+//   unverified app warning on an everyday sign-in, and the token is used only to read the id token: the stored
+//   calendar connection (tokens, scopes, Gmail permission, health) is never touched by a sign-in (intents.ts).
+// - "full" (signup, connect_calendar, including every Reconnect and "Allow Gmail sending" link): the calendar scopes
+//   and gmail.send (owner decision: booking emails are sent from the owner's own Gmail,
+//   src/lib/email/gmail-transport.ts) with offline access and prompt=consent (a refresh token on every consent);
+//   include_granted_scopes keeps earlier grants, and a grant without gmail.send (the box unchecked on Google's consent
+//   screen) still connects the calendar.
+// - "freebusy" (poll_freebusy, MP-13 "Check my calendar"): the free/busy scope only, no offline access.
 import "server-only";
 import { AppError } from "@/lib/errors";
 import { GMAIL_SEND_SCOPE } from "@/lib/integrations/google/scopes";
@@ -15,10 +22,12 @@ import { getGoogleClient } from "./clients";
 import { decodeJwtClaims, mapArcticErrors, str, toOAuthTokens } from "./tokens";
 import type { OAuthIntent, OAuthProfile, OAuthTokens } from "./types";
 
+/** Basic sign-in: who the user is (not sensitive scopes, no unverified app warning). */
+export const GOOGLE_SIGN_IN_SCOPES = ["openid", "email", "profile"] as const;
+
+/** Signup and calendar connect: sign-in plus the calendar scopes and gmail.send. */
 export const GOOGLE_SCOPES = [
-  "openid",
-  "email",
-  "profile",
+  ...GOOGLE_SIGN_IN_SCOPES,
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
   GMAIL_SEND_SCOPE,
@@ -27,16 +36,44 @@ export const GOOGLE_SCOPES = [
 /** MP-13 "Check my calendar": free/busy only, tokens kept in memory. */
 export const GOOGLE_FREEBUSY_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.freebusy"] as const;
 
-/** Extra authorize parameters (refresh token on every consent, incremental auth). */
+/** Extra authorize parameters of the full flows (refresh token on every consent, incremental auth). */
 export const GOOGLE_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = {
   access_type: "offline",
   prompt: "consent",
   include_granted_scopes: "true",
 };
 
+/** Extra authorize parameters of a basic sign-in and the voter check: pick an account, no offline access. */
+export const GOOGLE_SIGN_IN_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = { prompt: "select_account" };
+
+/** What a Google flow asks for (see the file header). */
+export type GoogleAccess = "sign_in" | "full" | "freebusy";
+
+/** The access an intent asks for: only signup and connect_calendar ask for the calendar and Gmail. */
+export function googleAccessFor(intent: OAuthIntent): GoogleAccess {
+  switch (intent) {
+    case "signup":
+    case "connect_calendar":
+      return "full";
+    case "poll_freebusy":
+      return "freebusy";
+    case "login":
+    case "link_login_method":
+    case "accept_invitation":
+    default:
+      return "sign_in";
+  }
+}
+
 /** The scopes an intent asks for. */
 export function googleScopesFor(intent: OAuthIntent): readonly string[] {
-  return intent === "poll_freebusy" ? GOOGLE_FREEBUSY_SCOPES : GOOGLE_SCOPES;
+  const access = googleAccessFor(intent);
+  return access === "full" ? GOOGLE_SCOPES : access === "freebusy" ? GOOGLE_FREEBUSY_SCOPES : GOOGLE_SIGN_IN_SCOPES;
+}
+
+/** The extra authorize parameters of an intent. */
+export function googleAuthorizeParamsFor(intent: OAuthIntent): Readonly<Record<string, string>> {
+  return googleAccessFor(intent) === "full" ? GOOGLE_AUTHORIZE_PARAMS : GOOGLE_SIGN_IN_AUTHORIZE_PARAMS;
 }
 
 function client() {
@@ -54,11 +91,7 @@ export function googleAuthorizationUrl(p: {
 }): URL {
   const scopes = googleScopesFor(p.intent);
   const url = client().createAuthorizationURL(p.state, p.codeVerifier, [...scopes]);
-  if (p.intent === "poll_freebusy") {
-    url.searchParams.set("prompt", "select_account");
-  } else {
-    for (const [k, v] of Object.entries(GOOGLE_AUTHORIZE_PARAMS)) url.searchParams.set(k, v);
-  }
+  for (const [k, v] of Object.entries(googleAuthorizeParamsFor(p.intent))) url.searchParams.set(k, v);
   if (p.loginHint) url.searchParams.set("login_hint", p.loginHint);
   return url;
 }
