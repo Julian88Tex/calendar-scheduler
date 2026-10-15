@@ -88,7 +88,11 @@ export function PollCard({ item, viewer, onChanged }: { item: PollListItem; view
             {item.booked ? (
               <p className="flex flex-wrap items-center gap-x-2 text-body-md text-ink-2">
                 <CalendarCheck aria-hidden="true" className="size-4 text-success" />
-                {item.booked.status === "canceled" ? pt("list.meetingCanceled") : pt("list.bookedFor", { when: shortWhen(item.booked.start, zone, viewer.hour12) })}
+                {item.booked.status === "canceled" ? pt("list.meetingCanceled") : pt("list.bookedFor", {
+                      when: item.booked.allDayDate
+                        ? optionShortLabel({ start: null, end: null, allDayDate: item.booked.allDayDate, durationMinutes: 0 }, zone)
+                        : shortWhen(item.booked.start, zone, viewer.hour12),
+                    })}
                 {item.booked.status === "active" && (
                   <Link href={`/app/meetings?event=${item.booked.scheduledEventId}` as Route} className="font-semibold text-primary-text hover:underline">
                     {pt("list.viewMeeting")}
@@ -125,7 +129,9 @@ export function PollCard({ item, viewer, onChanged }: { item: PollListItem; view
                 canDelete: item.canDelete,
                 respondents: item.respondents,
                 deadline: item.deadline,
-                meeting: item.booked ? { start: item.booked.start, end: null, status: item.booked.status } : null,
+                meeting: item.booked
+                  ? { start: item.booked.start, end: item.booked.allDayDate ? null : item.booked.end, allDayDate: item.booked.allDayDate, status: item.booked.status }
+                  : null,
               }}
               zone={zone}
               hour12={viewer.hour12}

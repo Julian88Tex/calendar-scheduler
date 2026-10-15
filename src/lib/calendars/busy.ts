@@ -373,8 +373,11 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
     const byWindow = new Map<number, FetchItem[]>();
     for (const i of claimed) byWindow.set(i.ws, [...(byWindow.get(i.ws) ?? []), i]);
     let gone = false;
-    let firstError: unknown = null;
     await withConnection(connectionId, async (ctx) => {
+      // withConnection runs this again after a 401 and a token refresh: start clean, so an error of the first attempt
+      // is never rethrown after a successful retry (that would mark a healthy connection needs_reauth).
+      gone = false;
+      const failures: unknown[] = [];
       await Promise.all(
         [...byWindow].map(async ([ws, group]) => {
           const range = { start: new Date(ws), end: new Date(ws + WINDOW_MS) };
@@ -390,18 +393,24 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
             const settled = results[i]!;
             if (settled.status === "rejected") {
               // Leave these windows to the stale fallback; the other part is still stored.
-              firstError ??= settled.reason;
+              failures.push(settled.reason);
               continue;
             }
             for (const g of part) {
               const events = settled.value[g.cal.externalId];
-              if (!events) gone = true; // calendar deleted or unshared: it has no events for us
+              if (!events) {
+                // Calendar deleted or unshared: it has no events for us (the list refresh below drops it).
+                gone = true;
+                log.warn("calendars.busy_calendar_unreadable", { connectionId, calendarId: g.cal.calendarId, busyOnly: g.cal.busyOnly });
+              }
               await replaceWindowEvents(db, { calendarId: g.cal.calendarId, userId: g.cal.userId, windowStart: ws, events: events ?? [], fetchedAt });
             }
           }
         }),
       );
-      if (firstError) throw firstError;
+      // A credential failure wins over a transient one, so withConnection still refreshes the token or flags the
+      // connection.
+      if (failures.length) throw failures.find(isProviderAuthError) ?? failures[0] ?? new Error("Calendar busy fetch failed");
     });
     await markConnectionHealthy(connectionId, db);
     if (gone) {

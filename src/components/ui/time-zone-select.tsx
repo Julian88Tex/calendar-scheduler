@@ -3,12 +3,13 @@
 // TimeZoneSelect (dashboard picker) and TimeZoneButton (booking page trigger, SPEC BK-05) (ARCHITECTURE 20.2, GEN-06):
 // friendly Calendly-style names from src/lib/time/zones.ts ("Eastern Time - US & Canada"), the current local time of
 // every zone (refreshed each minute), the GEN-06 groups (US/CANADA, AMERICA, ... UTC) and search by name, city or IANA
-// id. TimeZoneButton renders the "Time zone" label, a navy grid globe + name + "(6:53pm)" + caret button (a neutral
-// 10% navy pill on hover and while open), and a 250px popup centered over the button and overlapping its top by 2px
-// (docs/research/calendly-live-capture.md item 17) with search, a "TIME ZONE" row holding the "am/pm [switch] 24h"
-// toggle (a "Time format" radio group for assistive technology) lined up with the times column, and the grouped list
-// whose names wrap. Pass `names` (the zones i18n namespace) and `labels` for non-English invitee
-// pages. Any valid IANA zone (including legacy aliases) stays selectable.
+// id. TimeZoneButton renders the "Time zone" label, a 13px navy grid globe + name + "(6:53pm)" + a 9x5.5 caret 6px
+// after the text (a neutral 10% navy pill on hover and while open), and a 250px popup centered over the button and
+// overlapping its top by 2px (docs/research/calendly-live-capture.md item 17) with search, a "TIME ZONE" row holding the
+// "am/pm [switch] 24h" toggle (a "Time format" radio group for assistive technology; the knob has a #A6BBD1 ring) lined
+// up with the times column, and the grouped list whose names wrap in a column of at most 117px (so "Mountain Time -" /
+// "US & Canada" break where Calendly's do). Pass `names` (the zones i18n namespace) and `labels` for non-English
+// invitee pages. Any valid IANA zone (including legacy aliases) stays selectable.
 "use client";
 
 import { Globe } from "lucide-react";
@@ -148,11 +149,14 @@ export type TimeZoneButtonProps = {
   disabled?: boolean;
 };
 
-/** A booking picker row: the zone name wraps over two lines when needed, the local time stays on the right in navy. */
+/**
+ * A booking picker row: the zone name wraps over two lines in a column of at most 117px (Calendly's), the local time
+ * stays on the right in navy.
+ */
 function PublicZoneRow({ option, hour12, locale, now }: { option: ZoneOption; hour12: boolean; locale: string; now: number | null }) {
   return (
     <span className="flex w-full min-w-0 items-center justify-between gap-3">
-      <span className="min-w-0 break-words">{option.label}</span>
+      <span className="min-w-0 max-w-[117px] break-words">{option.label}</span>
       {now !== null && <span className="shrink-0 text-[14px] font-normal text-ink">{currentLocalTime(option.zone, { hour12, locale, at: now })}</span>}
     </span>
   );
@@ -193,7 +197,7 @@ function HourFormatToggle({ hour12, onChange, labels }: { hour12: boolean; onCha
       >
         <span
           className={cn(
-            "absolute top-1/2 left-0 size-4 -translate-y-1/2 rounded-full border border-line bg-white shadow-[0_1px_2px_rgba(10,37,64,0.2)] transition-transform duration-150",
+            "absolute top-1/2 left-0 size-4 -translate-y-1/2 rounded-full border border-line-medium bg-white shadow-[0_1px_2px_rgba(10,37,64,0.2)] transition-transform duration-150",
             !hour12 && "translate-x-4",
           )}
         />
@@ -212,7 +216,8 @@ export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale
   const headingId = `tz-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
     <div className={cn("flex min-w-0 flex-col items-start", className)}>
-      <span id={headingId} className="text-[14px] leading-5 font-bold text-ink">
+      {/* Weight 650: Figtree's bold carries more ink than Calendly's at this size. */}
+      <span id={headingId} className="text-[14px] leading-5 font-[650] text-ink">
         {label}
       </span>
       <Combobox
@@ -235,18 +240,24 @@ export function TimeZoneButton({ value, onChange, hour12, onHour12Change, locale
             disabled={disabled}
             className="group mt-px inline-flex h-8 w-full max-w-full min-w-0 items-center gap-px rounded-full px-2.5 text-left text-[14px] leading-5 text-ink transition-colors duration-100 hover:bg-ink/10 data-[state=open]:bg-ink/10 disabled:cursor-not-allowed"
           >
-            <GlobeIcon className="size-3.5 shrink-0 text-navy" radius={10.5} strokeWidth={2.2} />
+            {/* A 13px globe 1px in from the pill padding, like Calendly's; the text keeps its place. */}
+            <GlobeIcon className="ml-[0.5px] size-[13.5px] shrink-0 text-navy" radius={10.5} strokeWidth={2.2} />
             <span id={`${headingId}-value`} className="min-w-0 truncate">
               {name}
               {time && <span> ({time})</span>}
             </span>
-            <svg aria-hidden="true" viewBox="0 0 10 6" className="ml-[5px] h-1.5 w-2.5 shrink-0 fill-navy transition-transform group-data-[state=open]:rotate-180">
-              <path d="M0 0h10L5 6z" />
+            {/* Calendly's caret: 9x5.5, 6px after the text and 1px below the text's center. */}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 18 11"
+              className="ml-[6px] h-[5.5px] w-[9px] shrink-0 translate-y-px fill-navy transition-transform group-data-[state=open]:rotate-180"
+            >
+              <path d="M0 0h18L9 11z" />
             </svg>
           </button>
         }
         header={
-          <div className="flex items-center justify-between gap-3 pt-[22px] pr-8 pb-3 pl-5">
+          <div className="flex items-center justify-between gap-3 pt-[22px] pr-[31px] pb-[7px] pl-5">
             <span className="text-[12px] leading-4 font-bold text-ink uppercase">{label}</span>
             {onHour12Change && <HourFormatToggle hour12={hour12} onChange={onHour12Change} labels={labels} />}
           </div>

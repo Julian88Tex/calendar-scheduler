@@ -4,7 +4,8 @@
 // Timed options are UTC instants shown in the viewer's zone (an option may land on another date than the host sees;
 // one crossing local midnight shows under its start date with "(ends next day)"). Date-only options store a date and
 // display the same calendar day for everyone; for ordering, the past check and holds they start at local midnight in
-// the poll zone.
+// the poll zone. Intl only (through grid.ts and src/lib/time/format.ts): the public voter page bundles this file, so
+// it must never pull in Luxon.
 import { formatDateLong, formatTime, formatWeekday } from "@/lib/time/format";
 import { dayEnd, dayStart, localDate } from "./grid";
 import type { PollOptionView } from "./types";

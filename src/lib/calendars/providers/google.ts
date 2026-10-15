@@ -8,10 +8,10 @@
 // - listBusy: the FreeBusy API (POST /freeBusy, timeZone UTC) for busy-only calendars, batched (at most 50 calendars and
 //   31 days per request; the busy cache asks for one 31-day window of a connection at a time, so usually one request
 //   covers every busy-only calendar of that window). Intervals come back untitled and always busy (Google already
-//   leaves out free, declined and cancelled events) and are merged per calendar; ids are synthetic ("freebusy:" plus the
-//   interval). A per calendar "notFound" leaves that calendar out (gone, like listEvents); any other per calendar
-//   error is transient (the cache keeps the last data). Rate limits map like every other request (403 rateLimitExceeded,
-//   429 -> ProviderTransientError).
+//   leaves out free, declined and cancelled events), clipped to the asked range and merged per calendar; ids are
+//   synthetic ("freebusy:" plus the interval). A per calendar "notFound" leaves that calendar out (gone, like
+//   listEvents); any other per calendar error is transient (the cache keeps the last data). Rate limits map like every
+//   other request (403 rateLimitExceeded, 429 -> ProviderTransientError).
 // - listEvents: events.list per calendar with singleEvents=true, maxAttendees=1 (only our own attendee entry comes back)
 //   and explicit eventTypes (default, focusTime, outOfOffice, fromGmail, birthday), so working locations are not even
 //   fetched. Busy mapping (SCH-12): cancelled and declined are free, outOfOffice is always busy, every other type
@@ -439,8 +439,10 @@ async function listBusy(ctx: ConnectionContext, calendarExternalIds: string[], r
         }
         const list = intervals.get(id)!;
         for (const b of entry.busy ?? []) {
-          const s = b.start ? Date.parse(b.start) : Number.NaN;
-          const e = b.end ? Date.parse(b.end) : Number.NaN;
+          // Clipped to the asked span: the busy cache stores one window per call and replaces whatever overlaps that
+          // window, so an interval reaching into the next window would wipe that window's (differently merged) rows.
+          const s = Math.max(from, b.start ? Date.parse(b.start) : Number.NaN);
+          const e = Math.min(to, b.end ? Date.parse(b.end) : Number.NaN);
           if (Number.isNaN(s) || Number.isNaN(e) || !(e > s)) continue;
           list.push({ start: s, end: e });
         }

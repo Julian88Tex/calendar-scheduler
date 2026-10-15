@@ -7,6 +7,10 @@
 // - Passes the current path to server code in the x-kairos-url request header (login redirects keep ?next=).
 // - Security headers (GEN-08) for normal responses come from next.config.ts headers(); responses generated here get
 //   the same headers from src/lib/net/frame-policy.ts.
+// - Meeting poll voter pages (/p/{slug}, SPEC MP-22): a page view first asks GET /api/public/polls/{slug}/state (one
+//   indexed lookup); for a deleted or canceled poll the page ("This poll is no longer available.") is answered with a
+//   real HTTP 410 instead of 200 (a Server Component cannot set the status). Only full page loads (GET or HEAD without
+//   the RSC header) are checked; any error or timeout falls back to the normal page.
 // Never import the database, env.ts or "server-only" modules here.
 import { NextResponse, type NextRequest } from "next/server";
 import { securityHeadersFor } from "./lib/net/frame-policy";
@@ -14,6 +18,10 @@ import { proxyDecision } from "./lib/net/proxy-decision";
 
 export const SESSION_COOKIE_NAME = "sid";
 export const PATHNAME_HEADER = "x-kairos-url";
+/** Marks the proxy's own requests for a voter page and its state, so they are not checked again. */
+export const POLL_GATE_HEADER = "x-kairos-poll-gate";
+
+const VOTER_PAGE = /^\/p\/([A-Za-z0-9-]{1,100})\/?$/;
 
 export { isSetupMode, proxyDecision, type ProxyDecision } from "./lib/net/proxy-decision";
 
@@ -47,6 +55,43 @@ async function setupPageResponse(request: NextRequest): Promise<NextResponse> {
   return new NextResponse(fallbackSetupHtml(), { status: 503, headers });
 }
 
+/**
+ * The 410 response of a deleted or canceled poll's voter page, or null to render the page as usual (live or unknown
+ * poll, not a full page load, or the state could not be read).
+ */
+async function goneVoterPage(request: NextRequest, pathname: string, search: string): Promise<NextResponse | null> {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const match = VOTER_PAGE.exec(pathname);
+  if (!match) return null;
+  const h = request.headers;
+  if (h.has(POLL_GATE_HEADER) || h.has("rsc") || h.has("next-router-prefetch") || h.has("next-action")) return null;
+  const origin = request.nextUrl.origin;
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const headers: Record<string, string> = { [POLL_GATE_HEADER]: "1", ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}) };
+  try {
+    const state = await fetch(new URL(`/api/public/polls/${match[1]}/state`, origin), {
+      headers,
+      signal: AbortSignal.timeout(3000),
+      cache: "no-store",
+    });
+    if (state.status !== 410) return null;
+    // The page renders the "no longer available" panel for a gone poll; it is answered here with the 410 status.
+    const page = await fetch(new URL(`${pathname}${search}`, origin), {
+      headers: { ...headers, accept: "text/html" },
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!page.ok || !(page.headers.get("content-type") ?? "").includes("text/html")) return null;
+    const body = request.method === "HEAD" ? null : await page.text();
+    return new NextResponse(body, {
+      status: 410,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
   const decision = proxyDecision({ pathname, search, hasSession: request.cookies.has(SESSION_COOKIE_NAME) });
@@ -64,6 +109,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     case "login_redirect":
       return withSecurityHeaders(NextResponse.redirect(new URL(decision.location, request.url)), pathname);
     case "next": {
+      const gone = await goneVoterPage(request, pathname, search);
+      if (gone) return withSecurityHeaders(gone, pathname);
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set(PATHNAME_HEADER, `${pathname}${search}`);
       return NextResponse.next({ request: { headers: requestHeaders } });

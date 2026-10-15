@@ -21,8 +21,11 @@ vi.mock("@/lib/links", () => ({
 vi.mock("@/lib/polls", () => ({ getPollReservedIntervals: async () => ({}), markPollBookedInTx: async () => {} }));
 vi.mock("@/lib/events/registry", () => ({ subscriberKeysFor: () => [], SUBSCRIBER_KEYS: [] }));
 
-const { calendars } = await import("@/db/schema");
+const { eq } = await import("drizzle-orm");
+const { calendars, eventTypes, users } = await import("@/db/schema");
 const { GOOGLE_FREE_BUSY_ONLY_TAG } = await import("@/lib/calendars/access");
+const { connectGoogleAccount, getDestinationCalendar, GOOGLE_CALENDAR_SCOPES, setConflictCalendars, setDestinationCalendar } = await import("@/lib/calendars/connections");
+const { getCalendarSettingsView } = await import("@/lib/calendars/settings");
 const { getAvailability } = await import("@/lib/booking/availability");
 const { createBooking } = await import("@/lib/booking/create");
 const { getTroubleshootDay } = await import("@/lib/availability/troubleshoot");
@@ -103,6 +106,82 @@ describe("free/busy only calendar blocks", () => {
       expect(await createBooking(bookingInput(s.fx.target, la("2030-10-08 14:00")), { now: NOW })).toMatchObject({ ok: true });
     } finally {
       s.f.restore();
+    }
+  });
+
+  it("from the Google calendar list to a refused booking: listed unchecked, ticked by the owner, never the destination", async () => {
+    const fx = await setupSolo(t.db);
+    const actor = { orgId: fx.owner.organizationId, orgRole: fx.owner.orgRole, user: fx.owner };
+    const f = mockFetch(
+      {
+        method: "GET",
+        url: `${G}/users/me/calendarList`,
+        // The work calendar comes first and Google marks no calendar as writable but the owner's own.
+        handler: () => ({
+          items: [
+            { id: WORK, summary: WORK, accessRole: "freeBusyReader" },
+            { id: ME, summary: ME, accessRole: "owner", primary: true },
+          ],
+        }),
+      },
+      {
+        method: "POST",
+        url: `${G}/freeBusy`,
+        handler: (req: MockRequest) => {
+          const body = req.body as { timeMin: string; timeMax: string; items: { id: string }[] };
+          const inRange = (b: { start: string; end: string }) => b.start < body.timeMax && b.end > body.timeMin;
+          return { calendars: Object.fromEntries(body.items.map((i) => [i.id, { busy: i.id === WORK ? workBusy.filter(inRange) : [] }])) };
+        },
+      },
+      {
+        method: "GET",
+        url: new RegExp(`^${G.replace(/\./g, "\\.")}/calendars/([^/]+)/events(?:\\?|$)`),
+        handler: (req: MockRequest) =>
+          decodeURIComponent(req.params[0]!) === WORK
+            ? mockResponse({ error: { code: 403, message: "You need to have reader access to this calendar.", errors: [{ reason: "requiredAccessLevel" }] } }, { status: 403 })
+            : { items: [] },
+      },
+    );
+    try {
+      // The real connect flow: calendar list, conflict defaults and the destination default.
+      const { connectionId } = await connectGoogleAccount({
+        userId: fx.owner.id,
+        providerAccountId: "google-sub-1",
+        accountEmail: ME,
+        tokens: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: new Date(Date.now() + 3_600_000), scopes: [...GOOGLE_CALENDAR_SCOPES] },
+        via: "connect",
+      });
+      const rows = await t.db.select().from(calendars).where(eq(calendars.connectionId, connectionId));
+      const me = rows.find((r) => r.externalId === ME)!;
+      const work = rows.find((r) => r.externalId === WORK)!;
+      expect(work).toMatchObject({ canWrite: false, checkConflicts: false, ctag: GOOGLE_FREE_BUSY_ONLY_TAG });
+      expect(me).toMatchObject({ canWrite: true, checkConflicts: true });
+      expect((await getDestinationCalendar(fx.owner.id))?.calendarId).toBe(me.id);
+
+      const NOW = la("2030-10-07 08:00");
+      const day = async () =>
+        startsOn((await getAvailability({ target: fx.target, start: la("2030-10-08 00:00"), end: la("2030-10-09 00:00"), now: NOW })).slots, "2030-10-08");
+      // Unchecked, the work calendar is not read and does not block.
+      expect(await day()).toContain("13:00");
+      expect(f.callsTo("/freeBusy", "POST")).toHaveLength(0);
+
+      // The owner ticks it in "Calendars to check for conflicts": its busy times block from then on.
+      await setConflictCalendars(actor, [{ calendarId: work.id, checked: true }]);
+      const starts = await day();
+      expect(starts).not.toContain("13:00");
+      expect(starts).not.toContain("13:30");
+      expect(starts).toContain("14:00");
+      expect(await createBooking(bookingInput(fx.target, la("2030-10-08 13:00")), { now: NOW })).toMatchObject({ ok: false, code: "slot_unavailable" });
+      expect(await createBooking(bookingInput(fx.target, la("2030-10-08 14:00")), { now: NOW })).toMatchObject({ ok: true });
+
+      // Never the calendar to add events to: not by default, not by choice, not through an event type override.
+      await expect(setDestinationCalendar(actor, work.id)).rejects.toMatchObject({ code: "forbidden" });
+      await t.db.update(eventTypes).set({ destinationCalendarId: work.id }).where(eq(eventTypes.id, fx.target.eventType.id));
+      await t.db.update(users).set({ destinationCalendarId: work.id }).where(eq(users.id, fx.owner.id));
+      expect(await getDestinationCalendar(fx.owner.id, fx.target.eventType.id)).toBeNull();
+      expect((await getCalendarSettingsView(fx.owner.id)).destinationCalendarId).toBeNull();
+    } finally {
+      f.restore();
     }
   });
 

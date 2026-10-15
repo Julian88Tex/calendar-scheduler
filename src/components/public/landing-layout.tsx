@@ -14,13 +14,14 @@ export function LandingEvents({ children, className }: { children: React.ReactNo
 
 /**
  * The landing page footer links: absolute at the bottom-left on desktop (the card must be `relative`), stacked so they
- * stay inside the 150px margin beside the event grid; in flow below the grid otherwise.
+ * stay inside the 150px margin beside the event grid; in flow below the grid otherwise (on phones 32px under the last
+ * row and 27px above the card's end, where Calendly's sit).
  */
 export function LandingFooter({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div
       className={cn(
-        "px-4 pt-[33px] pb-[26px] min-[650px]:px-6 min-[650px]:pt-6 min-[1000px]:absolute min-[1000px]:bottom-[21px] min-[1000px]:left-[31px] min-[1000px]:max-w-[110px] min-[1000px]:p-0",
+        "px-4 pt-8 pb-[27px] min-[650px]:px-6 min-[650px]:pt-6 min-[650px]:pb-[26px] min-[1000px]:absolute min-[1000px]:bottom-[21px] min-[1000px]:left-[31px] min-[1000px]:max-w-[110px] min-[1000px]:p-0",
         "min-[1000px]:[&_nav]:flex-col min-[1000px]:[&_nav]:items-start min-[1000px]:[&_nav]:gap-y-1",
         className,
       )}

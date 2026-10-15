@@ -20,7 +20,7 @@ import type { Route } from "next";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookingCard, BookingMainSection, BookingPanelHeading } from "@/components/public/booking-card";
+import { BookingCard, BookingMainSection, BookingPanelHeading, PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
 import { BackButton } from "@/components/public/back-button";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { TimeSlotList, type TimeSlot } from "@/components/public/time-slot-list";
@@ -427,14 +427,26 @@ export function BookingFlow(p: BookingPageProps) {
     window.scrollTo({ top: 0 });
   };
 
+  // How the current submit started (see DetailsForm's onSubmit): a pointer press keeps focus on the button.
+  const submitByPointer = useRef(false);
+  /**
+   * After a refused submit, brings the first invalid field into view. Keyboard submits also move focus there (GEN-05);
+   * pointer submits leave focus on "Schedule Event", as Calendly does, so no field shows its focus ring (every error is
+   * still announced through its role="alert" message).
+   */
   const focusFirstError = (errs: FieldErrors) => {
     const first = fieldOrder(ctx).find((k) => errs[k]) ?? Object.keys(errs)[0];
     if (!first) return;
+    const moveFocus = !submitByPointer.current;
     window.setTimeout(() => {
       const box = document.querySelector<HTMLElement>(`[data-field="${CSS.escape(first)}"]`);
-      const focusable = box?.querySelector<HTMLElement>("input:not([type=hidden]):not([tabindex='-1']), textarea, select, button[role=radio], button[role=checkbox], button");
-      (focusable ?? box)?.focus();
-      box?.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (!box) return;
+      if (moveFocus) {
+        const focusable = box.querySelector<HTMLElement>("input:not([type=hidden]):not([tabindex='-1']), textarea, select, button[role=radio], button[role=checkbox], button");
+        (focusable ?? box).focus();
+      }
+      const r = box.getBoundingClientRect();
+      if (moveFocus || r.top < 0 || r.bottom > window.innerHeight) box.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 0);
   };
 
@@ -494,8 +506,9 @@ export function BookingFlow(p: BookingPageProps) {
     }
   };
 
-  const submit = async () => {
+  const submit = async (viaPointer: boolean) => {
     if (submitting || !start) return;
+    submitByPointer.current = viaPointer;
     if (p.preview) {
       setFormError(bt("page.previewDisabled"));
       return;
@@ -617,10 +630,11 @@ export function BookingFlow(p: BookingPageProps) {
 
   if (step === "details" && start) {
     return (
-      <div data-booking-flow="details">
+      <div data-booking-flow="details" className={PUBLIC_TEXT_TRACKING}>
         {banners}
         <BookingCard side={side} wide ribbon={p.ribbon} embed={embed} hideSide={hideSide} phoneFooter={phoneFooter("start")}>
-          <BookingMainSection className="pt-6 max-[599px]:px-[15px] min-[600px]:px-[30px]">
+          {/* 25px below the form: the button ends 26px above the card's bottom border, as Calendly's does. */}
+          <BookingMainSection className="pt-6 pb-[25px] max-[599px]:px-[15px] min-[600px]:px-[30px]">
             {hideSide && (
               // Without the details panel the back arrow stays above the heading.
               <div className="mb-5">
@@ -675,7 +689,7 @@ export function BookingFlow(p: BookingPageProps) {
                   errors={errors}
                   formError={formError}
                   submitting={submitting}
-                  onSubmit={() => void submit()}
+                  onSubmit={(viaPointer) => void submit(viaPointer)}
                   collectMarketing={event.collectMarketingConsent}
                   honeypotName={p.honeypotName}
                   honeypotRef={honeypotRef}
@@ -724,7 +738,7 @@ export function BookingFlow(p: BookingPageProps) {
   const zonePicker = (className?: string) =>
     event.lockedTimeZone ? (
       <div className={cn("flex flex-col items-start gap-1", className)} data-testid="locked-zone">
-        <span className="text-[14px] leading-5 font-bold text-ink">{bt("page.timeZone")}</span>
+        <span className="text-[14px] leading-5 font-[650] text-ink">{bt("page.timeZone")}</span>
         <LockedZone zone={event.lockedTimeZone} hour12={hour12} />
       </div>
     ) : zoneReady ? (
@@ -787,7 +801,7 @@ export function BookingFlow(p: BookingPageProps) {
   ) : null;
 
   return (
-    <div data-booking-flow="calendar">
+    <div data-booking-flow="calendar" className={PUBLIC_TEXT_TRACKING}>
       {banners}
       <BookingCard
         side={side}
@@ -828,7 +842,16 @@ export function BookingFlow(p: BookingPageProps) {
             </div>
           )}
         </BookingMainSection>
-        <div className="relative mx-auto w-full max-w-[316px] min-[600px]:max-w-none min-[600px]:px-5">
+        {/*
+          Desktop: Calendly's grid sits 19.25px in from both panel edges, and 18.5px from the left and 20px from the
+          right once the times column opens.
+        */}
+        <div
+          className={cn(
+            "relative mx-auto w-full max-w-[316px] min-[600px]:max-w-none min-[600px]:px-5",
+            effectiveDate ? "min-[1000px]:pl-[18.5px]" : "min-[1000px]:px-[19.25px]",
+          )}
+        >
           <MonthCalendar
             month={month}
             onMonthChange={changeMonth}

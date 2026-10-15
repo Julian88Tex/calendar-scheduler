@@ -89,6 +89,7 @@ vi.setConfig({ testTimeout: 240_000, hookTimeout: 120_000 });
 
 const schema = await import("@/db/schema");
 const {
+  bookingReservations,
   calendarConnections,
   calendarLinkedEvents,
   calendars,
@@ -144,7 +145,6 @@ const { runDueJobs } = await import("@/lib/jobs");
 const { getJobHandler, PERIODIC_JOBS, registeredJobTypes } = await import("@/lib/jobs/registry");
 const { SUBSCRIBER_REGISTRY } = await import("@/lib/events/registry");
 const { log } = await import("@/lib/logger");
-const { encrypt } = await import("@/lib/crypto");
 const { now, resetFakeTime, setFakeNow } = await import("@/lib/time/now");
 const { fakeCalendarProvider, resetFakeProviders } = await import("../helpers/fake-providers");
 const { createTestDb } = await import("../helpers/db");
@@ -209,9 +209,6 @@ const succeededTypes = new Set<string>();
 /** Job types run directly with realistic payloads (types no flow here enqueues). */
 const directTypes = new Set<string>();
 
-/** Errors a job may legitimately record on its way to success (none today; keep this list short and explained). */
-const BENIGN_ERRORS: RegExp[] = [];
-
 /** Driver and SQL failures: none may appear in any job error or logged line during the run. */
 const DRIVER_ERROR =
   /Failed query|ERR_INVALID_ARG_TYPE|must be of type string or an instance of Buffer|PostgresError|syntax error at or near|could not determine data type|operator does not exist|invalid input syntax|deadlock detected|current transaction is aborted|bind message supplies/i;
@@ -226,7 +223,7 @@ async function unhealthyJobs(db: DB, opts: { allow?: RegExp[] } = {}) {
     .select({ id: jobs.id, type: jobs.type, status: jobs.status, lastError: jobs.lastError, attempts: jobs.attempts })
     .from(jobs)
     .where(or(eq(jobs.status, "dead"), and(isNotNull(jobs.lastError), ne(jobs.status, "succeeded"))));
-  const allow = [...BENIGN_ERRORS, ...(opts.allow ?? [])];
+  const allow = opts.allow ?? [];
   return rows.filter((r) => !(r.lastError && allow.some((re) => re.test(r.lastError!))));
 }
 
@@ -363,13 +360,12 @@ describe.runIf(process.env.TEST_DATABASE_URL)("production flows on real Postgres
     expect(cals.length).toBeGreaterThan(0);
     primaryCalendarId = cals.find((c) => c.isPrimary)!.id;
 
-    // A second calendar appears at Google; the calendar list job (refresh_calendar_lists -> refresh_calendar_list)
-    // and the watch job pick it up.
+    // A second calendar appears at Google: the periodic refresh_calendar_lists job queues refresh_calendar_list,
+    // which adds it; the watch job opens push channels.
     fakeCalendarProvider("google").setCalendars(connectionId, [
       { externalId: cals.find((c) => c.isPrimary)!.externalId, name: OWNER_EMAIL, isPrimary: true, canWrite: true },
       { externalId: "family@group.calendar.google.com", name: "Family", isPrimary: false, canWrite: false },
     ]);
-    await runHandlerDirectly(db, "calendars.refresh_calendar_list", { connectionId });
     await drain(db, "connect");
     const after = await db.select().from(calendars).where(and(eq(calendars.connectionId, connectionId), isNull(calendars.deletedAt)));
     expect(after).toHaveLength(2);
@@ -500,6 +496,7 @@ describe.runIf(process.env.TEST_DATABASE_URL)("production flows on real Postgres
       { now: now() },
     );
     expect(lapsed.ok).toBe(true);
+    if (lapsed.ok) meetings.lapsedHold = { inviteeId: "", scheduledEventId: lapsed.reservationId, email: "gus@example.org" };
 
     await drain(db, "bookings");
     const linked = await db.select().from(calendarLinkedEvents).where(eq(calendarLinkedEvents.status, "synced"));
@@ -518,7 +515,7 @@ describe.runIf(process.env.TEST_DATABASE_URL)("production flows on real Postgres
     await lifecycle.markNoShow({ inviteeId: meetings.m6!.inviteeId, actor: host });
     await lifecycle.updateMeetingNotes({ scheduledEventId: meetings.m1!.scheduledEventId, html: "<p>Bring the <strong>Q2 plan</strong></p>", actor: host });
 
-    // Invitee reschedule (m4 to Tuesday evening) and cancel (m3) through their capability links.
+    // Invitee reschedule (m4 to the next Wednesday evening) and cancel (m3) through their capability links.
     const moved = await lifecycle.rescheduleInvitee({ inviteeId: meetings.m4!.inviteeId, start: la("2031-04-16 17:15").toISOString(), reason: "Traveling that day", actor: { type: "invitee", name: "Eve" } }, { now: now() });
     expect(moved.ok).toBe(true);
     if (moved.ok) meetings.m4 = { inviteeId: moved.inviteeId, scheduledEventId: moved.scheduledEventId, email: meetings.m4!.email };
@@ -526,6 +523,9 @@ describe.runIf(process.env.TEST_DATABASE_URL)("production flows on real Postgres
     // Host asks m5 to pick a new time with a 1 day reminder.
     await lifecycle.requestReschedule({ inviteeId: meetings.m5!.inviteeId, actor: host, message: "Can we find another time?", reminderDays: 1 });
     await drain(db, "invitee changes");
+    // The unverified hold lapsed (booking.reservation_expire ran at its expiry).
+    const [hold] = await db.select().from(bookingReservations).where(eq(bookingReservations.id, meetings.lapsedHold!.scheduledEventId));
+    expect(hold!.status).toBe("expired");
 
     // Host-side Google changes: m2 moved by an hour in Google Calendar, m4's event deleted.
     const g = fakeCalendarProvider("google");
@@ -792,7 +792,7 @@ describe.runIf(process.env.TEST_DATABASE_URL)("production flows on real Postgres
     const failedNow = await db.select().from(emailOutbox).where(eq(emailOutbox.status, "failed"));
     expect(failedNow.length).toBeGreaterThan(0);
     advance(10 * MIN);
-    await drain(db, "email retry", { allow: [/backend error|gmail/i] });
+    await drain(db, "email retry");
     expect(await db.select().from(emailOutbox).where(eq(emailOutbox.status, "failed"))).toEqual([]);
 
     // Open mode: throttled by the cron_open_lease (one run per minute across instances).

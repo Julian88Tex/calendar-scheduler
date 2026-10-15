@@ -14,6 +14,13 @@ import type * as React from "react";
 import { cn } from "@/lib/cn";
 import { PoweredByRibbon } from "./powered-by-ribbon";
 
+/**
+ * Letter spacing of the booking pages' text (profile, booking flow, confirmation): Figtree sets 14px text about 2%
+ * wider than Calendly's Proxima Nova, so a -0.01em track brings line widths and wrap points to Calendly's. Headings,
+ * footer links and the ribbon set their own tracking.
+ */
+export const PUBLIC_TEXT_TRACKING = "tracking-[-0.01em]";
+
 export type BookingCardProps = {
   /** The details panel (BookingBrandHeader, BookingSideSection with host, title and detail rows, footer links). */
   side?: React.ReactNode;
@@ -142,11 +149,11 @@ export function BookingHostName({ children, className }: { children: React.React
 
 /**
  * The event name (h1, 27px bold, 32px line height; 26px on phones): Calendly's 28px glyphs in Figtree's metrics, with
- * 0.2px tracking on wider screens so the line runs as wide as Calendly's.
+ * 0.2px tracking on wider screens (normal on phones) so the line runs as wide as Calendly's.
  */
 export function BookingEventTitle({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <h1 className={cn("text-[26px] leading-8 font-bold break-words text-public-text min-[600px]:text-[27px] min-[600px]:tracking-[0.2px]", className)}>
+    <h1 className={cn("text-[26px] leading-8 font-bold tracking-normal break-words text-public-text min-[600px]:text-[27px] min-[600px]:tracking-[0.2px]", className)}>
       {children}
     </h1>
   );
@@ -195,10 +202,10 @@ export function BookingSideFooter({ children, className }: { children: React.Rea
 
 /**
  * The main panel heading ("Select a Date & Time", "Enter Details": 21px bold on desktop with 0.4px tracking, which
- * gives Figtree the width of Calendly's line; 22px on phones).
+ * gives Figtree the width of Calendly's line; 22px with normal tracking on phones).
  */
 export function BookingPanelHeading({ children, className, as: Tag = "h2" }: { children: React.ReactNode; className?: string; as?: "h1" | "h2" }) {
-  return <Tag className={cn("text-[22px] leading-7 font-bold text-public-text min-[600px]:text-[21px] min-[600px]:tracking-[0.4px]", className)}>{children}</Tag>;
+  return <Tag className={cn("text-[22px] leading-7 font-bold tracking-normal text-public-text min-[600px]:text-[21px] min-[600px]:tracking-[0.4px]", className)}>{children}</Tag>;
 }
 
 /**

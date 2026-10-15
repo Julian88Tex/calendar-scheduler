@@ -8,7 +8,7 @@
 "use client";
 
 import type * as React from "react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -33,7 +33,12 @@ export type DetailsFormProps = {
   errors: FieldErrors;
   formError: string | null;
   submitting: boolean;
-  onSubmit: () => void;
+  /**
+   * Submit: `viaPointer` is true when a mouse, pen or touch press on "Schedule Event" sent the form (the flow then
+   * leaves focus where it is, like Calendly) and false for the keyboard (Enter in a field, or Enter / Space on the
+   * button), where focus moves to the first invalid field.
+   */
+  onSubmit: (viaPointer: boolean) => void;
   collectMarketing: boolean;
   honeypotName: string;
   honeypotRef: React.RefObject<HTMLInputElement | null>;
@@ -57,6 +62,7 @@ function TextField({
   hint,
   field,
   className,
+  labelClassName,
   children,
 }: {
   id: string;
@@ -66,13 +72,14 @@ function TextField({
   hint?: React.ReactNode;
   field: string;
   className?: string;
+  labelClassName?: string;
   children: (a11y: { id: string; "aria-invalid": true | undefined; "aria-describedby": string | undefined }) => React.ReactNode;
 }) {
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint ? `${id}-hint` : undefined;
   return (
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)} data-field={field}>
-      <label htmlFor={id} className={FIELD_LABEL}>
+      <label htmlFor={id} className={cn(FIELD_LABEL, labelClassName)}>
         {label}
         {required && <RequiredMark />}
       </label>
@@ -90,6 +97,9 @@ function TextField({
 
 export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProps) {
   const base = `bf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  // How the last submit started: a click with a pointer (MouseEvent.detail > 0) or the keyboard (detail 0, including
+  // the implicit submission of Enter in a field, which clicks the submit button for us).
+  const pointerSubmit = useRef(false);
   const { ctx, values, errors, onChange } = p;
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => onChange((v) => ({ ...v, [key]: value }));
   const location = chosenLocation(ctx, values);
@@ -155,7 +165,9 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
       aria-label={bt("details.title")}
       onSubmit={(e) => {
         e.preventDefault();
-        p.onSubmit();
+        const viaPointer = pointerSubmit.current;
+        pointerSubmit.current = false;
+        p.onSubmit(viaPointer);
       }}
       className="flex w-full min-w-0 flex-col gap-[26px] min-[600px]:max-w-[400px]"
     >
@@ -202,6 +214,8 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
             error={errors.guests ?? (guestLimit ? bt("validation.tooManyGuests") : undefined)}
             hint={bt("details.guestsHint")}
             field="guests"
+            // The label sits 1px lower here: Calendly's guests box starts 8px under its label, not 9px.
+            labelClassName="-top-px"
           >
             {(a) => (
               <ChipsInput
@@ -257,7 +271,7 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
                 label: (
                   // A 12x14 pin, bottom-aligned with the radio and ending 14px before the label, like Calendly's.
                   <span className="flex items-start gap-2.5">
-                    <LocationGlyph icon={o.icon} className="mt-1 -ml-0.5 size-4 shrink-0 text-navy" />
+                    <LocationGlyph icon={o.icon} className="mt-[5px] -ml-0.5 size-4 shrink-0 text-navy" />
                     <span>{runOnLabel(o.label)}</span>
                   </span>
                 ),
@@ -288,7 +302,15 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
         {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}
 
         <div>
-          <Button type="submit" loading={p.submitting} disabled={Boolean(p.disabledNote)} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>
+          <Button
+            type="submit"
+            loading={p.submitting}
+            disabled={Boolean(p.disabledNote)}
+            onClick={(e) => {
+              pointerSubmit.current = e.detail > 0;
+            }}
+            className={cn(BRAND_BUTTON, "max-[599px]:w-full")}
+          >
             {bt("details.schedule")}
           </Button>
           {p.disabledNote && <p className="mt-2 text-[13px] text-ink-2">{p.disabledNote}</p>}

@@ -4,7 +4,7 @@
 // descriptions per option and a visible legend (or aria-label / aria-labelledby). Variants: "plain" rows, "cards"
 // (bordered option cards) and "list" (the booking form's location choice, docs/research/calendly-live-capture.md item
 // 10: borderless rows at least 28px tall, 7px apart (a 35px pitch; a label wrapped over two 21px lines makes a 49px
-// row, as on Calendly), a light #D4E0ED circle 14px before the label).
+// row, as on Calendly), a light #D4E0ED circle starting 1px left of the row and 15px before the label).
 "use client";
 
 import * as RadixRadio from "@radix-ui/react-radio-group";
@@ -76,7 +76,7 @@ export function RadioGroup({
               key={o.value}
               className={cn(
                 "flex items-start",
-                variant === "list" ? "min-h-[28px] gap-3.5" : "gap-2.5",
+                variant === "list" ? "min-h-[28px] gap-[15px]" : "gap-2.5",
                 variant === "cards" &&
                   "rounded-[var(--radius-card)] border border-line p-3 has-[button[data-state=checked]]:border-primary has-[button[data-state=checked]]:bg-primary-soft",
               )}
@@ -87,7 +87,7 @@ export function RadioGroup({
                 disabled={o.disabled}
                 className={cn(
                   "inline-flex size-[18px] shrink-0 items-center justify-center rounded-full border bg-white transition-colors",
-                  variant === "list" ? "mt-[1.5px] border-line" : "mt-px border-line-medium",
+                  variant === "list" ? "mt-[1.5px] -ml-px border-line" : "mt-px border-line-medium",
                   "hover:border-ink-2 data-[state=checked]:border-primary disabled:cursor-not-allowed disabled:opacity-50",
                 )}
               >

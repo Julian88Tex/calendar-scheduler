@@ -11,12 +11,14 @@ import { EmbedBeacon } from "@/components/booking/embed-beacon";
 import { bt } from "@/components/booking/lib/t";
 import { landingForwardParams, withCarried } from "@/components/booking/lib/url-state";
 import { loadLanding } from "@/components/booking/server/landing";
+import { PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
 import { EventTypeList } from "@/components/public/event-type-list";
 import { LandingEmpty, LandingEvents, LandingFooter } from "@/components/public/landing-layout";
 import { ProfileHeader } from "@/components/public/profile-header";
 import { PublicCard } from "@/components/public/public-card";
 import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { PublicPageShell } from "@/components/public/public-page-shell";
+import { cn } from "@/lib/cn";
 import { embedDisplayParams } from "@/lib/embed-events";
 import { absoluteUrl } from "@/lib/url";
 
@@ -57,7 +59,7 @@ export default async function Page({ params, searchParams }: Props) {
       hideGdprBanner={embed.hideGdprBanner}
       privacyUrl={data.privacyUrl}
     >
-      <PublicCard width="default" ribbon={data.ribbon} embed={embed.embed} className="min-[1000px]:min-h-[706px]">
+      <PublicCard width="default" ribbon={data.ribbon} embed={embed.embed} className={cn("min-[1000px]:min-h-[706px]", PUBLIC_TEXT_TRACKING)}>
         <ProfileHeader name={data.name} avatarUrl={data.avatarUrl} welcomeMessage={data.welcomeMessage} logoUrl={data.logoUrl} hidden={embed.hideLandingPageDetails} />
         <LandingEvents className={embed.hideLandingPageDetails ? "pt-6" : undefined}>
           {items.length > 0 ? <EventTypeList items={items} aria-label={bt("landing.eventTypes")} /> : <LandingEmpty name={data.name} />}

@@ -58,7 +58,8 @@ export function privacyPolicyHref(url: string | null | undefined): string {
   return legalLinkHref(url, "/privacy");
 }
 
-const LINK = "rounded-[4px] text-[13.5px] leading-5 font-semibold text-brand-strong hover:underline";
+// Normal letter spacing even inside the booking pages' tighter text: the 13.5px size already matches Calendly's widths.
+const LINK = "rounded-[4px] text-[13.5px] leading-5 font-semibold tracking-normal text-brand-strong hover:underline";
 
 export function PublicFooterLinks({
   operatorEmail,

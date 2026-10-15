@@ -50,13 +50,19 @@ export function decodeCursor<T extends CursorData = CursorData>(cursor: string |
   }
 }
 
+/** A keyset cursor value. No booleans or objects: postgres.js serializes raw parameters differently from PGlite. */
+export type KeysetValue = string | number | Date | null;
+
 /**
  * Row value comparison for keyset pagination: (a, b) > ($a, $b) for ascending order, < for descending. Columns and
  * values must match the ORDER BY. Postgres compares row values lexicographically and can use a composite index.
  * Date values are sent as ISO strings (Postgres infers timestamptz from the compared column): a raw Date inside a
  * sql`` template works on PGlite but fails on postgres.js in production (drizzle's transparent timestamp serializer).
+ * Page on timestamps the application writes (now() from src/lib/time/now.ts, millisecond precision), not on columns
+ * filled by the database default (defaultNow()): Postgres stores microseconds there, a JS Date keeps milliseconds, so
+ * the cursor row comes back on the next page. PGlite's clock has millisecond resolution, so only real Postgres shows it.
  */
-export function keysetAfter(columns: SQLWrapper[], values: unknown[], direction: "asc" | "desc" = "asc"): SQL {
+export function keysetAfter(columns: SQLWrapper[], values: KeysetValue[], direction: "asc" | "desc" = "asc"): SQL {
   if (!columns.length || columns.length !== values.length) throw new Error("keysetAfter: columns and values differ");
   const op = direction === "asc" ? sql.raw(">") : sql.raw("<");
   return sql`(${sql.join(columns, sql`, `)}) ${op} (${sql.join(

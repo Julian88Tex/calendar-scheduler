@@ -87,6 +87,9 @@ Teams/Webex video, the custom workflow builder and SMS. Any of these can be adde
 - Vercel: import the repo at vercel.com/new, add a Neon database from the Storage tab (Production and Preview), and
   add `MIGRATE_ON_PREVIEW=1` for Preview. Previews of this branch will then work.
 - Google Calendar connection needs a Google Cloud OAuth client: follow docs/GOOGLE_SETUP.md.
+- On the live app: the root address opens Scheduling when you are signed in and the login page otherwise, and
+  **Settings > Email outbox** shows every email with its status (Sent, Waiting for Gmail with a reconnect link, Failed
+  with the reason and **Resend**). The end-to-end check of everything you use today is in docs/QA_REPORT.md.
 
 ## Open questions for you
 - Your live Calendly event types show a "Send text messages to" phone field, which means SMS reminders are switched on

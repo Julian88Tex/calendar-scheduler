@@ -1,10 +1,10 @@
 // OWNER: foundation-ui.
 //
-// Icons drawn like Calendly's booking page ones (docs/research/calendly-live-capture.md items 5 and 11), where the
-// lucide shapes differ: a globe with a narrow meridian and two latitude lines (lucide's Globe has one equator), and a
-// calendar 18px wide and 20px tall in a 22px box with a "1" on its page (lucide's Calendar1 is square). The stroke
-// width is set on the inner group so a parent's [&_svg] stroke rule cannot thicken them. Decorative (aria-hidden).
-// Server and client safe.
+// Icons drawn like Calendly's booking page ones (docs/research/calendly-live-capture.md items 5, 11 and 16), where the
+// lucide shapes differ: a globe with a narrow meridian and two latitude lines (lucide's Globe has one equator), a
+// calendar 18px wide and 20px tall in a 22px box with a "1" on its page (lucide's Calendar1 is square), and a video
+// camera with a square body (lucide's Video is flatter and wider). The globe and calendar set their stroke width on the
+// inner group so a parent's [&_svg] stroke rule cannot thicken them. Decorative (aria-hidden). Server and client safe.
 import type * as React from "react";
 
 type IconProps = { className?: string; strokeWidth?: number; style?: React.CSSProperties };
@@ -37,6 +37,31 @@ export function CalendarDayIcon({ className, strokeWidth = 1.8, style }: IconPro
         <path d="M7.2 1.8v3.8M14.8 1.8v3.8M2.8 8.6h16.4" />
         <path d="M10 13.2l1.3-1v5" />
       </g>
+    </svg>
+  );
+}
+
+/**
+ * Video camera: a square body with tight corners and a lens 8.7 units tall, centered 1.1 units above the box's middle
+ * (in a 22px box: a 14x14 body and a 20px wide glyph, where Calendly draws it). Takes the stroke width from its props or
+ * from a parent's [&_svg] rule, like the lucide icons it replaces.
+ */
+export function VideoCameraIcon({ className, strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      className={className}
+      style={style}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="4.4" width="13.1" height="13" rx="1.4" />
+      <path d="M15.1 9.3 21.6 6.55v8.7l-6.5-2.75" />
     </svg>
   );
 }

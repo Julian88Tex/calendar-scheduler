@@ -1,11 +1,12 @@
 // OWNER: foundation-ui.
 //
 // PoweredByRibbon (ARCHITECTURE 20.2, SPEC section 8 intro, GEN-01, BR-06): the diagonal "POWERED BY / {AppName}" band
-// in the public card's top-right corner. Exact geometry: a 105x105 clip box at top -5px, right -5px; a 160px band
-// rotated 45 degrees whose inner edge runs corner to corner, fill #505960 (hover #40474C), "POWERED BY" 8px uppercase
+// in the public card's top-right corner. Exact geometry: a 105x105 clip box at top -5px, right -5px; a 160px band, 40px
+// thick as on every live capture (it meets the box top 56px from the corner), rotated 45 degrees with its inner edge
+// running corner to corner and its label stack centered, fill #505960 (hover #40474C), "POWERED BY" 8px uppercase
 // and the app name 14px bold, band shadow 0 2px 4px 0 rgb(0 0 0 / 20%), two 6x6 fold squares where the band wraps the
-// card edge; on phones (below 600px, full-bleed card) the box sits flush with the corner and a thicker 40px band (top
-// 12.5px, left -7.5px: it meets both viewport edges 37px to 93px from the corner, as captured at 390px) runs straight
+// card edge; on phones (below 600px, full-bleed card) the box sits flush with the corner and the band, moved 8px out
+// (top 12.5px, left -7.5px: it meets both viewport edges 37px to 93px from the corner, as captured at 390px), runs straight
 // off the edges with no fold squares, with a 7px label and a 15px name. Render it inside a `relative` card that does
 // not clip its overflow. Hidden when branding hides it (the caller omits it).
 import { APP_NAME } from "@/lib/brand";
@@ -33,9 +34,9 @@ export function PoweredByRibbon({ href = "/", appName = APP_NAME }: PoweredByRib
       <span
         aria-hidden="true"
         className={
-          "absolute top-[25px] -left-4 flex h-8 w-40 rotate-45 flex-col items-center justify-center bg-ribbon text-center text-white " +
+          "absolute top-[18.5px] -left-[13.9px] flex h-10 w-40 rotate-45 flex-col items-center justify-center bg-ribbon text-center tracking-normal text-white " +
           "shadow-[0_2px_4px_0_rgb(0_0_0/20%)] transition-colors duration-100 group-hover:bg-ribbon-hover " +
-          "max-[599px]:top-[12.5px] max-[599px]:-left-[7.5px] max-[599px]:h-10"
+          "max-[599px]:top-[12.5px] max-[599px]:-left-[7.5px]"
         }
       >
         <span className="block text-[8px] leading-[10px] font-bold tracking-normal uppercase max-[599px]:text-[7px]">

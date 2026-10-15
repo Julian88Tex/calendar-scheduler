@@ -47,10 +47,11 @@ export function RequiredMark() {
 const TERMS = "%%terms%%";
 const PRIVACY = "%%privacy%%";
 
+/** Bold blue links that stay as they are under the pointer, like Calendly's (no hover underline). */
 function LegalLink({ href, children }: { href: string; children: React.ReactNode }) {
   const external = /^https?:\/\//.test(href);
   return (
-    <a href={href} className="font-bold text-brand hover:underline" {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+    <a href={href} className="font-bold text-brand" {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
       {children}
     </a>
   );

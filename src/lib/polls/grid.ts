@@ -8,9 +8,106 @@
 // - Durations are absolute minutes: a 60 minute option at 01:30 EDT on fall back day ends at 01:30 EST.
 // - "Copy this day's times to..." copies wall-clock times (09:00 stays 09:00 across a DST change).
 // - "Add all free times" fills a day with back-to-back options inside working hours, skipping busy times.
-import { DateTime } from "@/lib/time/luxon";
+//
+// Intl only (no Luxon): the public voter page imports display.ts, which builds on these helpers, so they must stay
+// lean. A wall clock time is turned into instants with the zone's UTC offsets around it (the standard "offset before
+// and after" method); a day without an offset change (nearly every day) takes a cached fast path. Nonexistent wall
+// times shift forward by the gap (02:30 on a spring forward day becomes 03:30 of the new offset) and repeated ones
+// take the earlier offset, the way Luxon resolved them before.
+import { dtf } from "@/lib/time/clock";
 
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
+
+type Wall = { year: number; month: number; day: number; hour: number; minute: number; second: number };
+
+/** The wall clock of an instant in `zone` (Intl, 24 hour cycle). */
+function wallOf(instant: number, zone: string): Wall {
+  const parts = dtf("en-US", {
+    timeZone: zone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(new Date(instant));
+  const get = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour") % 24, minute: get("minute"), second: get("second") };
+}
+
+/** UTC offset of `zone` at an instant, in milliseconds (wall clock minus UTC). */
+function offsetAt(instant: number, zone: string): number {
+  const w = wallOf(instant, zone);
+  const asUtc = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
+  return asUtc - Math.floor(instant / 1000) * 1000;
+}
+
+/** "YYYY-MM-DD" parts, or null when the date does not exist (2026-02-30). */
+function parseDate(date: string): [number, number, number] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const check = new Date(Date.UTC(y, mo - 1, d));
+  return check.getUTCFullYear() === y && check.getUTCMonth() === mo - 1 && check.getUTCDate() === d ? [y, mo, d] : null;
+}
+
+function isoDate(y: number, mo: number, d: number): string {
+  return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** The date `days` after `date` (calendar arithmetic, no zone). */
+function addDays(date: string, days: number): string {
+  const p = parseDate(date);
+  if (!p) return date;
+  const t = new Date(Date.UTC(p[0], p[1] - 1, p[2] + days));
+  return isoDate(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+const uniformCache = new Map<string, number | null>();
+
+/**
+ * The single UTC offset of `zone` around a local date (a day before to a day after), or null when the offset changes
+ * in that window (DST days and their neighbours take the exact path).
+ */
+function uniformOffset(localMidnight: number, zone: string): number | null {
+  const key = `${zone}|${localMidnight}`;
+  const hit = uniformCache.get(key);
+  if (hit !== undefined) return hit;
+  const before = offsetAt(localMidnight - DAY, zone);
+  const after = offsetAt(localMidnight + 2 * DAY, zone);
+  const value = before === after && offsetAt(localMidnight + DAY / 2, zone) === before ? before : null;
+  if (uniformCache.size > 2000) uniformCache.clear();
+  uniformCache.set(key, value);
+  return value;
+}
+
+/** Every instant whose wall clock in `zone` reads `local` (wall clock as if UTC, ms): 0, 1 or 2, ascending. */
+function instantsForLocal(local: number, zone: string, localMidnight: number): number[] {
+  const uniform = uniformOffset(localMidnight, zone);
+  if (uniform !== null) return [local - uniform];
+  const out: number[] = [];
+  for (const o of new Set([offsetAt(local - DAY, zone), offsetAt(local + DAY, zone)])) {
+    const t = local - o;
+    if (offsetAt(t, zone) === o) out.push(t);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * The instant of a wall clock time on a date in `zone`: a repeated time takes the earlier offset, a nonexistent one
+ * shifts forward by the gap (the offset in force before the change). NaN for a date that does not exist.
+ */
+function wallClockInstant(date: string, minutes: number, zone: string): number {
+  const p = parseDate(date);
+  if (!p) return Number.NaN;
+  const midnight = Date.UTC(p[0], p[1] - 1, p[2]);
+  const local = midnight + minutes * MIN;
+  const found = instantsForLocal(local, zone, midnight);
+  if (found.length) return found[0]!;
+  return local - offsetAt(local - DAY, zone);
+}
 
 export type GridCell =
   | { state: "ok"; start: number; offsetLabel: string | null; past: boolean }
@@ -28,28 +125,16 @@ export type GridRow = {
 
 /** Every instant (epoch ms) whose wall clock in `zone` is `minutes` after midnight on `date` (0, 1 or 2 instants). */
 export function instantsForWallTime(date: string, minutes: number, zone: string): number[] {
-  const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
-  const hour = Math.floor(minutes / 60);
-  const minute = minutes % 60;
-  const base = DateTime.fromObject({ year: y, month: mo, day: d, hour, minute }, { zone });
-  if (!base.isValid) return [];
-  // Luxon shifts nonexistent times forward: the wall clock then differs from the request.
-  if (base.hour !== hour || base.minute !== minute || base.day !== d) return [];
-  const out = [base.toMillis()];
-  // A repeated wall time: the same wall clock one offset change later.
-  for (const shift of [30, 60, 120]) {
-    const later = DateTime.fromMillis(base.toMillis() + shift * MIN, { zone });
-    if (later.hour === hour && later.minute === minute && later.day === d && later.offset !== base.offset) {
-      out.push(later.toMillis());
-      break;
-    }
-  }
-  return out;
+  const p = parseDate(date);
+  if (!p || minutes < 0 || minutes >= 1440) return [];
+  const midnight = Date.UTC(p[0], p[1] - 1, p[2]);
+  return instantsForLocal(midnight + minutes * MIN, zone, midnight);
 }
 
 /** Short zone abbreviation at an instant ("EDT", "EST"; "GMT+2" style when the zone has none). */
 export function offsetLabelAt(instant: number, zone: string, locale = "en-US"): string {
-  return DateTime.fromMillis(instant, { zone }).setLocale(locale).toFormat("ZZZZ");
+  const parts = dtf(locale, { timeZone: zone, timeZoneName: "short" }).formatToParts(new Date(instant));
+  return parts.find((p) => p.type === "timeZoneName")?.value ?? "UTC";
 }
 
 /**
@@ -94,32 +179,37 @@ export function optionFromCell(start: number, durationMinutes: number): { start:
 
 /** Local date "YYYY-MM-DD" of an instant in `zone`. */
 export function localDate(instant: number, zone: string): string {
-  return DateTime.fromMillis(instant, { zone }).toISODate()!;
+  const w = wallOf(instant, zone);
+  return isoDate(w.year, w.month, w.day);
 }
 
 /** Wall-clock minutes after local midnight of an instant in `zone`. */
 export function localMinutes(instant: number, zone: string): number {
-  const dt = DateTime.fromMillis(instant, { zone });
-  return dt.hour * 60 + dt.minute;
+  const w = wallOf(instant, zone);
+  return w.hour * 60 + w.minute;
 }
 
 /** Local midnight of a date in `zone` (epoch ms; a nonexistent midnight shifts forward). */
 export function dayStart(date: string, zone: string): number {
-  return DateTime.fromISO(date, { zone }).startOf("day").toMillis();
+  return wallClockInstant(date, 0, zone);
 }
 
 /** The next local midnight after `date` in `zone` (the end of an all-day option). */
 export function dayEnd(date: string, zone: string): number {
-  return DateTime.fromISO(date, { zone }).plus({ days: 1 }).startOf("day").toMillis();
+  return parseDate(date) ? dayStart(addDays(date, 1), zone) : Number.NaN;
+}
+
+/** Day of the week of a date (0 = Sunday). */
+function weekdayOf(date: string): number {
+  const p = parseDate(date);
+  return p ? new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay() : 0;
 }
 
 /** Dates of the week containing `date` (weekStart 0 = Sunday, 1 = Monday). */
 export function weekDates(date: string, weekStart: 0 | 1 = 0): string[] {
-  const d = DateTime.fromISO(date, { zone: "utc" });
-  const weekday = d.weekday % 7; // 0 = Sunday
-  const offset = (weekday - weekStart + 7) % 7;
-  const first = d.minus({ days: offset });
-  return Array.from({ length: 7 }, (_, i) => first.plus({ days: i }).toISODate()!);
+  const offset = (weekdayOf(date) - weekStart + 7) % 7;
+  const first = addDays(date, -offset);
+  return Array.from({ length: 7 }, (_, i) => addDays(first, i));
 }
 
 /**
@@ -141,8 +231,8 @@ export function copyDayTimes(
       const s = new Date(o.start).getTime();
       const minutes = localMinutes(s, zone);
       const duration = new Date(o.end).getTime() - s;
-      const [y, mo, d] = target.split("-").map(Number) as [number, number, number];
-      const start = DateTime.fromObject({ year: y, month: mo, day: d, hour: Math.floor(minutes / 60), minute: minutes % 60 }, { zone }).toMillis();
+      const start = wallClockInstant(target, minutes, zone);
+      if (Number.isNaN(start)) continue;
       out.push({ start: new Date(start).toISOString(), end: new Date(start + duration).toISOString() });
     }
   }
@@ -158,14 +248,10 @@ export function workingIntervals(
 ): Interval[] {
   const out: Interval[] = [];
   for (const date of dates) {
-    const weekday = DateTime.fromISO(date, { zone: "utc" }).weekday % 7;
-    const ranges = schedule.overrides?.[date] ?? schedule.weekly[weekday] ?? [];
-    const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
+    if (!parseDate(date)) continue;
+    const ranges = schedule.overrides?.[date] ?? schedule.weekly[weekdayOf(date)] ?? [];
     for (const r of ranges) {
-      const at = (m: number) =>
-        m >= 1440
-          ? DateTime.fromObject({ year: y, month: mo, day: d }, { zone: schedule.timeZone }).plus({ days: 1 }).startOf("day").toMillis()
-          : DateTime.fromObject({ year: y, month: mo, day: d, hour: Math.floor(m / 60), minute: m % 60 }, { zone: schedule.timeZone }).toMillis();
+      const at = (m: number) => (m >= 1440 ? dayEnd(date, schedule.timeZone) : wallClockInstant(date, m, schedule.timeZone));
       const start = at(r.start);
       const end = at(r.end);
       if (end > start) out.push({ start, end });

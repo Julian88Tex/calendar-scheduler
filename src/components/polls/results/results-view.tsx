@@ -147,7 +147,7 @@ export function ResultsView({ data, viewer, bookOptionId, offerDuplicate }: Resu
     canDelete: data.canDelete,
     respondents: data.counts.respondents,
     deadline: s.deadline,
-    meeting: meeting ? { start: meeting.start, end: meetingEnd, status: meeting.status } : null,
+    meeting: meeting ? { start: meeting.start, end: meetingEnd, allDayDate: meeting.allDayDate, status: meeting.status } : null,
   };
   const whenOf = (start: string, end: string | null) => (end ? `${formatDateLong(start, zone)}, ${formatTimeRange(start, end, zone, "en", viewer.hour12)}` : formatDateLong(start, zone));
   const hasRequired = data.participants.some((x) => x.isRequired);
