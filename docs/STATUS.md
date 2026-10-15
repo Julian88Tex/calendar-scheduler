@@ -92,6 +92,7 @@ Teams/Webex video, the custom workflow builder and SMS. Any of these can be adde
   there. SMS is skipped right now (it needs a paid SMS provider such as Twilio). Say if you want it added.
 - Should invitees get a Google Calendar invitation (what happens now, sent by Google) or a Calendly-style confirmation
   email from your Gmail with a calendar file attached?
-- Google app verification (removes the "unverified app" screen on the one-time calendar connect): Search Console
-  property and the ownership file are in place; the remaining steps (verify ownership, verify branding, demo video,
-  submit) are written up in docs/GOOGLE_VERIFICATION.md.
+- Google app verification (removes the "unverified app" screen on the one-time calendar connect): site ownership was
+  verified in Search Console on October 15 (HTML file and meta tag). Google asks to wait 24 hours before retrying
+  branding verification: Google Cloud console > Google Auth Platform > Branding > Verify branding (choose "I have
+  fixed the issues"). Then record the demo video, add the scope justification and submit (docs/GOOGLE_VERIFICATION.md).

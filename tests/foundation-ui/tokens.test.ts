@@ -113,6 +113,9 @@ describe("design tokens (ARCHITECTURE 20.1)", () => {
     // Mixing with transparent over white equals mixing with white.
     expect(["#f4f8ff", "#f3f8ff"]).toContain(hex(tint(pct("--day-tint"), primary)));
     expect(["#e6f0ff", "#e5f0ff"]).toContain(hex(tint(pct("--day-hover-tint"), primary)));
+    // Available booking days use a stronger fill so they stand out on phones and under automatic dark mode.
+    expect(["#e6f0ff", "#e5f0ff"]).toContain(hex(tint(pct("--day-fill"), primary)));
+    expect(["#d1e4ff", "#d1e5ff"]).toContain(hex(tint(pct("--day-fill-hover"), primary)));
     const text = primary.map((c) => Math.round(c * pct("--day-text-pct")));
     expect(hex(text)).toBe("#004eba");
     expect(css).toMatch(/@utility cal-day-available\s*\{[^}]*var\(--primary-color\)/);

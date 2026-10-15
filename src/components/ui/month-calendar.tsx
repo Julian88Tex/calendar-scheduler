@@ -4,10 +4,11 @@
 // 2026" (14px bold) between 38px circular arrows 183px apart ("Go to previous month" / "Go to next month"; 8x14 blue
 // chevrons with a #F4F8FF hover fill, #476788 when disabled, as on the owner's live page), weekday header in #476788
 // 12px semibold, and 44px circle day buttons with 15px proportional figures (docs/research/calendly-live-capture.md):
-// available days #F4F8FF fill with #004EBA text (size "md": Figtree weight 460 carries the ink of Calendly's numbers,
-// available or not, and its 545 / 640 the ink of the semibold weekdays and the bold month;
-// on phones the day circles sit 1.25px right of the weekday labels, as captured; the compact "sm" pickers keep bold
-// numbers and regular weights), unavailable days plain #476788 and disabled, hover #E6F0FF, selected #006BFF fill with
+// available days #E6F0FF fill with bold #004EBA text (stronger than Calendly's #F4F8FF and weight 460, which friends
+// could not tell apart from unavailable days on phones and under a browser's automatic dark mode), unavailable days
+// plain #476788 at regular weight and disabled, hover #D1E4FF (size "md": Figtree 545 / 640 carry the ink of the
+// semibold weekdays and the bold month; on phones the day circles sit 1.25px right of the weekday labels, as
+// captured), selected #006BFF fill with
 // white text, today with a 4px dot 13px below the number and aria-current="date", and adjacent-month cells hidden.
 // Every blue derives from --primary-color (branding, embed primary_color). The table is labelled "Select a Day"; day
 // buttons read "Monday, October 12 - Times available" or "Sunday, October 4 - No times available"; a live region
@@ -172,10 +173,9 @@ export function MonthCalendar({
   // Booking size on phones: Calendly draws the day circles 1.25px right of the weekday labels.
   const circle = size === "md" ? "size-11 max-w-full text-[15px] tracking-normal max-[599px]:translate-x-[1.25px]" : "size-9 text-[14px]";
   const dot = size === "md" ? "top-[33px]" : "top-[27px]";
-  // Booking size: in Figtree, weight 460 carries the ink of Calendly's available and unavailable numbers alike (500
-  // reads heavier, 400 lighter); the compact pickers draw available numbers bold over regular ones.
-  const enabledWeight = size === "md" ? "font-[460]" : "font-bold";
-  const disabledWeight = size === "md" ? "font-[460]" : "font-normal";
+  // Available numbers are bold over regular unavailable ones, so open days read at a glance.
+  const enabledWeight = "font-bold";
+  const disabledWeight = "font-normal";
   // Phones (booking size): 48px rows and a tighter header, as captured at 390px.
   const rowHeight = size === "md" ? "h-[52px] max-[599px]:h-12" : "h-10";
   // Booking size: a 21px weekday row (label in its top 20px) on wider screens and 19px on phones (label 1px down in an
@@ -295,7 +295,7 @@ export function MonthCalendar({
                         enabled
                           ? isSelected
                             ? cn("bg-brand text-white", enabledWeight)
-                            : cn("cal-day-available hover:cal-day-hover", enabledWeight)
+                            : cn("cal-day-available hover:cal-day-available-hover", enabledWeight)
                           : cn("cursor-default text-ink-2", disabledWeight),
                         !enabled && isSelected && "bg-mist",
                       )}
