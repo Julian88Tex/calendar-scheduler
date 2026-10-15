@@ -7,8 +7,8 @@
 // Email: EMAIL_PROVIDER, Resend or SMTP when configured, else the owner's Gmail whenever Google sign in is configured
 // (the owner connects Google and allows Gmail sending; whether they did needs the database, so the Integrations hub
 // shows that), else the outbox. Owner bootstrap: SETUP_TOKEN (or a long CRON_SECRET) enables POST /api/setup/bootstrap;
-// OWNER_EMAIL limits it, and the first-account exception of the signup policy, to the owner. The page is public, so the
-// owner's address is never shown.
+// OWNER_EMAIL limits it, and the first-account exception of the signup policy (a signup that verifies the address), to
+// the owner. The page is public, so the owner's address is never shown.
 import "server-only";
 import { and, count, eq, lte } from "drizzle-orm";
 import { getDb, setupRequired } from "@/db";
@@ -112,7 +112,7 @@ function ownerBootstrapItem(): ChecklistItem {
       status: "ok",
       value: ownerEmailSet ? "Enabled for OWNER_EMAIL" : "Enabled",
       hint: ownerEmailSet
-        ? "POST /api/setup/bootstrap creates the owner account of a fresh instance. Only OWNER_EMAIL can claim it, with the bootstrap or by signing up first."
+        ? "POST /api/setup/bootstrap creates the owner account of a fresh instance. Only OWNER_EMAIL can claim it, with the bootstrap or by signing up first with Google or Microsoft (a password signup does not prove the address)."
         : "POST /api/setup/bootstrap creates the owner account of a fresh instance. Set OWNER_EMAIL so only the owner can claim it.",
     };
   }
@@ -121,7 +121,7 @@ function ownerBootstrapItem(): ChecklistItem {
     status: "off",
     value: "Not configured",
     hint: ownerEmailSet
-      ? `Only OWNER_EMAIL becomes instance admin by signing up first. Set SETUP_TOKEN (at least ${SETUP_TOKEN_MIN_LENGTH} characters) to create the owner account with POST /api/setup/bootstrap.`
+      ? `Only OWNER_EMAIL becomes instance admin by signing up first, with Google or Microsoft (a password signup does not prove the address). Set SETUP_TOKEN (at least ${SETUP_TOKEN_MIN_LENGTH} characters) to create the owner account with POST /api/setup/bootstrap.`
       : `Optional: set SETUP_TOKEN (at least ${SETUP_TOKEN_MIN_LENGTH} characters) to create the owner account with POST /api/setup/bootstrap, and OWNER_EMAIL so only the owner can claim a fresh instance.`,
   };
 }

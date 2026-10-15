@@ -3,7 +3,7 @@
 //   POST /api/setup/bootstrap, each only when at least SETUP_TOKEN_MIN_LENGTH characters long. With neither usable
 //   the endpoint is disabled.
 // - OWNER_EMAIL: when set, the only email the bootstrap accepts (route and script alike), and the only one the
-//   first-account exception of the signup policy applies to (src/lib/auth/policy.ts).
+//   first-account exception of the signup policy applies to, with a verified address (src/lib/auth/policy.ts).
 // Both are parsed by src/lib/env.ts (empty values count as unset). env.ts reads a malformed value as unset, so the raw
 // value is checked here too: a set but malformed OWNER_EMAIL disables the bootstrap instead of accepting any email.
 import { timingSafeEqualStr } from "@/lib/crypto";

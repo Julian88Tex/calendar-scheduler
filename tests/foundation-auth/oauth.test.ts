@@ -380,6 +380,22 @@ describe("Microsoft (AU-03)", () => {
     expect(et?.locations).toEqual([]);
   });
 
+  it("with OWNER_EMAIL set, a work tenant naming the owner's address in its unverified email claim cannot claim the instance", async () => {
+    env.OWNER_EMAIL = "owner@victim.example";
+    // nOAuth: any tenant admin can set a user's email attribute; without xms_edov only the UPN (a domain the tenant
+    // verified) counts, and it is not the owner's.
+    const forged = await flow("microsoft", "intent=signup", msClaims({ email: "owner@victim.example", preferred_username: "max@contoso.example" }));
+    expect(locationOf(forged.callback!)).toBe("/signup?error=signups_closed&provider=microsoft");
+    const noUpn = await flow("microsoft", "intent=signup", msClaims({ oid: "ms-oid-2", email: "owner@victim.example", preferred_username: undefined }));
+    expect(locationOf(noUpn.callback!)).toBe("/signup?error=email_unverified&provider=microsoft");
+    expect(await t.db.select().from(users)).toHaveLength(0);
+    const owner = await flow("microsoft", "intent=signup", msClaims({ oid: "ms-oid-3", email: "owner@victim.example", xms_edov: true }));
+    expect(locationOf(owner.callback!)).toBe("/app/scheduling");
+    expect(await t.db.select({ email: users.emailNormalized, isInstanceAdmin: users.isInstanceAdmin }).from(users)).toEqual([
+      { email: "owner@victim.example", isInstanceAdmin: true },
+    ]);
+  });
+
   it("trusts the email claim only for personal accounts or with xms_edov; otherwise the user principal name", () => {
     const tok = (c: Record<string, unknown>) => fakeIdToken(msClaims(c));
     expect(microsoftProfileFromIdToken(tok({ tid: MICROSOFT_CONSUMER_TENANT_ID }))).toMatchObject({ emailVerified: true, isWorkAccount: false });

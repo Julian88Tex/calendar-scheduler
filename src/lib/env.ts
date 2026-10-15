@@ -59,8 +59,8 @@ const SCHEMA = {
   // Owner bootstrap (docs/DEPLOY.md, src/lib/setup/config.ts). SETUP_TOKEN: the bearer secret that authorizes
   // POST /api/setup/bootstrap ("Authorization: Bearer <SETUP_TOKEN>"); shorter than SETUP_TOKEN_MIN_LENGTH counts as
   // unset. OWNER_EMAIL: the only email the bootstrap accepts, and the only one that becomes instance admin by signing
-  // up first (src/lib/auth/policy.ts). A set but malformed OWNER_EMAIL reads as unset here; src/lib/setup/config.ts
-  // then disables the bootstrap and the first-account exception instead of accepting any email.
+  // up first, with a verified address (src/lib/auth/policy.ts). A set but malformed OWNER_EMAIL reads as unset here;
+  // src/lib/setup/config.ts then disables the bootstrap and the first-account exception instead of accepting any email.
   SETUP_TOKEN: z.string().trim().min(SETUP_TOKEN_MIN_LENGTH, `must be at least ${SETUP_TOKEN_MIN_LENGTH} characters`),
   OWNER_EMAIL: email,
   ADMIN_EMAILS: emailList,

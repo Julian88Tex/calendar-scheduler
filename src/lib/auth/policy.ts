@@ -2,10 +2,13 @@
 // "domains" with signup_domains), overridden by the SIGNUP_POLICY env var. The very first signup of a fresh instance is
 // always allowed and becomes the instance admin and org owner (the first-account exception). When OWNER_EMAIL is set
 // (src/lib/setup/config.ts, the same check as the owner bootstrap) that exception applies only to that address
-// (case-insensitive, trimmed): any other first signup follows the policy like everyone else and never becomes instance
-// admin, so nobody can claim a fresh instance by signing up before the owner. A set but malformed OWNER_EMAIL gives the
-// exception to nobody, like it disables the bootstrap. ADMIN_EMAILS addresses may always sign up (they become instance
-// admins once their email is verified, src/lib/authz.ts). Invitation acceptance bypasses the policy.
+// (case-insensitive, trimmed) and only when the signup proves it (a verified Google or Microsoft email): any other first
+// signup follows the policy like everyone else and never becomes instance admin, so nobody can claim a fresh instance by
+// signing up before the owner. A password signup proves nothing (anyone can type the owner's address), so with the
+// owner's address it follows the policy too, like the bootstrap, which refuses an unverified owner account as possibly
+// a squatter's. A set but malformed OWNER_EMAIL gives the exception to nobody, like it disables the bootstrap.
+// ADMIN_EMAILS addresses may always sign up (they become instance admins once their email is verified,
+// src/lib/authz.ts). Invitation acceptance bypasses the policy.
 //
 // signupPolicyAllows() reads the user count, so a caller that creates an account must evaluate it inside the signup
 // transaction after taking the signup advisory lock (createAccountUnderPolicy in src/lib/auth/signup.ts); otherwise
@@ -26,6 +29,13 @@ export type SignupDecision =
   | { allowed: false; firstUser: false; policy: SignupPolicy; message: string };
 
 export const SIGNUPS_CLOSED_MESSAGE = "Sign ups are closed. Ask an admin for an invitation.";
+
+/** The owner's address on a fresh instance, refused because the signup does not prove it (a password signup). */
+export const OWNER_SIGNUP_NEEDS_PROOF_MESSAGE =
+  'To create the owner account, use "Continue with Google" (or Microsoft) with this address. A password signup does not prove the address is yours.';
+
+/** Options of the policy checks: whether the signup proves the address (a verified Google or Microsoft email). */
+export type SignupProof = { emailVerified?: boolean };
 
 /** Labels of the instance setting "Who can sign up" (Admin > Instance). */
 export const SIGNUP_POLICY_LABELS: Record<SignupPolicy, string> = {
@@ -73,19 +83,25 @@ export function isAdminEmail(email: string): boolean {
   return adminEmails().includes(normalizeEmail(email));
 }
 
-/**
- * Whether the first-account exception (allowed whatever the policy, instance admin) may apply to this email: anyone
- * while OWNER_EMAIL is unset, only OWNER_EMAIL (case-insensitive, trimmed) when it is set, nobody while it is malformed.
- */
-export function firstAccountExceptionAllows(email: string): boolean {
-  let owner: string | null;
+/** OWNER_EMAIL (normalized), null when unset, undefined when set but malformed. */
+function ownerEmail(): string | null | undefined {
   try {
-    owner = configuredOwnerEmail();
+    return configuredOwnerEmail();
   } catch (e) {
-    if (isAppError(e) && e.code === "not_configured") return false;
+    if (isAppError(e) && e.code === "not_configured") return undefined;
     throw e;
   }
-  return owner === null || normalizeEmail(email) === owner;
+}
+
+/**
+ * Whether the first-account exception (allowed whatever the policy, instance admin) may apply to this signup: anyone
+ * while OWNER_EMAIL is unset; when it is set, only OWNER_EMAIL (case-insensitive, trimmed) with a proven address
+ * (`emailVerified`, never a password signup); nobody while it is malformed.
+ */
+export function firstAccountExceptionAllows(email: string, proof: SignupProof = {}): boolean {
+  const owner = ownerEmail();
+  if (owner === null) return true;
+  return owner !== undefined && proof.emailVerified === true && normalizeEmail(email) === owner;
 }
 
 /** Live (not deleted) accounts on the instance. */
@@ -106,12 +122,15 @@ async function firstOrganizationId(db: DbOrTx): Promise<string | null> {
   return org?.id ?? null;
 }
 
-/** Whether a new account may be created for this email (outside an invitation). */
-export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } = {}): Promise<SignupDecision> {
+/**
+ * Whether a new account may be created for this email (outside an invitation). `emailVerified`: the signup proves the
+ * address (OAuth with a verified email); leave it unset for a password signup.
+ */
+export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } & SignupProof = {}): Promise<SignupDecision> {
   const db = opts.db ?? (await getDb());
   const n = await countLiveUsers(db);
   const policy = await getSignupPolicy(db);
-  if (n === 0 && firstAccountExceptionAllows(email)) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
+  if (n === 0 && firstAccountExceptionAllows(email, opts)) return { allowed: true, firstUser: true, policy, joinOrganizationId: null };
   if (policy === "open") return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
   let domainMatch = false;
   if (policy === "domains") {
@@ -120,12 +139,18 @@ export async function signupPolicyAllows(email: string, opts: { db?: DbOrTx } = 
     if (domainMatch) return { allowed: true, firstUser: false, policy, joinOrganizationId: await firstOrganizationId(db) };
   }
   if (isAdminEmail(email)) return { allowed: true, firstUser: false, policy, joinOrganizationId: null };
-  return { allowed: false, firstUser: false, policy, message: SIGNUPS_CLOSED_MESSAGE };
+  // Only the owner's unproven signup of a fresh instance gets here with the owner's address: tell them how to proceed.
+  const owner = n === 0 ? ownerEmail() : null;
+  const message = owner && normalizeEmail(email) === owner ? OWNER_SIGNUP_NEEDS_PROOF_MESSAGE : SIGNUPS_CLOSED_MESSAGE;
+  return { allowed: false, firstUser: false, policy, message };
 }
 
 export type SignupAvailability = {
   policy: SignupPolicy;
-  /** No account exists yet: the next signup becomes the instance admin (only OWNER_EMAIL's, when that is set). */
+  /**
+   * No account exists yet: the next signup becomes the instance admin (when OWNER_EMAIL is set, only the owner's with
+   * a verified address).
+   */
   firstUser: boolean;
   /**
    * Whether /signup shows the form. False only when nobody without an invitation can sign up (invite_only with

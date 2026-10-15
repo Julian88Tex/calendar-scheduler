@@ -204,7 +204,8 @@ export type CreateAccountUnderPolicyResult = { user: UserRow; decision: SignupDe
  * - Email taken: AppError("conflict", EMAIL_TAKEN_MESSAGE) with an email field error (checked before the policy).
  * - Policy closed: AppError("forbidden", "Sign ups are closed. Ask an admin for an invitation."), unless bypassPolicy
  *   (invitation acceptance, AU-11).
- * - First account of the instance: instance admin and owner of a new organization.
+ * - First account of the instance: instance admin and owner of a new organization (when OWNER_EMAIL is set, only the
+ *   owner's, with a verified address: src/lib/auth/policy.ts).
  * - "domains" policy match: joins the first organization as User.
  * When `db` is not a transaction a new one is opened (the advisory lock needs one).
  */
@@ -218,7 +219,9 @@ export async function createAccountUnderPolicy(
     if (await findUserByEmail(tx, input.email)) {
       throw new AppError("conflict", EMAIL_TAKEN_MESSAGE, { fieldErrors: { email: [EMAIL_TAKEN_MESSAGE] } });
     }
-    const decision = await signupPolicyAllows(input.email, { db: tx });
+    // emailVerifiedAt is set only by signups that prove the address (OAuth with a verified email), never by a password
+    // signup: with OWNER_EMAIL set, only such a signup of the owner's address claims a fresh instance.
+    const decision = await signupPolicyAllows(input.email, { db: tx, emailVerified: Boolean(input.emailVerifiedAt) });
     if (!decision.allowed && !opts.bypassPolicy) throw new AppError("forbidden", decision.message);
     const firstUser = decision.allowed && decision.firstUser;
     const joinOrganizationId = input.organizationId ?? (decision.allowed ? decision.joinOrganizationId : null);
