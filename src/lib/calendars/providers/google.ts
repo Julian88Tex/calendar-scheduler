@@ -10,8 +10,9 @@
 //   covers every busy-only calendar of that window). Intervals come back untitled and always busy (Google already
 //   leaves out free, declined and cancelled events), clipped to the asked range and merged per calendar; ids are
 //   synthetic ("freebusy:" plus the interval). A per calendar "notFound" leaves that calendar out (gone, like
-//   listEvents); any other per calendar error is transient (the cache keeps the last data). Rate limits map like every
-//   other request (403 rateLimitExceeded, 429 -> ProviderTransientError).
+//   listEvents); any other per calendar error (internalError, backendError) is transient for that calendar alone: the
+//   call rejects with ProviderPartialError carrying the other calendars' results (the cache keeps the failing one's last
+//   data). Rate limits map like every other request (403 rateLimitExceeded, 429 -> ProviderTransientError).
 // - listEvents: events.list per calendar with singleEvents=true, maxAttendees=1 (only our own attendee entry comes back)
 //   and explicit eventTypes (default, focusTime, outOfOffice, fromGmail, birthday), so working locations are not even
 //   fetched. Busy mapping (SCH-12): cancelled and declined are free, outOfOffice is always busy, every other type
@@ -40,6 +41,7 @@ import "server-only";
 import { nowMs } from "@/lib/time/now";
 import {
   ProviderAuthError,
+  ProviderPartialError,
   ProviderRequestError,
   ProviderTransientError,
   isProviderGone,
@@ -411,12 +413,14 @@ async function listBusy(ctx: ConnectionContext, calendarExternalIds: string[], r
   const ids = [...new Set(calendarExternalIds)];
   const intervals = new Map<string, { start: number; end: number }[]>(ids.map((id) => [id, []]));
   const gone = new Set<string>();
+  /** Calendars Google could not read this time (internalError, backendError, ...): their own failure only. */
+  const failed = new Map<string, string[]>();
   const startMs = range.start.getTime();
   const endMs = range.end.getTime();
   for (let from = startMs; from < endMs; from += FREEBUSY_MAX_RANGE_MS) {
     const to = Math.min(endMs, from + FREEBUSY_MAX_RANGE_MS);
     for (let i = 0; i < ids.length; i += FREEBUSY_MAX_ITEMS) {
-      const batch = ids.slice(i, i + FREEBUSY_MAX_ITEMS).filter((id) => !gone.has(id));
+      const batch = ids.slice(i, i + FREEBUSY_MAX_ITEMS).filter((id) => !gone.has(id) && !failed.has(id));
       if (!batch.length) continue;
       const res = await googleFetch<GoogleFreeBusyResponse>(ctx, "POST", "/freeBusy", {
         body: { timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), timeZone: "UTC", items: batch.map((id) => ({ id })) },
@@ -435,7 +439,9 @@ async function listBusy(ctx: ConnectionContext, calendarExternalIds: string[], r
             gone.add(id);
             continue;
           }
-          throw new ProviderTransientError(`Google Calendar could not read the free/busy times of a calendar (${reasons.join(", ")})`);
+          // Transient for this calendar alone: the other calendars of the batch still answer.
+          failed.set(id, reasons);
+          continue;
         }
         const list = intervals.get(id)!;
         for (const b of entry.busy ?? []) {
@@ -451,8 +457,13 @@ async function listBusy(ctx: ConnectionContext, calendarExternalIds: string[], r
   }
   const out: Record<string, RemoteEvent[]> = {};
   for (const [id, list] of intervals) {
-    if (gone.has(id)) continue;
+    if (gone.has(id) || failed.has(id)) continue;
     out[id] = mergeIntervals(list).map((iv) => freeBusyEvent(new Date(iv.start), new Date(iv.end)));
+  }
+  if (failed.size) {
+    const reasons = [...new Set([...failed.values()].flat())].join(", ");
+    const what = failed.size === 1 ? "a calendar" : `${failed.size} calendars`;
+    throw new ProviderPartialError(`Google Calendar could not read the free/busy times of ${what} (${reasons})`, out, [...failed.keys()]);
   }
   return out;
 }

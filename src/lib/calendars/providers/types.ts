@@ -48,8 +48,9 @@ export interface CalendarProvider {
   listEvents(ctx: ConnectionContext, calendarExternalIds: string[], range: { start: Date; end: Date }): Promise<Record<string, RemoteEvent[]>>;
   /**
    * Busy intervals of calendars the account sees as free/busy only (RemoteCalendar.busyOnly): untitled, always busy,
-   * never all-day. Same result contract as listEvents (a calendar missing from the result is gone). Providers without
-   * it read those calendars with listEvents.
+   * never all-day. Same result contract as listEvents (a calendar missing from the result is gone). Some calendars
+   * unreadable while others answered: rejects with ProviderPartialError. Providers without it read those calendars
+   * with listEvents.
    */
   listBusy?(ctx: ConnectionContext, calendarExternalIds: string[], range: { start: Date; end: Date }): Promise<Record<string, RemoteEvent[]>>;
   getEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string): Promise<RemoteEvent | null>;   // null = deleted
@@ -93,12 +94,31 @@ export class ProviderRequestError extends Error {
   }
 }
 
+/**
+ * listBusy only: some calendars of the request could not be read (Google FreeBusy per calendar errors such as
+ * internalError or backendError). `results` holds the other calendars with the usual contract (a calendar missing from
+ * it is gone); `failedIds` are the unreadable ones, each a failure of that calendar alone, never of the connection.
+ */
+export class ProviderPartialError extends ProviderTransientError {
+  results: Record<string, RemoteEvent[]>;
+  failedIds: string[];
+  constructor(message: string, results: Record<string, RemoteEvent[]>, failedIds: string[]) {
+    super(message);
+    this.name = "ProviderPartialError";
+    this.results = results;
+    this.failedIds = failedIds;
+  }
+}
+
 /** Error kinds by name too, so fakes (tests/helpers/fake-providers.ts sets err.name) map like the real classes. */
 export function isProviderAuthError(e: unknown): e is ProviderAuthError {
   return e instanceof ProviderAuthError || (e as { name?: unknown } | null)?.name === "ProviderAuthError";
 }
 export function isProviderTransientError(e: unknown): e is ProviderTransientError {
   return e instanceof ProviderTransientError || (e as { name?: unknown } | null)?.name === "ProviderTransientError";
+}
+export function isProviderPartialError(e: unknown): e is ProviderPartialError {
+  return e instanceof ProviderPartialError || ((e as { name?: unknown } | null)?.name === "ProviderPartialError" && Array.isArray((e as { failedIds?: unknown }).failedIds));
 }
 export function isProviderRequestError(e: unknown): e is ProviderRequestError {
   return e instanceof ProviderRequestError || (e as { name?: unknown } | null)?.name === "ProviderRequestError";

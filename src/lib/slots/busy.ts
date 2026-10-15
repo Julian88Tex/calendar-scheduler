@@ -154,14 +154,22 @@ export function matchesFreeBusyException(
 }
 
 /**
+ * Additive SCH-13 input carried by a busy interval (not part of BusyInterval): `neverExempt` marks an interval whose
+ * title is a label of ours rather than an event title (a free/busy only calendar's "Busy (Work)", kept for
+ * troubleshoot), which no free/busy rule may ignore.
+ */
+export type FreeBusyRuleFlags = { neverExempt?: boolean };
+
+/**
  * SCH-13 for one busy interval: calendar events and app meetings whose title matches an exception are ignored for the
- * event type being booked, except full group slots; holds (source "reserved") are never exempt.
+ * event type being booked, except full group slots and intervals flagged neverExempt; holds (source "reserved") are
+ * never exempt.
  */
 export function isIgnoredByFreeBusyRules(
-  busy: Pick<BusyInterval, "source" | "title" | "isFullGroupSlot">,
+  busy: Pick<BusyInterval, "source" | "title" | "isFullGroupSlot"> & FreeBusyRuleFlags,
   exceptions: readonly FreeBusyException[] | null | undefined,
 ): boolean {
-  if (busy.source === "reserved" || busy.isFullGroupSlot) return false;
+  if (busy.source === "reserved" || busy.isFullGroupSlot || busy.neverExempt === true) return false;
   return matchesFreeBusyException(busy.title, exceptions);
 }
 

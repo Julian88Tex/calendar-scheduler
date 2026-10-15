@@ -20,8 +20,11 @@
 // - Free/busy only calendars (Google freeBusyReader, access.ts) go through the same windows, leases, TTLs and
 //   submission rechecks, but are read with the provider's listBusy (Google FreeBusy, one batched request per window
 //   for all of a connection's free/busy only calendars) in parallel with listEvents for the readable ones; a failure of
-//   one call never discards what the other returned. Their intervals have no title, so the busy result names them
-//   "Busy ({calendar name})" (troubleshoot and the owner's views; callers strip titles for anyone else, GEN-08).
+//   one call never discards what the other returned. A FreeBusy failure other than a credential one is the failing
+//   calendar's own (logged, its windows left unrefreshed and retried by the next read, the other calendars stored, the
+//   connection's health untouched). Their intervals have no title, so the busy result names them "Busy ({calendar
+//   name})" (troubleshoot and the owner's views; callers strip titles for anyone else, GEN-08) and flags them busyOnly:
+//   that name is ours, so free/busy rules (SCH-13) never ignore them.
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
@@ -38,7 +41,7 @@ import { isBusyOnlyCalendar } from "./access";
 import { withConnection } from "./credentials";
 import { recordConnectionFailure, markConnectionHealthy } from "./health";
 import { getProvider, isCacheOnlyProvider } from "./providers/registry";
-import { isProviderAuthError, type CalendarProviderId, type RemoteEvent } from "./providers/types";
+import { isProviderAuthError, isProviderPartialError, type CalendarProviderId, type RemoteEvent } from "./providers/types";
 
 export const WINDOW_DAYS = 31;
 const DAY_MS = 86_400_000;
@@ -65,6 +68,11 @@ export type ExternalBusy = {
   title: string | null;
   calendarId: string;
   externalId: string;
+  /**
+   * Additive: an untitled interval of a free/busy only calendar. `title` is then our "Busy ({calendar name})" label,
+   * never an event title, so free/busy rules (SCH-13) must never ignore it.
+   */
+  busyOnly?: boolean;
 };
 
 export type ExternalBusyByUser = Record<string, { ok: boolean; stale: boolean; nocal: boolean; busy: ExternalBusy[] }>;
@@ -373,10 +381,13 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
     const byWindow = new Map<number, FetchItem[]>();
     for (const i of claimed) byWindow.set(i.ws, [...(byWindow.get(i.ws) ?? []), i]);
     let gone = false;
+    /** Free/busy only calendars FreeBusy could not read: their windows stay unrefreshed (released below). */
+    let busyOnlyFailed: { item: FetchItem; error: string }[] = [];
     await withConnection(connectionId, async (ctx) => {
       // withConnection runs this again after a 401 and a token refresh: start clean, so an error of the first attempt
       // is never rethrown after a successful retry (that would mark a healthy connection needs_reauth).
       gone = false;
+      busyOnlyFailed = [];
       const failures: unknown[] = [];
       await Promise.all(
         [...byWindow].map(async ([ws, group]) => {
@@ -391,13 +402,29 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
           );
           for (const [i, part] of parts.entries()) {
             const settled = results[i]!;
-            if (settled.status === "rejected") {
+            let answer: Record<string, RemoteEvent[]>;
+            let unread = new Set<string>();
+            if (settled.status === "fulfilled") {
+              answer = settled.value;
+            } else if (part[0]!.cal.busyOnly && impl.listBusy && !isProviderAuthError(settled.reason)) {
+              // A FreeBusy failure (internalError, backendError, a 5xx) is the failing calendars' own: logged, their
+              // windows left unrefreshed (the stale fallback or NOCAL applies, the next read retries), never counted
+              // against the connection, and the other calendars are still stored.
+              const partial = isProviderPartialError(settled.reason) ? settled.reason : null;
+              answer = partial?.results ?? {};
+              unread = new Set(partial?.failedIds ?? part.map((g) => g.cal.externalId));
+              const error = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+              const failing = part.filter((g) => unread.has(g.cal.externalId));
+              busyOnlyFailed.push(...failing.map((item) => ({ item, error })));
+              log.warn("calendars.busy_freebusy_failed", { connectionId, calendarIds: [...new Set(failing.map((g) => g.cal.calendarId))], error: settled.reason });
+            } else {
               // Leave these windows to the stale fallback; the other part is still stored.
               failures.push(settled.reason);
               continue;
             }
             for (const g of part) {
-              const events = settled.value[g.cal.externalId];
+              if (unread.has(g.cal.externalId)) continue;
+              const events = answer[g.cal.externalId];
               if (!events) {
                 // Calendar deleted or unshared: it has no events for us (the list refresh below drops it).
                 gone = true;
@@ -412,7 +439,9 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
       // connection.
       if (failures.length) throw failures.find(isProviderAuthError) ?? failures[0] ?? new Error("Calendar busy fetch failed");
     });
-    await markConnectionHealthy(connectionId, db);
+    for (const f of busyOnlyFailed) await releaseWindows(db, [f.item], holder, f.error).catch(() => undefined);
+    // Only failing free/busy only calendars: nothing was read, so the connection's health is left as it is.
+    if (busyOnlyFailed.length < claimed.length) await markConnectionHealthy(connectionId, db);
     if (gone) {
       await enqueueJob(db, {
         type: CALENDAR_LIST_REFRESH_JOB,
@@ -543,14 +572,16 @@ export async function getExternalBusy(p: {
   });
   for (const e of busy) {
     const cal = calById.get(e.calendarId);
+    const labelled = e.title === null && cal?.busyOnly === true;
     out[e.userId]?.busy.push({
       start: e.start,
       end: e.end,
       allDay: e.allDay,
       ...(e.allDay ? { allDayStartDate: e.allDayStartDate ?? undefined, allDayEndDate: e.allDayEndDate ?? undefined } : {}),
-      title: e.title ?? (cal?.busyOnly ? busyOnlyTitle(cal.name) : null),
+      title: labelled ? busyOnlyTitle(cal.name) : e.title,
       calendarId: e.calendarId,
       externalId: e.externalId,
+      ...(labelled ? { busyOnly: true } : {}),
     });
   }
   return out;

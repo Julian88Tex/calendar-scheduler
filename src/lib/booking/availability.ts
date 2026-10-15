@@ -42,6 +42,7 @@ import type {
   SlotEngineInput,
   SlotEngineResult,
 } from "@/lib/slots/types";
+import type { FreeBusyRuleFlags } from "@/lib/slots/busy";
 import { isIsoDate } from "@/lib/slots/zone";
 import { now as clockNow } from "@/lib/time/now";
 import { buildRules, dateRangeRuleOf, maxDurationOf, needsWholeFuture, rangeOutsideWindow, resolveDuration } from "./rules";
@@ -309,13 +310,17 @@ export function externalToBusy(events: readonly ExternalBusy[], zone: string, op
       end = iv.end;
     }
     if (!(end > start)) continue;
-    out.push({
+    const busy: BusyInterval & FreeBusyRuleFlags = {
       start,
       end,
       source: "calendar",
       title: opts.titles ? (e.title ?? null) : null,
       calendarId: e.calendarId,
-    });
+    };
+    // A free/busy only calendar's "Busy (Work)" is our label (troubleshoot shows it), not an event title: no free/busy
+    // rule (SCH-13) may ignore it, or "includes: busy" would allow double bookings over work meetings.
+    if (e.busyOnly) busy.neverExempt = true;
+    out.push(busy);
   }
   return out;
 }
