@@ -1,11 +1,13 @@
 // OWNER: calendar-integrations.
 //
 // Small pieces shared by the Calendar settings page and the Google Calendar integration page (SPEC CAL-01, CAL-15,
-// CAL-21): the calendar color dot, the provider logo tile, the connection status badge, provider labels and the
-// connect / reconnect links (GET /api/auth/google/start?intent=connect_calendar, foundation-auth).
+// CAL-21): the calendar color dot, the provider logo tile, the connection status badge, provider labels, the
+// connect / reconnect links (GET /api/auth/google/start?intent=connect_calendar, foundation-auth) and the calendar
+// pickers' choices (free/busy only calendars: a "Free/busy only" note in the conflict picker, never a destination).
 import { Badge } from "@/components/ui/badge";
 import { ProviderLogo, type ProviderLogoName } from "@/components/ui/provider-logo";
 import { oauthStartPath } from "@/lib/auth/oauth/links";
+import type { SettingsCalendar } from "@/lib/calendars/settings";
 import { cn } from "@/lib/cn";
 
 export const CALENDAR_SETTINGS_PATH = "/app/availability/calendar-settings";
@@ -79,4 +81,24 @@ export function connectionProblemText(status: ConnectionStatus): string | null {
   if (status === "needs_reauth") return "We can't access this calendar anymore. Reconnect to keep checking it for conflicts and adding new events to it.";
   if (status === "error") return "We're having trouble reaching this calendar. We'll keep trying; reconnect if this continues.";
   return null;
+}
+
+/** The note of a calendar shared with "See only free/busy" (its busy times block bookings; no titles, no events added). */
+export const FREE_BUSY_ONLY_NOTE = "Free/busy only";
+
+/** The small note under a calendar in the "Check for conflicts" picker. */
+export function conflictCalendarNote(cal: Pick<SettingsCalendar, "busyOnly" | "canWrite" | "isPrimary">): string | undefined {
+  if (cal.busyOnly) return FREE_BUSY_ONLY_NOTE;
+  if (!cal.canWrite) return "View only";
+  return cal.isPrimary ? "Primary calendar" : undefined;
+}
+
+/** True when new events can be added to the calendar (CAL-08): writable and not free/busy only. */
+export function canReceiveEvents(cal: Pick<SettingsCalendar, "busyOnly" | "canWrite">): boolean {
+  return cal.canWrite && !cal.busyOnly;
+}
+
+/** The "Add to calendar" picker's choices: per account, the calendars that can receive events (accounts without any are left out). */
+export function destinationChoices<C extends { calendars: SettingsCalendar[] }>(connections: readonly C[]): { c: C; cals: SettingsCalendar[] }[] {
+  return connections.map((c) => ({ c, cals: c.calendars.filter(canReceiveEvents) })).filter((g) => g.cals.length > 0);
 }

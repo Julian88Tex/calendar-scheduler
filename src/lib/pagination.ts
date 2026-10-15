@@ -53,12 +53,14 @@ export function decodeCursor<T extends CursorData = CursorData>(cursor: string |
 /**
  * Row value comparison for keyset pagination: (a, b) > ($a, $b) for ascending order, < for descending. Columns and
  * values must match the ORDER BY. Postgres compares row values lexicographically and can use a composite index.
+ * Date values are sent as ISO strings (Postgres infers timestamptz from the compared column): a raw Date inside a
+ * sql`` template works on PGlite but fails on postgres.js in production (drizzle's transparent timestamp serializer).
  */
 export function keysetAfter(columns: SQLWrapper[], values: unknown[], direction: "asc" | "desc" = "asc"): SQL {
   if (!columns.length || columns.length !== values.length) throw new Error("keysetAfter: columns and values differ");
   const op = direction === "asc" ? sql.raw(">") : sql.raw("<");
   return sql`(${sql.join(columns, sql`, `)}) ${op} (${sql.join(
-    values.map((v) => sql`${v}`),
+    values.map((v) => sql`${v instanceof Date ? v.toISOString() : v}`),
     sql`, `,
   )})`;
 }

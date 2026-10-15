@@ -2,9 +2,10 @@
 //
 // PublicFooterLinks (ARCHITECTURE 20.2, SPEC GEN-14, GEN-21, BK-01, BK-03): "Cookie settings" (opens the dialog; also
 // opened by the OPEN_COOKIE_SETTINGS_EVENT window event), "Privacy Policy" (the host's URL or /privacy) and "Report
-// abuse" (mailto the instance operator with subject "Report abuse: {page URL}"). Links are 13.5px semibold and read
-// --primary-color (Calendly's footer, docs/research/calendly-live-capture.md item 6). The booking and landing pages
-// pass no operator email: like Calendly they show only "Cookie settings" and "Privacy Policy".
+// abuse" (mailto the instance operator with subject "Report abuse: {page URL}"). Links are 13.5px semibold, read
+// --primary-color and sit 34px apart (Calendly's footer, docs/research/calendly-live-capture.md item 6); from 600px up
+// the "Cookie settings" button is drawn 1px above the links, as Calendly's is. The booking and landing pages pass no
+// operator email: like Calendly they show only "Cookie settings" and "Privacy Policy".
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -79,9 +80,9 @@ export function PublicFooterLinks({
   const privacyHref = privacyPolicyHref(privacyUrl);
   const external = /^https?:\/\//.test(privacyHref);
   return (
-    <nav aria-label="Footer" className={cn("flex flex-wrap items-center gap-x-8 gap-y-2", className)}>
+    <nav aria-label="Footer" className={cn("flex flex-wrap items-center gap-x-[34px] gap-y-2", className)}>
       {showCookieSettings && (
-        <button type="button" onClick={() => setOpen(true)} className={LINK}>
+        <button type="button" onClick={() => setOpen(true)} className={cn(LINK, "min-[600px]:relative min-[600px]:-top-px")}>
           Cookie settings
         </button>
       )}

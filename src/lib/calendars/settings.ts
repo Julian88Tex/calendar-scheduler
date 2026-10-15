@@ -2,7 +2,8 @@
 //
 // Read models for the Calendar settings page and the Google Calendar integration page (SPEC CAL-01, CAL-21), plus the
 // throttled calendar list refresh those pages trigger (at most every 15 minutes per connection, in a job after the
-// response, never while rendering).
+// response, never while rendering). Free/busy only calendars (access.ts) are listed with busyOnly: they can be checked
+// for conflicts but never chosen as the calendar to add events to.
 import "server-only";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -10,6 +11,7 @@ import { calendarConnections, calendars, users } from "@/db/schema";
 import { getFeatures, isE2eMode } from "@/lib/env";
 import { enqueueJob, runJobsNowInBackground } from "@/lib/jobs";
 import { nowMs } from "@/lib/time/now";
+import { isBusyOnlyCalendar } from "./access";
 import { CALENDAR_ACCOUNT_MAX, CALENDAR_ACCOUNT_SOFT_LIMIT, CALENDAR_LIST_JOB } from "./connections";
 import type { CalendarProviderId } from "./providers/types";
 import { pushNotificationsAvailable } from "./watch";
@@ -23,6 +25,8 @@ export type SettingsCalendar = {
   checkConflicts: boolean;
   includeBuffers: boolean;
   syncChanges: boolean;
+  /** "See only free/busy" access: busy times block bookings, but no titles, no events added, no change sync. */
+  busyOnly: boolean;
 };
 
 export type SettingsConnection = {
@@ -74,6 +78,7 @@ export async function getCalendarSettingsView(userId: string): Promise<CalendarS
           checkConflicts: calendars.checkConflicts,
           includeBuffers: calendars.includeBuffers,
           syncChanges: calendars.syncChanges,
+          ctag: calendars.ctag,
         })
         .from(calendars)
         .where(and(inArray(calendars.connectionId, ids), isNull(calendars.deletedAt), eq(calendars.userId, userId)))
@@ -81,12 +86,20 @@ export async function getCalendarSettingsView(userId: string): Promise<CalendarS
   const [u] = await db.select({ dest: users.destinationCalendarId }).from(users).where(eq(users.id, userId)).limit(1);
   const byConn = new Map<string, SettingsCalendar[]>();
   for (const c of cals) {
-    const { connectionId, ...rest } = c;
-    byConn.set(connectionId, [...(byConn.get(connectionId) ?? []), rest]);
+    const { connectionId, ctag, ...rest } = c;
+    const busyOnly = isBusyOnlyCalendar({ ctag });
+    byConn.set(connectionId, [...(byConn.get(connectionId) ?? []), { ...rest, canWrite: rest.canWrite && !busyOnly, busyOnly }]);
   }
   const sortCals = (list: SettingsCalendar[]) =>
-    list.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || Number(b.canWrite) - Number(a.canWrite) || a.name.localeCompare(b.name));
-  const visibleCalendarIds = new Set(cals.map((c) => c.id));
+    list.sort(
+      (a, b) =>
+        Number(b.isPrimary) - Number(a.isPrimary) ||
+        Number(b.canWrite) - Number(a.canWrite) ||
+        Number(a.busyOnly) - Number(b.busyOnly) ||
+        a.name.localeCompare(b.name),
+    );
+  // The destination shown is one that can still receive events (CAL-08; getDestinationCalendar agrees).
+  const visibleCalendarIds = new Set(cals.filter((c) => c.canWrite && !isBusyOnlyCalendar(c)).map((c) => c.id));
   return {
     connections: conns.map((c) => ({
       id: c.id,

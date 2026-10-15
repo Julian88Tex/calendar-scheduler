@@ -4,8 +4,11 @@
 // listbox: the search input owns aria-activedescendant; ArrowUp/ArrowDown, Home/End, Enter and Escape work). Options
 // are filtered locally by label, value, description, group and keywords, or by the caller via onQueryChange (server
 // search). Grouped options render under group headings. variant="public" is the booking page picker
-// (docs/research/calendly-live-capture.md item 17): no dividers, a 2px blue search field inset 20px, bold navy group
-// headings, flush rows that wrap with a light blue selected tint (no check mark), a 6px radius and a visible scrollbar.
+// (docs/research/calendly-live-capture.md item 17): no dividers, a tight shadow, a 2px blue search field inset 20px,
+// 14px extra-bold navy group headings, flush rows that wrap with a light blue selected tint (no check mark), a 6px
+// radius and the browser's own scrollbar (Calendly's list uses the native one: a classic 15px bar with arrows on
+// Windows and Linux, an overlay bar on macOS; headless screenshots hide it unless Chromium runs without
+// --hide-scrollbars).
 "use client";
 
 import * as RadixPopover from "@radix-ui/react-popover";
@@ -200,8 +203,8 @@ export function Combobox({
           }}
           className={cn(
             "z-50 flex w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-16px)] flex-col overflow-hidden",
-            "border border-line bg-white shadow-[var(--shadow-pop)] data-[state=open]:animate-pop-in",
-            isPublic ? "min-w-0 rounded-[6px] pb-2.5" : "min-w-64 rounded-[var(--radius-card)]",
+            "border border-line bg-white data-[state=open]:animate-pop-in",
+            isPublic ? "min-w-0 rounded-[6px] pb-2.5 shadow-[var(--shadow-next)]" : "min-w-64 rounded-[var(--radius-card)] shadow-[var(--shadow-pop)]",
             contentClassName,
           )}
         >
@@ -252,7 +255,7 @@ export function Combobox({
             {groups.map((g) => (
               <li key={g.group ?? "__none"} role="presentation">
                 {g.group && (
-                  <div className={isPublic ? "px-5 pt-1 pb-2 text-[13px] leading-5 font-bold text-ink uppercase" : "px-3 pt-3 pb-1 text-eyebrow text-ink-2"} aria-hidden="true">
+                  <div className={isPublic ? "px-5 pt-1 pb-2 text-[14px] leading-5 font-extrabold text-ink uppercase" : "px-3 pt-3 pb-1 text-eyebrow text-ink-2"} aria-hidden="true">
                     {g.group}
                   </div>
                 )}

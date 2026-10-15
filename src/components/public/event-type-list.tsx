@@ -51,7 +51,7 @@ export function EventTypeList({ items, className, ...aria }: EventTypeListProps)
               className="mt-px size-[26px] shrink-0 rounded-full transition-shadow duration-100 group-hover:shadow-[0_0_0_2px_var(--public-bg)]"
               style={{ backgroundColor: eventDotColor(item.color) }}
             />
-            <span className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1">
+            <span className="flex min-w-0 flex-1 flex-col gap-1.5 pt-[3px]">
               <span className="text-[16px] leading-5 font-bold break-words text-public-text">{item.name}</span>
               {item.meta && <span className="text-[14px] leading-5 text-ink-2">{item.meta}</span>}
               {item.description && <span className="line-clamp-2 text-[14px] leading-5 text-ink-2">{item.description}</span>}

@@ -567,7 +567,7 @@ export function BookingFlow(p: BookingPageProps) {
     <PublicFooterLinks
       showPrivacyPolicy={false}
       listenForOpenEvent={false}
-      className={cn("px-4 pb-[21px]", align === "center" ? "justify-center pt-[76px]" : "justify-start pt-2")}
+      className={cn("px-4", align === "center" ? "justify-center pt-[75px] pb-[22px]" : "justify-start pt-2 pb-[27px]")}
     />
   );
   const lockedZoneName = event.lockedTimeZone ? friendlyZoneName(event.lockedTimeZone) : null;
@@ -620,7 +620,7 @@ export function BookingFlow(p: BookingPageProps) {
       <div data-booking-flow="details">
         {banners}
         <BookingCard side={side} wide ribbon={p.ribbon} embed={embed} hideSide={hideSide} phoneFooter={phoneFooter("start")}>
-          <BookingMainSection className="pt-[25px] max-[599px]:px-[15px] min-[600px]:px-[30px]">
+          <BookingMainSection className="pt-6 max-[599px]:px-[15px] min-[600px]:px-[30px]">
             {hideSide && (
               // Without the details panel the back arrow stays above the heading.
               <div className="mb-5">
@@ -648,7 +648,7 @@ export function BookingFlow(p: BookingPageProps) {
                 </Button>
               </div>
             )}
-            <div className={redirecting || verification ? "mt-6" : hideSide && whenText ? "mt-5" : "mt-0.5"}>
+            <div className={redirecting || verification ? "mt-6" : hideSide && whenText ? "mt-5" : "mt-[3px]"}>
               {redirecting ? (
                 <div role="status" className="flex flex-col items-start gap-3" data-testid="redirecting">
                   <p className="text-[18px] font-bold text-public-text">{bt("details.redirecting")}</p>
@@ -743,10 +743,10 @@ export function BookingFlow(p: BookingPageProps) {
         <div className="absolute top-[17px] left-[17px]">
           <BackButton onClick={() => setPhoneView("main")} label={bt("page.backToCalendar")} />
         </div>
-        <div className="border-b border-line px-[17px] pt-[23px] pb-6 text-center">
+        <div className="border-b border-line px-[17px] pt-[23px] pb-[25px] text-center">
           <h2 className="px-12 text-[22px] leading-7 font-bold text-public-text">{weekdayTitle(effectiveDate, LOCALE)}</h2>
           <p className="mt-[5px] text-[14px] leading-5 text-public-text">{longDate(effectiveDate, LOCALE)}</p>
-          <div className="mt-3 flex justify-center">{zonePicker("max-w-full")}</div>
+          <div className="mt-[10px] flex justify-center">{zonePicker("max-w-full")}</div>
         </div>
         <div className="px-[17px] pt-4 text-center">
           <p className="text-[21px] leading-7 font-bold text-public-text">{bt("page.selectTimeHeading")}</p>
@@ -799,7 +799,7 @@ export function BookingFlow(p: BookingPageProps) {
         hideSide={hideSide}
         phoneFooter={phoneFooter("center")}
       >
-        <BookingMainSection className="pb-[30px] max-[599px]:pt-[27px] max-[599px]:pb-5">
+        <BookingMainSection className="pb-[30px] max-[599px]:pt-[26px] max-[599px]:pb-5">
           <BookingPanelHeading as={hideSide ? "h1" : "h2"} className="max-[599px]:text-center">
             {/* Phones title the step "Select a Day" (the times come on their own screen). */}
             <span className="max-[599px]:hidden">{bt("page.selectDateTime")}</span>
@@ -863,7 +863,7 @@ export function BookingFlow(p: BookingPageProps) {
             </div>
           )}
         </div>
-        <BookingMainSection className="pt-[29px] max-[599px]:px-[35px] max-[599px]:pt-5">
+        <BookingMainSection className="pt-[28px] max-[599px]:px-[35px] max-[599px]:pt-[21px]">
           {zonePicker()}
           {troubleshootDayUrl && (
             <a href={troubleshootDayUrl} className="mt-4 inline-block text-[14px] font-semibold text-brand-strong hover:underline" data-testid="troubleshoot-link">

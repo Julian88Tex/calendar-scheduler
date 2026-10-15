@@ -7,7 +7,7 @@
 // page gutter, like Calendly. Client component (duration picker).
 "use client";
 
-import { Calendar1, ChevronDown, Clock, Globe } from "lucide-react";
+import { ChevronDown, Clock } from "lucide-react";
 import type * as React from "react";
 import {
   BookingBrandHeader,
@@ -18,6 +18,7 @@ import {
   BookingSideSection,
 } from "@/components/public/booking-card";
 import { BackButton } from "@/components/public/back-button";
+import { CalendarDayIcon, GlobeIcon } from "@/components/ui/booking-icons";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/time/format";
@@ -115,12 +116,12 @@ export function EventDetailsPanel({
       <BookingSideSection
         className={cn(
           !brandHeader && back && "pt-[84px]",
-          details ? "max-[599px]:px-[15px] max-[599px]:pt-[23px] max-[599px]:pb-[46px]" : "max-[599px]:pb-[47px]",
+          details ? "max-[599px]:px-[15px] max-[599px]:pt-[23px] max-[599px]:pb-[46px]" : "max-[599px]:pb-[44px]",
         )}
       >
         <HostHeaderView header={host} className={cn(details && "max-[599px]:hidden")} />
         <BookingEventTitle>{event.name || namePlaceholder}</BookingEventTitle>
-        <BookingDetailList className={cn(details ? "max-[599px]:mt-6 max-[599px]:gap-[17px] max-[599px]:self-stretch" : "max-[599px]:px-6")}>
+        <BookingDetailList className={cn(details ? "max-[599px]:mt-6 max-[599px]:gap-[17px] max-[599px]:self-stretch" : "max-[599px]:gap-4 max-[599px]:px-6")}>
           <BookingDetailRow icon={<Clock />}>
             {onDurationChange && event.durations.length > 1 ? (
               <DurationPicker value={duration} options={event.durations} onChange={onDurationChange} />
@@ -136,13 +137,14 @@ export function EventDetailsPanel({
               {row.detail && <span className="block font-normal whitespace-pre-line">{row.detail}</span>}
             </BookingDetailRow>
           ))}
+          {/* Calendly sets these two icons 1.5px right of the clock, and the calendar in the text's #476788. */}
           {when && (
-            <BookingDetailRow icon={<Calendar1 />} className="gap-[11px]">
+            <BookingDetailRow icon={<CalendarDayIcon className="translate-x-[1.5px]" />} iconClassName="text-ink-2" className="gap-[11px]">
               <span data-testid="details-when">{when.text}</span>
             </BookingDetailRow>
           )}
           {(when || lockedZoneName) && (
-            <BookingDetailRow icon={<Globe />} className="gap-[11px]">
+            <BookingDetailRow icon={<GlobeIcon className="translate-x-[1.5px]" />} className="gap-[11px]">
               <span data-testid="details-zone">{when?.zoneName ?? lockedZoneName}</span>
             </BookingDetailRow>
           )}

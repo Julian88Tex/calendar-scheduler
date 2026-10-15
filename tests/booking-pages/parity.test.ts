@@ -1,14 +1,16 @@
 // Calendly parity details of the booking pages (docs/research/calendly-live-capture.md): the phone times view title
 // and date, location labels that run on, the legal links' fallbacks (BK-09: /terms and /privacy), the footer copy and
-// the terms sentence, and the Calendly-cased copy deck strings.
+// the terms sentence (its closing period inside the Privacy Notice link), the Calendly-cased copy deck strings and the
+// booking icons drawn like Calendly's.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BookingFieldError } from "@/components/booking/field-error";
-import { BookingLegalNotice, RequiredMark } from "@/components/booking/form-parts";
+import { BookingLegalNotice, legalNoticeParts, RequiredMark } from "@/components/booking/form-parts";
 import { longDate, runOnLabel, weekdayTitle } from "@/components/booking/lib/display";
 import { bt } from "@/components/booking/lib/t";
 import { legalLinkHref, privacyPolicyHref, PublicFooterLinks } from "@/components/public/public-footer-links";
+import { CalendarDayIcon, GlobeIcon } from "@/components/ui/booking-icons";
 
 describe("phone times view header", () => {
   it("titles the day with its weekday and shows the full date with the year", () => {
@@ -56,11 +58,31 @@ describe("legal links", () => {
     expect(html).toContain('href="/terms"');
     expect(html).toContain("Kairos&#x27;s Participant Terms</a>");
     expect(html).toContain('href="/privacy"');
-    expect(html).toContain("Privacy Notice</a>");
+    // Like Calendly, the closing period is part of the bold blue "Privacy Notice." link, not plain text after it.
+    expect(html).toContain("Privacy Notice.</a>");
+    expect(html).not.toContain("</a>.");
+    expect(html.replace(/<[^>]+>/g, "")).toBe("By proceeding, you confirm that you have read and agree to Kairos&#x27;s Participant Terms and Privacy Notice.");
     const configured = renderToStaticMarkup(createElement(BookingLegalNotice, { appName: "Kairos", termsUrl: "https://example.com/t", privacyUrl: "https://example.com/p" }));
     expect(configured).toContain('href="https://example.com/t"');
     expect(configured).toContain('href="https://example.com/p"');
     expect(configured).toContain('rel="noopener noreferrer"');
+  });
+
+  it("moves only sentence-ending punctuation right after a link into that link", () => {
+    expect(legalNoticeParts("Agree to %%terms%% and %%privacy%%.")).toEqual([
+      { kind: "text", text: "Agree to ", trailing: "" },
+      { kind: "terms", text: "", trailing: "" },
+      { kind: "text", text: " and ", trailing: "" },
+      { kind: "privacy", text: "", trailing: "." },
+    ]);
+    // A translation that puts the links first keeps its text; a longer tail stays plain text.
+    expect(legalNoticeParts("%%privacy%% and %%terms%% apply to you.")).toEqual([
+      { kind: "privacy", text: "", trailing: "" },
+      { kind: "text", text: " and ", trailing: "" },
+      { kind: "terms", text: "", trailing: "" },
+      { kind: "text", text: " apply to you.", trailing: "" },
+    ]);
+    expect(legalNoticeParts("No links here.")).toEqual([{ kind: "text", text: "No links here.", trailing: "" }]);
   });
 
   it("uses Calendly's casing for the guests copy", () => {
@@ -83,11 +105,36 @@ describe("footer links", () => {
 
 describe("form parts", () => {
   it("renders the required mark as decoration and errors as alerts", () => {
-    expect(renderToStaticMarkup(createElement(RequiredMark))).toContain('aria-hidden="true"');
+    const mark = renderToStaticMarkup(createElement(RequiredMark));
+    expect(mark).toContain('aria-hidden="true"');
+    // A small navy asterisk (Calendly's is dark, not the gray-blue of secondary text).
+    expect(mark).toContain("text-ink");
+    expect(mark).not.toContain("text-ink-2");
     const error = renderToStaticMarkup(createElement(BookingFieldError, { id: "e1", error: "Can't be blank." }));
     expect(error).toContain('role="alert"');
     expect(error).toContain('id="e1"');
     expect(error).toContain("Can&#x27;t be blank.");
     expect(renderToStaticMarkup(createElement(BookingFieldError, { error: null }))).toBe("");
+  });
+});
+
+describe("booking icons", () => {
+  it("draws the globe with a meridian and two latitude lines, decorative and immune to a parent's stroke rule", () => {
+    const html = renderToStaticMarkup(createElement(GlobeIcon, { className: "size-4" }));
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("<ellipse");
+    expect(html.match(/M[\d.]+ [\d.]+H[\d.]+/g)).toHaveLength(2);
+    // The stroke width sits on the inner group, so BookingDetailRow's [&_svg] stroke-width cannot thicken it.
+    expect(html).toMatch(/<g[^>]*stroke-width="2"/);
+    const small = renderToStaticMarkup(createElement(GlobeIcon, { radius: 10.5, strokeWidth: 2.2 }));
+    expect(small).toContain('r="10.5"');
+    expect(small).toMatch(/<g[^>]*stroke-width="2.2"/);
+  });
+
+  it("draws the calendar as an 18x20 page inside a 22px box", () => {
+    const html = renderToStaticMarkup(createElement(CalendarDayIcon, {}));
+    expect(html).toContain('viewBox="0 0 22 22"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("<rect");
   });
 });

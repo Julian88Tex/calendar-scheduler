@@ -9,7 +9,9 @@
 //   disconnected, Microsoft is ignored and grants without the calendar scopes create nothing.
 // - syncCalendarList / applyCalendarList: calendarList -> calendars rows (new calendars unchecked, removed ones
 //   soft-deleted and dropped as destinations). The same provider calendar under a second account of the same user is
-//   listed once (CAL-06).
+//   listed once (CAL-06). Free/busy only calendars (Google freeBusyReader) are listed too, flagged through access.ts
+//   (never writable); a calendar whose access changed between readable and free/busy only has its cache marked stale,
+//   so the next busy read uses the right API.
 // - disconnectConnection (CAL-16): marks the connection disconnected, deletes credentials, calendars and cached events
 //   (the destination falls back to none), and revokes the Google token in a job (best effort). Audited.
 // - setConflictCalendars, setDestinationCalendar, setCalendarSyncSettings: settings writes with ownership checks
@@ -36,6 +38,7 @@ import { isUuid } from "@/lib/ids";
 import { enqueueJob } from "@/lib/jobs";
 import { log } from "@/lib/logger";
 import { now, nowMs } from "@/lib/time/now";
+import { busyOnlyColumns, isBusyOnlyCalendar } from "./access";
 import { invalidateCalendarCache, WINDOW_MS } from "./busy";
 import { encryptedTokenColumns, withConnection } from "./credentials";
 import { getProvider } from "./providers/registry";
@@ -94,6 +97,7 @@ export async function applyCalendarList(
   const elsewhere = new Set(others.map((o) => o.externalId));
   let added = 0;
   const seen = new Set<string>();
+  const accessChanged: string[] = [];
   for (const r of p.remote) {
     if (seen.has(r.externalId)) continue;
     seen.add(r.externalId);
@@ -103,8 +107,10 @@ export async function applyCalendarList(
       color: r.color ?? null,
       timezone: r.timeZone ?? null,
       isPrimary: r.isPrimary,
-      canWrite: r.canWrite,
+      // A free/busy only calendar can never receive events.
+      canWrite: r.canWrite && !r.busyOnly,
       allowedOnlineMeetingProviders: r.allowedOnlineMeetingProviders ?? [],
+      ...busyOnlyColumns(p.provider, r.busyOnly),
       updatedAt: t,
     };
     if (row) {
@@ -112,6 +118,7 @@ export async function applyCalendarList(
         .update(calendars)
         .set({ ...fields, deletedAt: null, ...(row.deletedAt ? { checkConflicts: false } : {}) })
         .where(eq(calendars.id, row.id));
+      if (p.provider === "google" && isBusyOnlyCalendar(row) !== Boolean(r.busyOnly)) accessChanged.push(row.id);
       continue;
     }
     if (elsewhere.has(r.externalId)) continue;
@@ -127,6 +134,8 @@ export async function applyCalendarList(
     });
     added++;
   }
+  // Cached windows were read with the other API (events.list vs FreeBusy): refetch them, keeping them as fallback.
+  await invalidateCalendarCache(accessChanged, tx);
   const gone = existing.filter((c) => !c.deletedAt && !seen.has(c.externalId));
   if (gone.length) {
     const ids = gone.map((c) => c.id);

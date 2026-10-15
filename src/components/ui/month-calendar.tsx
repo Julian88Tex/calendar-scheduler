@@ -4,9 +4,9 @@
 // "October 2026" (14px bold) between 38px circular arrows ("Go to previous month" / "Go to next month"; 8x14 blue
 // chevrons with a #F4F8FF hover fill, #476788 when disabled, as on the owner's live page), weekday header in #476788
 // 12px semibold, and 44px circle day buttons with 15px proportional figures (docs/research/calendly-live-capture.md):
-// available days #F4F8FF fill with #004EBA text at the regular weight of the gray numbers (size "md", as captured;
-// the compact "sm" pickers keep bold numbers), unavailable days plain #476788 and disabled, hover #E6F0FF, selected
-// #006BFF fill with white text, today with a 4px dot 13px below the number and aria-current="date", and
+// available days #F4F8FF fill with #004EBA text one step heavier (500) than the regular gray numbers (size "md", as
+// captured; the compact "sm" pickers keep bold numbers), unavailable days plain #476788 and disabled, hover #E6F0FF,
+// selected #006BFF fill with white text, today with a 4px dot 13px below the number and aria-current="date", and
 // adjacent-month cells hidden. Every blue derives from --primary-color (branding, embed primary_color). The table is
 // labelled "Select a Day"; day buttons read "Monday, October 12 - Times available" or "Sunday, October 4 - No times
 // available"; a live region announces "October is now displayed" after a month change. Arrow keys move between
@@ -169,10 +169,13 @@ export function MonthCalendar({
 
   const circle = size === "md" ? "size-11 max-w-full text-[15px]" : "size-9 text-[14px]";
   const dot = size === "md" ? "top-[33px]" : "top-[27px]";
-  // Calendly's booking calendar sets available and selected numbers at the weight of the unavailable ones.
-  const enabledWeight = size === "md" ? "font-normal" : "font-bold";
+  // Calendly's booking calendar draws available and selected numbers a little heavier than the unavailable ones.
+  const enabledWeight = size === "md" ? "font-medium" : "font-bold";
   // Phones (booking size): 48px rows and a tighter header, as captured at 390px.
   const rowHeight = size === "md" ? "h-[52px] max-[599px]:h-12" : "h-10";
+  // Booking size: a 21px weekday row (label in its top 20px) on wider screens and 19px on phones (label 1px down in an
+  // 18px line) puts the day rows where Calendly's sit under the header.
+  const headHeight = size === "md" ? "h-[21px] pb-px max-[599px]:h-[19px] max-[599px]:pt-px max-[599px]:pb-0 max-[599px]:leading-[18px]" : "h-6";
 
   return (
     <div className={cn("relative flex min-w-0 flex-col", className)} aria-busy={loading || undefined}>
@@ -217,7 +220,7 @@ export function MonthCalendar({
         <thead>
           <tr>
             {weekdays.map((w) => (
-              <th key={w.long} scope="col" abbr={w.long} className={cn("p-0 text-center text-[12px] leading-5 font-semibold text-ink-2", size === "md" ? "h-5" : "h-6")}>
+              <th key={w.long} scope="col" abbr={w.long} className={cn("p-0 text-center text-[12px] leading-5 font-semibold text-ink-2", headHeight)}>
                 {w.short}
               </th>
             ))}

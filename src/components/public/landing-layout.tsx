@@ -20,7 +20,7 @@ export function LandingFooter({ children, className }: { children: React.ReactNo
   return (
     <div
       className={cn(
-        "px-4 pt-[33px] pb-6 min-[650px]:px-6 min-[650px]:pt-6 min-[1000px]:absolute min-[1000px]:bottom-[21px] min-[1000px]:left-[31px] min-[1000px]:max-w-[110px] min-[1000px]:p-0",
+        "px-4 pt-[33px] pb-[26px] min-[650px]:px-6 min-[650px]:pt-6 min-[1000px]:absolute min-[1000px]:bottom-[21px] min-[1000px]:left-[31px] min-[1000px]:max-w-[110px] min-[1000px]:p-0",
         "min-[1000px]:[&_nav]:flex-col min-[1000px]:[&_nav]:items-start min-[1000px]:[&_nav]:gap-y-1",
         className,
       )}

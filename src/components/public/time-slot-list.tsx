@@ -80,11 +80,11 @@ export function TimeSlotList({
   }, [selected]);
 
   return (
-    <div className={cn("flex min-w-0 flex-col pt-7 pb-6 max-[599px]:px-[17px] min-[600px]:max-[999px]:px-8 min-[1000px]:pt-[81px] min-[1000px]:pr-[18px]", className)}>
+    <div className={cn("flex min-w-0 flex-col pt-7 pb-6 max-[599px]:px-[17px] min-[600px]:max-[999px]:px-8 min-[1000px]:pt-[80px] min-[1000px]:pr-[18px]", className)}>
       {dateLabel && (
         <h3
           className={cn(
-            "mb-2 flex h-[38px] shrink-0 items-center text-[15px] leading-6 font-normal text-public-text min-[1000px]:mb-[26px]",
+            "mb-2 flex h-[38px] shrink-0 items-center text-[15px] leading-6 font-normal text-public-text min-[1000px]:mb-[27px]",
             stickyHeader && "sticky top-0 z-10 bg-public-bg",
             dateLabelClassName,
           )}
@@ -108,13 +108,14 @@ export function TimeSlotList({
             const isSelected = slot.value === selected;
             const timeId = `${base}-${slot.value.replace(/[^a-zA-Z0-9]/g, "")}`;
             if (isSelected) {
+              // pb-0.5 lifts every label 1px above the box's center, where Calendly's sit (Figtree's glyphs sit low).
               const nextClass =
-                "inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand text-[16px] font-bold text-white shadow-[var(--shadow-next)] transition-[filter] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+                "inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand pb-0.5 text-[16px] font-bold text-white shadow-[var(--shadow-next)] transition-[filter] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
               return (
                 <li key={slot.value} className="flex min-w-0 items-stretch justify-between">
                   <div
                     id={timeId}
-                    className="flex h-[52px] w-[48.5%] min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] px-1 text-center text-white"
+                    className="flex h-[52px] w-[48.5%] min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] px-1 pb-0.5 text-center text-white"
                   >
                     <span className="truncate text-[16px] leading-5 font-bold">{slot.label}</span>
                     {slot.detail && <span className="truncate text-[12px] leading-4 font-semibold opacity-90">{slot.detail}</span>}
@@ -158,7 +159,7 @@ export function TimeSlotList({
                     onSelect(slot.value);
                   }}
                   className={cn(
-                    "flex h-[52px] w-full min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg px-2 text-center text-brand-strong",
+                    "flex h-[52px] w-full min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg px-2 pb-0.5 text-center text-brand-strong",
                     "transition-[box-shadow] duration-100 hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none",
                     "disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3 disabled:hover:shadow-none",
                   )}

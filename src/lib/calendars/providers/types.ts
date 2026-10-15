@@ -8,6 +8,8 @@
 // Additive to section 10.1: ProviderAuthError and ProviderRequestError carry an optional machine reason and HTTP
 // status, and ProviderRequestError marks permanent per request failures (404, 409, 400, a calendar that is no longer
 // writable) that must neither mark the connection broken nor be retried.
+// Also additive: RemoteCalendar.busyOnly (a calendar shared with "See only free/busy": Google freeBusyReader) and the
+// optional CalendarProvider.listBusy, which reads such calendars as untitled busy intervals (Google FreeBusy API).
 export type CalendarProviderId = "google" | "microsoft" | "caldav" | "ics" | "calendly_import";
 export interface ConnectionContext {           // decrypted, refreshed credentials for one connection
   connectionId: string; userId: string; provider: CalendarProviderId;
@@ -15,7 +17,9 @@ export interface ConnectionContext {           // decrypted, refreshed credentia
   icsUrl?: string; unavailableStatuses: string[];
 }
 export interface RemoteCalendar { externalId: string; name: string; color?: string | null; timeZone?: string | null;
-  isPrimary: boolean; canWrite: boolean; allowedOnlineMeetingProviders?: string[] }
+  isPrimary: boolean; canWrite: boolean; allowedOnlineMeetingProviders?: string[];
+  /** Free/busy access only (no event details): never writable, read with listBusy, no push channels or change sync. */
+  busyOnly?: boolean }
 export interface RemoteEvent {                 // one expanded instance
   externalId: string; icalUid?: string | null; recurringEventId?: string | null;
   start: Date; end: Date; allDay: boolean; allDayStartDate?: string; allDayEndDate?: string;   // all-day dates in calendar terms
@@ -42,6 +46,12 @@ export interface CalendarProvider {
   capabilities: { write: boolean; invitations: boolean; conferences: ("google_meet" | "microsoft_teams")[]; changeSync: boolean };
   listCalendars(ctx: ConnectionContext): Promise<RemoteCalendar[]>;
   listEvents(ctx: ConnectionContext, calendarExternalIds: string[], range: { start: Date; end: Date }): Promise<Record<string, RemoteEvent[]>>;
+  /**
+   * Busy intervals of calendars the account sees as free/busy only (RemoteCalendar.busyOnly): untitled, always busy,
+   * never all-day. Same result contract as listEvents (a calendar missing from the result is gone). Providers without
+   * it read those calendars with listEvents.
+   */
+  listBusy?(ctx: ConnectionContext, calendarExternalIds: string[], range: { start: Date; end: Date }): Promise<Record<string, RemoteEvent[]>>;
   getEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string): Promise<RemoteEvent | null>;   // null = deleted
   createEvent(ctx: ConnectionContext, calendarExternalId: string, input: WriteEventInput): Promise<WriteEventResult>;
   updateEvent(ctx: ConnectionContext, calendarExternalId: string, externalId: string, input: WriteEventInput, etag?: string | null): Promise<WriteEventResult>;

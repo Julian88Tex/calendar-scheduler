@@ -2,7 +2,16 @@
 //
 // Google Calendar v3 over fetch (SPEC CAL-02, CAL-11, CAL-12, CAL-14, SCH-12, VID-07; tech-reference 6).
 //
-// - listCalendars: calendarList (minAccessRole=reader, paged); writable when accessRole is owner or writer.
+// - listCalendars: calendarList (minAccessRole=freeBusyReader, paged); writable when accessRole is owner or writer;
+//   busyOnly when accessRole is freeBusyReader (a calendar shared with "See only free/busy", such as a work calendar
+//   shared into a personal account: no event details, so it is read with listBusy).
+// - listBusy: the FreeBusy API (POST /freeBusy, timeZone UTC) for busy-only calendars, batched (at most 50 calendars and
+//   31 days per request; the busy cache asks for one 31-day window of a connection at a time, so usually one request
+//   covers every busy-only calendar of that window). Intervals come back untitled and always busy (Google already
+//   leaves out free, declined and cancelled events) and are merged per calendar; ids are synthetic ("freebusy:" plus the
+//   interval). A per calendar "notFound" leaves that calendar out (gone, like listEvents); any other per calendar
+//   error is transient (the cache keeps the last data). Rate limits map like every other request (403 rateLimitExceeded,
+//   429 -> ProviderTransientError).
 // - listEvents: events.list per calendar with singleEvents=true, maxAttendees=1 (only our own attendee entry comes back)
 //   and explicit eventTypes (default, focusTime, outOfOffice, fromGmail, birthday), so working locations are not even
 //   fetched. Busy mapping (SCH-12): cancelled and declined are free, outOfOffice is always busy, every other type
@@ -10,7 +19,9 @@
 //   (CAL-09). All-day events keep their calendar dates (start.date, end.date exclusive) and get UTC midnight bounds as
 //   placeholders; the busy layer expands them as whole local days in the host's zone.
 //   A calendar that refuses the eventTypes filter (400) is read once more without it (working locations are still
-//   dropped by the mapping), so one odd calendar never breaks the whole busy fetch.
+//   dropped by the mapping), so one odd calendar never breaks the whole busy fetch. A calendar that refuses events.list
+//   (403, or 404) is read through FreeBusy instead: its access may have dropped to free/busy since the calendar list was
+//   last read, and its busy times must still block (a calendar FreeBusy cannot see either is left out, as before).
 // - getEvent: a 404 also answers for a calendar the user can no longer read, so the event counts as deleted only when
 //   its calendar still answers (otherwise ProviderRequestError "calendarUnavailable": CAL-14 must never cancel
 //   meetings because a calendar was unshared).
@@ -47,6 +58,12 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_PAGES = 25;
 /** SCH-12: the event types the busy fetch requests (working locations are never busy, so never fetched). */
 export const GOOGLE_BUSY_EVENT_TYPES = ["default", "focusTime", "outOfOffice", "fromGmail", "birthday"] as const;
+/** FreeBusy: calendars per request (Google's calendarExpansionMax is at most 50). */
+export const FREEBUSY_MAX_ITEMS = 50;
+/** FreeBusy: longest span per request (the busy cache's 31-day window). */
+export const FREEBUSY_MAX_RANGE_MS = 31 * 86_400_000;
+/** Prefix of the synthetic ids of FreeBusy intervals (they have no event id). */
+export const FREEBUSY_ID_PREFIX = "freebusy:";
 
 /** Re-reads of an event whose Meet conference is still pending (VID-07: up to 3 times). Tests shorten the delays. */
 export const googleTiming = { meetPollDelaysMs: [2_000, 5_000, 8_000] as number[] };
@@ -92,6 +109,9 @@ type GoogleCalendarListEntry = {
   conferenceProperties?: { allowedConferenceSolutionTypes?: string[] };
 };
 type GoogleErrorBody = { error?: { code?: number; message?: string; status?: string; errors?: { reason?: string; message?: string }[] } };
+type GoogleFreeBusyResponse = {
+  calendars?: Record<string, { busy?: { start?: string; end?: string }[]; errors?: { domain?: string; reason?: string }[] }>;
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // HTTP
@@ -322,25 +342,117 @@ async function listCalendars(ctx: ConnectionContext): Promise<RemoteCalendar[]> 
   let pageToken: string | undefined;
   for (let page = 0; page < 10; page++) {
     const res = await googleFetch<{ items?: GoogleCalendarListEntry[]; nextPageToken?: string }>(ctx, "GET", "/users/me/calendarList", {
-      query: { maxResults: "250", minAccessRole: "reader", pageToken },
+      // freeBusyReader too: a calendar shared with "See only free/busy" still blocks times (read with listBusy).
+      query: { maxResults: "250", minAccessRole: "freeBusyReader", pageToken },
     });
     for (const c of res?.items ?? []) {
       if (!c.id || c.deleted) continue;
+      const busyOnly = c.accessRole === "freeBusyReader";
       out.push({
         externalId: c.id,
         name: c.summaryOverride?.trim() || c.summary?.trim() || c.id,
         color: c.backgroundColor ?? null,
         timeZone: c.timeZone ?? null,
         isPrimary: c.primary === true,
-        canWrite: c.accessRole === "owner" || c.accessRole === "writer",
+        canWrite: !busyOnly && (c.accessRole === "owner" || c.accessRole === "writer"),
         allowedOnlineMeetingProviders: c.conferenceProperties?.allowedConferenceSolutionTypes ?? [],
+        busyOnly,
       });
     }
     pageToken = res?.nextPageToken;
     if (!pageToken) break;
   }
-  // Primary first, then calendars the user can write to, then the rest by name.
-  return out.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || Number(b.canWrite) - Number(a.canWrite) || a.name.localeCompare(b.name));
+  // Primary first, then calendars the user can write to, then readable ones, then free/busy only ones, each by name.
+  return out.sort(
+    (a, b) =>
+      Number(b.isPrimary) - Number(a.isPrimary) ||
+      Number(b.canWrite) - Number(a.canWrite) ||
+      Number(Boolean(a.busyOnly)) - Number(Boolean(b.busyOnly)) ||
+      a.name.localeCompare(b.name),
+  );
+}
+
+/** An untitled busy interval of a free/busy only calendar, as a RemoteEvent (id synthetic, never all-day). */
+export function freeBusyEvent(start: Date, end: Date): RemoteEvent {
+  return {
+    externalId: `${FREEBUSY_ID_PREFIX}${start.toISOString()}/${end.toISOString()}`,
+    icalUid: null,
+    recurringEventId: null,
+    start,
+    end,
+    allDay: false,
+    title: null,
+    busy: true,
+    showAs: "busy",
+    status: "confirmed",
+    selfDeclined: false,
+    extendedPrivate: {},
+    updatedAt: null,
+    etag: null,
+  };
+}
+
+/** Sorted, merged intervals (overlapping or touching ones become one). */
+function mergeIntervals(list: { start: number; end: number }[]): { start: number; end: number }[] {
+  const sorted = [...list].sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: { start: number; end: number }[] = [];
+  for (const iv of sorted) {
+    const last = out[out.length - 1];
+    if (last && iv.start <= last.end) last.end = Math.max(last.end, iv.end);
+    else out.push({ ...iv });
+  }
+  return out;
+}
+
+const FREEBUSY_GONE_REASONS = new Set(["notFound"]);
+
+/** FreeBusy for calendars the account sees as free/busy only (see the file header). */
+async function listBusy(ctx: ConnectionContext, calendarExternalIds: string[], range: { start: Date; end: Date }): Promise<Record<string, RemoteEvent[]>> {
+  const ids = [...new Set(calendarExternalIds)];
+  const intervals = new Map<string, { start: number; end: number }[]>(ids.map((id) => [id, []]));
+  const gone = new Set<string>();
+  const startMs = range.start.getTime();
+  const endMs = range.end.getTime();
+  for (let from = startMs; from < endMs; from += FREEBUSY_MAX_RANGE_MS) {
+    const to = Math.min(endMs, from + FREEBUSY_MAX_RANGE_MS);
+    for (let i = 0; i < ids.length; i += FREEBUSY_MAX_ITEMS) {
+      const batch = ids.slice(i, i + FREEBUSY_MAX_ITEMS).filter((id) => !gone.has(id));
+      if (!batch.length) continue;
+      const res = await googleFetch<GoogleFreeBusyResponse>(ctx, "POST", "/freeBusy", {
+        body: { timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), timeZone: "UTC", items: batch.map((id) => ({ id })) },
+      });
+      const answered = res?.calendars ?? {};
+      const byLower = new Map(Object.entries(answered).map(([k, v]) => [k.toLowerCase(), v]));
+      for (const id of batch) {
+        const entry = answered[id] ?? byLower.get(id.toLowerCase());
+        if (!entry) {
+          gone.add(id);
+          continue;
+        }
+        const reasons = (entry.errors ?? []).map((e) => e.reason ?? "unknown");
+        if (reasons.length) {
+          if (reasons.every((r) => FREEBUSY_GONE_REASONS.has(r))) {
+            gone.add(id);
+            continue;
+          }
+          throw new ProviderTransientError(`Google Calendar could not read the free/busy times of a calendar (${reasons.join(", ")})`);
+        }
+        const list = intervals.get(id)!;
+        for (const b of entry.busy ?? []) {
+          const s = b.start ? Date.parse(b.start) : Number.NaN;
+          const e = b.end ? Date.parse(b.end) : Number.NaN;
+          if (Number.isNaN(s) || Number.isNaN(e) || !(e > s)) continue;
+          list.push({ start: s, end: e });
+        }
+      }
+    }
+  }
+  const out: Record<string, RemoteEvent[]> = {};
+  for (const [id, list] of intervals) {
+    if (gone.has(id)) continue;
+    out[id] = mergeIntervals(list).map((iv) => freeBusyEvent(new Date(iv.start), new Date(iv.end)));
+  }
+  return out;
 }
 
 async function listEventsOf(ctx: ConnectionContext, calendarId: string, range: { start: Date; end: Date }, withTypes = true): Promise<RemoteEvent[]> {
@@ -383,9 +495,12 @@ async function listEvents(ctx: ConnectionContext, calendarExternalIds: string[],
       try {
         out[id] = await listEventsOf(ctx, id, range);
       } catch (e) {
-        // A calendar that disappeared or was unshared is left out of the result (the caller refreshes the list).
-        if (isProviderGone(e) || (e instanceof ProviderRequestError && e.status === 403)) return;
-        throw e;
+        if (!(isProviderGone(e) || (e instanceof ProviderRequestError && e.status === 403))) throw e;
+        // Access may have dropped to free/busy only since the list was read: its busy times still block. A calendar
+        // that disappeared or was unshared is not in the FreeBusy answer either and is left out (the caller refreshes
+        // the list).
+        const busy = (await listBusy(ctx, [id], range))[id];
+        if (busy) out[id] = busy;
       }
     }),
   );
@@ -518,6 +633,7 @@ export const googleProvider: CalendarProvider = {
   capabilities: { write: true, invitations: true, conferences: ["google_meet"], changeSync: true },
   listCalendars,
   listEvents,
+  listBusy,
   getEvent,
   createEvent,
   updateEvent,

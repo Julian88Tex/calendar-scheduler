@@ -83,12 +83,12 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
               if (iso === selected) {
                 return (
                   <li key={c.start} data-start={c.start} className="flex min-w-0 items-stretch justify-between">
-                    <div className="flex h-[52px] w-[48.5%] items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] text-[16px] font-bold text-white">{time}</div>
+                    <div className="flex h-[52px] w-[48.5%] items-center justify-center rounded-[var(--radius-slot)] bg-[var(--slot-selected)] pb-0.5 text-[16px] font-bold text-white">{time}</div>
                     <button
                       ref={nextRef}
                       type="button"
                       onClick={() => onNext(iso)}
-                      className="inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand text-[16px] font-bold text-white shadow-[var(--shadow-next)] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                      className="inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand pb-0.5 text-[16px] font-bold text-white shadow-[var(--shadow-next)] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                     >
                       {bt("page.next")}
                     </button>
@@ -103,7 +103,7 @@ export function TroubleshootList({ dateLabel, candidates, formatTime, selected, 
                       focusNext.current = true;
                       onSelect(iso);
                     }}
-                    className="flex h-[52px] w-full items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg text-[16px] font-bold text-brand-strong hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none"
+                    className="flex h-[52px] w-full items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg pb-0.5 text-[16px] font-bold text-brand-strong hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none"
                   >
                     {time}
                   </button>

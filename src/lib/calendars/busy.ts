@@ -17,6 +17,11 @@
 //   properties, iCal UID) are flagged is_own and never returned as busy; the read also anti-joins
 //   calendar_linked_events by provider id, covering events written after the window was fetched.
 // - calendly_import calendars (CAL-22, and the E2E fake calendar) are cache only: always fresh, never fetched.
+// - Free/busy only calendars (Google freeBusyReader, access.ts) go through the same windows, leases, TTLs and
+//   submission rechecks, but are read with the provider's listBusy (Google FreeBusy, one batched request per window
+//   for all of a connection's free/busy only calendars) in parallel with listEvents for the readable ones; a failure of
+//   one call never discards what the other returned. Their intervals have no title, so the busy result names them
+//   "Busy ({calendar name})" (troubleshoot and the owner's views; callers strip titles for anyone else, GEN-08).
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
@@ -29,6 +34,7 @@ import { enqueueJob } from "@/lib/jobs";
 import { log } from "@/lib/logger";
 import { expandAllDay } from "@/lib/slots";
 import { now, nowMs } from "@/lib/time/now";
+import { isBusyOnlyCalendar } from "./access";
 import { withConnection } from "./credentials";
 import { recordConnectionFailure, markConnectionHealthy } from "./health";
 import { getProvider, isCacheOnlyProvider } from "./providers/registry";
@@ -95,19 +101,29 @@ type CheckedCalendar = {
   calendarId: string;
   userId: string;
   externalId: string;
+  name: string;
   connectionId: string;
   provider: CalendarProviderId;
   connectionStatus: string;
+  /** Free/busy only (access.ts): read with listBusy, untitled. */
+  busyOnly: boolean;
 };
+
+/** The title of an untitled busy interval of a free/busy only calendar (troubleshoot: "Busy (Work)"). */
+function busyOnlyTitle(calendarName: string): string {
+  return `Busy (${calendarName})`;
+}
 
 type WindowRow = typeof calendarSyncWindows.$inferSelect;
 
 async function loadCheckedCalendars(db: DbOrTx, userIds: string[]): Promise<CheckedCalendar[]> {
-  return db
+  const rows = await db
     .select({
       calendarId: calendars.id,
       userId: calendars.userId,
       externalId: calendars.externalId,
+      name: calendars.name,
+      ctag: calendars.ctag,
       connectionId: calendars.connectionId,
       provider: calendarConnections.provider,
       connectionStatus: calendarConnections.status,
@@ -123,6 +139,7 @@ async function loadCheckedCalendars(db: DbOrTx, userIds: string[]): Promise<Chec
         eq(calendarConnections.userId, calendars.userId),
       ),
     );
+  return rows.map(({ ctag, ...r }) => ({ ...r, busyOnly: isBusyOnlyCalendar({ ctag }) }));
 }
 
 async function loadWindows(db: DbOrTx, calendarIds: string[], starts: number[]): Promise<Map<string, WindowRow>> {
@@ -356,21 +373,35 @@ async function refreshConnection(connectionId: string, provider: CalendarProvide
     const byWindow = new Map<number, FetchItem[]>();
     for (const i of claimed) byWindow.set(i.ws, [...(byWindow.get(i.ws) ?? []), i]);
     let gone = false;
+    let firstError: unknown = null;
     await withConnection(connectionId, async (ctx) => {
       await Promise.all(
         [...byWindow].map(async ([ws, group]) => {
-          const result = await impl.listEvents(
-            ctx,
-            group.map((g) => g.cal.externalId),
-            { start: new Date(ws), end: new Date(ws + WINDOW_MS) },
+          const range = { start: new Date(ws), end: new Date(ws + WINDOW_MS) };
+          // Readable calendars through events.list, free/busy only ones through FreeBusy (batched by the provider).
+          const parts = [group.filter((g) => !g.cal.busyOnly), group.filter((g) => g.cal.busyOnly)].filter((part) => part.length);
+          const results = await Promise.allSettled(
+            parts.map((part) => {
+              const ids = part.map((g) => g.cal.externalId);
+              return part[0]!.cal.busyOnly && impl.listBusy ? impl.listBusy(ctx, ids, range) : impl.listEvents(ctx, ids, range);
+            }),
           );
-          for (const g of group) {
-            const events = result[g.cal.externalId];
-            if (!events) gone = true; // calendar deleted or unshared: it has no events for us
-            await replaceWindowEvents(db, { calendarId: g.cal.calendarId, userId: g.cal.userId, windowStart: ws, events: events ?? [], fetchedAt });
+          for (const [i, part] of parts.entries()) {
+            const settled = results[i]!;
+            if (settled.status === "rejected") {
+              // Leave these windows to the stale fallback; the other part is still stored.
+              firstError ??= settled.reason;
+              continue;
+            }
+            for (const g of part) {
+              const events = settled.value[g.cal.externalId];
+              if (!events) gone = true; // calendar deleted or unshared: it has no events for us
+              await replaceWindowEvents(db, { calendarId: g.cal.calendarId, userId: g.cal.userId, windowStart: ws, events: events ?? [], fetchedAt });
+            }
           }
         }),
       );
+      if (firstError) throw firstError;
     });
     await markConnectionHealthy(connectionId, db);
     if (gone) {
@@ -493,7 +524,8 @@ export async function getExternalBusy(p: {
     if (r?.ok === false) log.info("calendars.busy_degraded", { userId: id, stale: r.stale, nocal: r.nocal });
   }
 
-  // 4. Busy rows (busy, not ours).
+  // 4. Busy rows (busy, not ours). Free/busy only calendars have no titles: name the calendar instead.
+  const calById = new Map(cals.map((c) => [c.calendarId, c]));
   const busy = await readEvents(db, {
     calendarIds: cals.map((c) => c.calendarId),
     start: p.start,
@@ -501,12 +533,13 @@ export async function getExternalBusy(p: {
     busyOnly: true,
   });
   for (const e of busy) {
+    const cal = calById.get(e.calendarId);
     out[e.userId]?.busy.push({
       start: e.start,
       end: e.end,
       allDay: e.allDay,
       ...(e.allDay ? { allDayStartDate: e.allDayStartDate ?? undefined, allDayEndDate: e.allDayEndDate ?? undefined } : {}),
-      title: e.title,
+      title: e.title ?? (cal?.busyOnly ? busyOnlyTitle(cal.name) : null),
       calendarId: e.calendarId,
       externalId: e.externalId,
     });

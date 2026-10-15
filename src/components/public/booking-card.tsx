@@ -132,50 +132,79 @@ export function BookingSideSection({ children, className }: { children: React.Re
   );
 }
 
-/** Host name above the event name (#476788, 16px semibold, 24px line height). */
+/**
+ * Host name above the event name (#476788, 16px, 24px line height). Weight 650: Figtree's 600 reads as medium next to
+ * Calendly's semibold (about 6% less ink in the live capture).
+ */
 export function BookingHostName({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn("text-[16px] leading-6 font-semibold text-ink-2", className)}>{children}</p>;
+  return <p className={cn("text-[16px] leading-6 font-[650] text-ink-2", className)}>{children}</p>;
 }
 
-/** The event name (h1, 27px bold, 32px line height; 26px on phones): Calendly's 28px glyphs in Figtree's metrics. */
+/**
+ * The event name (h1, 27px bold, 32px line height; 26px on phones): Calendly's 28px glyphs in Figtree's metrics, with
+ * 0.2px tracking on wider screens so the line runs as wide as Calendly's.
+ */
 export function BookingEventTitle({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <h1 className={cn("text-[26px] leading-8 font-bold break-words text-public-text min-[600px]:text-[27px]", className)}>{children}</h1>;
+  return (
+    <h1 className={cn("text-[26px] leading-8 font-bold break-words text-public-text min-[600px]:text-[27px] min-[600px]:tracking-[0.2px]", className)}>
+      {children}
+    </h1>
+  );
 }
 
 /**
  * A details row: a navy (#0B3558) icon drawn 20px with a heavy stroke, centered on the 14px bold #476788 text (clock +
- * "30 min", video + "Web conferencing details provided upon confirmation." over two lines...).
+ * "30 min", video + "Web conferencing details provided upon confirmation." over two lines...). The icon box starts 1px
+ * left of the panel padding and the text is raised 2px from the icon's center, where Calendly draws them (Figtree sets
+ * its glyphs lower in the line box than Proxima Nova). `iconClassName` restyles one icon (the calendar icon of the
+ * chosen time is #476788 like its text).
  */
-export function BookingDetailRow({ icon, children, className }: { icon: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function BookingDetailRow({
+  icon,
+  children,
+  className,
+  iconClassName,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  iconClassName?: string;
+}) {
   return (
     <div className={cn("flex min-w-0 items-center gap-[7px] text-left text-[14px] leading-[21px] font-bold text-ink-2", className)}>
-      <span aria-hidden="true" className="inline-flex shrink-0 text-navy [&_svg]:size-[22px] [&_svg]:[stroke-width:2.2]">
+      <span aria-hidden="true" className={cn("-ml-px inline-flex shrink-0 text-navy [&_svg]:size-[22px] [&_svg]:[stroke-width:2.2]", iconClassName)}>
         {icon}
       </span>
-      <div className="min-w-0 break-words">{children}</div>
+      <div className="relative -top-0.5 min-w-0 break-words">{children}</div>
     </div>
   );
 }
 
 /**
- * Stack of detail rows (13px apart, 24px below the title). Rows share one left edge: on tablets and phones the list is
+ * Stack of detail rows (12px apart, 25px below the title). Rows share one left edge: on tablets and phones the list is
  * a centered block of left-aligned rows under the centered title, like Calendly's phone layout.
  */
 export function BookingDetailList({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("mt-6 flex flex-col gap-[13px] max-[999px]:items-start max-[999px]:self-center max-[999px]:text-left", className)}>{children}</div>;
+  return <div className={cn("mt-[25px] flex flex-col gap-3 max-[999px]:items-start max-[999px]:self-center max-[999px]:text-left", className)}>{children}</div>;
 }
 
 /** Bottom of the details panel: the footer links pushed to the bottom (desktop) with the classic spacing. */
 export function BookingSideFooter({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("mt-auto px-6 pt-8 pb-[25px] max-[999px]:flex max-[999px]:justify-center min-[1000px]:pl-[31px]", className)}>{children}</div>;
+  return <div className={cn("mt-auto px-6 pt-8 pb-[26px] max-[999px]:flex max-[999px]:justify-center min-[1000px]:pl-[31px]", className)}>{children}</div>;
 }
 
-/** The main panel heading ("Select a Date & Time", "Enter Details": 21px bold on desktop, 22px on phones). */
+/**
+ * The main panel heading ("Select a Date & Time", "Enter Details": 21px bold on desktop with 0.4px tracking, which
+ * gives Figtree the width of Calendly's line; 22px on phones).
+ */
 export function BookingPanelHeading({ children, className, as: Tag = "h2" }: { children: React.ReactNode; className?: string; as?: "h1" | "h2" }) {
-  return <Tag className={cn("text-[22px] leading-7 font-bold text-public-text min-[600px]:text-[21px]", className)}>{children}</Tag>;
+  return <Tag className={cn("text-[22px] leading-7 font-bold text-public-text min-[600px]:text-[21px] min-[600px]:tracking-[0.4px]", className)}>{children}</Tag>;
 }
 
-/** Padding of the main panel content (32px sides on desktop, 20px for the calendar grid). */
+/**
+ * Padding of the main panel content (32px sides on desktop, 20px for the calendar grid). The 29px top puts the heading
+ * glyphs where Calendly's sit (Figtree draws them about 1px lower in the line box).
+ */
 export function BookingMainSection({ children, className, tight }: { children: React.ReactNode; className?: string; tight?: boolean }) {
-  return <div className={cn("min-w-0 pt-[30px] pb-6", tight ? "px-3 min-[600px]:px-5" : "px-5 min-[600px]:px-8", className)}>{children}</div>;
+  return <div className={cn("min-w-0 pt-[29px] pb-6", tight ? "px-3 min-[600px]:px-5" : "px-5 min-[600px]:px-8", className)}>{children}</div>;
 }

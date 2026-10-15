@@ -1,7 +1,7 @@
 // OWNER: foundation-ui.
 //
 // ProfileHeader (SPEC BK-01, BK-02; owner reference .reference/profile.png): the top of a landing page: the avatar
-// (64px circle, initials on #E7EDF6 without a photo), the host or team name as the page h1 (#476788, 650, 16px) and the
+// (65px circle, initials on #E7EDF6 without a photo), the host or team name as the page h1 (#476788, 650, 16px) and the
 // welcome message (#476788, 14px, centered, 286px wide: in Figtree that breaks the default welcome message into the
 // same three lines as the owner's page). Optional logo at the card's top-left (BR-05).
 import { cn } from "@/lib/cn";
@@ -21,15 +21,15 @@ export type ProfileHeaderProps = {
 export function ProfileHeader({ name, avatarUrl, welcomeMessage, logoUrl, hidden, className }: ProfileHeaderProps) {
   if (hidden) return <h1 className="sr-only">{name}</h1>;
   return (
-    <div className={cn("relative flex flex-col items-center px-6 pt-[25px] pb-[22px] text-center min-[650px]:pb-[42px]", className)}>
+    <div className={cn("relative flex flex-col items-center px-6 pt-[25px] pb-[21px] text-center min-[650px]:pb-[41px]", className)}>
       {logoUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logoUrl} alt="" className="mb-4 max-h-[60px] max-w-[160px] object-contain min-[650px]:absolute min-[650px]:top-[26px] min-[650px]:left-8 min-[650px]:mb-0" />
       )}
-      <Avatar src={avatarUrl} name={name} alt="" size={64} />
-      <h1 className="mt-[18px] text-[16px] leading-6 font-[650] break-words text-ink-2">{name}</h1>
+      <Avatar src={avatarUrl} name={name} alt="" size={65} />
+      <h1 className="mt-[17px] text-[16px] leading-6 font-[650] break-words text-ink-2">{name}</h1>
       {welcomeMessage && (
-        <p className="mt-[23px] max-w-[286px] text-[14px] leading-[21px] break-words whitespace-pre-line text-ink-2">{welcomeMessage}</p>
+        <p className="mt-6 max-w-[286px] text-[14px] leading-[21px] break-words whitespace-pre-line text-ink-2">{welcomeMessage}</p>
       )}
     </div>
   );

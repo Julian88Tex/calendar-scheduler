@@ -1,9 +1,10 @@
 // The "Enter Details" form (SPEC BK-09 to BK-12, BK-14, BK-16, BK-18, VID-03, VID-06; live capture
 // docs/research/calendly-live-capture.md items 7 to 13, 18 and 19): Name (or First and Last Name), Email, "Add guests"
-// (a blue outline pill that opens the "Guest email(s)" box, up to 10), the location choice as plain radio rows with
-// its phone or text input, custom questions in order, marketing consent, the terms sentence and "Schedule Event". The
-// fields sit in a 400px column with Calendly's spacing; inline errors use the server's messages and keys; the hidden
-// honeypot field `website` stays empty for people (BK-18). On phones the button stays in the page flow, as on Calendly.
+// (a pill outlined in its own dark blue text color that opens the "Guest email(s)" box, up to 10), the location choice
+// as plain radio rows with its phone or text input, custom questions in order, marketing consent, the terms sentence
+// and "Schedule Event" (14px semibold on every screen). The fields sit in a 400px column with Calendly's spacing;
+// inline errors use the server's messages and keys; the hidden honeypot field `website` stays empty for people
+// (BK-18). On phones the button stays in the page flow, as on Calendly.
 "use client";
 
 import type * as React from "react";
@@ -76,8 +77,9 @@ function TextField({
         {required && <RequiredMark />}
       </label>
       {children({ id, "aria-invalid": error ? true : undefined, "aria-describedby": [hintId, errorId].filter(Boolean).join(" ") || undefined })}
+      {/* The hint sits 10px under its field and 3px closer to the next label than the column gap, as captured. */}
       {hint && (
-        <p id={hintId} className="mt-[10px] text-[14px] leading-5 text-public-text">
+        <p id={hintId} className="mt-2 -mb-[3px] text-[14px] leading-5 text-public-text">
           {hint}
         </p>
       )}
@@ -215,8 +217,8 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
             )}
           </TextField>
         ) : (
-          // 14px under the email field and 23px above the next label, as captured.
-          <div data-field="guests" className="-mt-3 -mb-[3px]">
+          // 14px under the email field and 22px above the next label, as captured.
+          <div data-field="guests" className="-mt-3 -mb-1">
             <Button
               type="button"
               variant="secondary"
@@ -226,15 +228,16 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
                 // The button goes away: keep keyboard focus in the form, on the new guests input (GEN-05).
                 window.setTimeout(() => document.getElementById(`${base}-guests`)?.focus(), 0);
               }}
-              className="border-brand bg-public-bg text-brand-strong hover:bg-brand-soft active:bg-brand-hover max-[599px]:w-full"
+              className="border-current bg-public-bg text-brand-strong hover:bg-brand-soft active:bg-brand-hover max-[599px]:w-full"
             >
               {bt("details.addGuests")}
             </Button>
           </div>
         ))}
 
+      {/* The radio list starts 1px under its label and ends 3px into the column gap, where Calendly's rows sit. */}
       {multiple && (
-        <div className="flex min-w-0 flex-col gap-0.5" data-field="location">
+        <div className="-mb-[3px] flex min-w-0 flex-col gap-px" data-field="location">
           <span id={`${base}-location-legend`} className={FIELD_LABEL}>
             {bt("location.label")}
             <RequiredMark />
@@ -252,8 +255,9 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
               return {
                 value: l.id,
                 label: (
+                  // A 12x14 pin, bottom-aligned with the radio and ending 14px before the label, like Calendly's.
                   <span className="flex items-start gap-2.5">
-                    <LocationGlyph icon={o.icon} className="mt-[6px] size-[14px] shrink-0 text-navy" />
+                    <LocationGlyph icon={o.icon} className="mt-1 -ml-0.5 size-4 shrink-0 text-navy" />
                     <span>{runOnLabel(o.label)}</span>
                   </span>
                 ),
@@ -277,14 +281,14 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
         <input ref={honeypotRef} id={`${base}-hp`} type="text" name={p.honeypotName} tabIndex={-1} autoComplete="off" defaultValue="" />
       </div>
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-[21px]">
         <BookingLegalNotice appName={p.appName} termsUrl={p.termsUrl} privacyUrl={p.privacyUrl} />
 
         {/* Empty unless Cloudflare asks for a click ("interaction-only"). */}
         {turnstileRef && <div ref={turnstileRef} data-testid="turnstile" className="empty:hidden" />}
 
         <div>
-          <Button type="submit" loading={p.submitting} disabled={Boolean(p.disabledNote)} className={cn(BRAND_BUTTON, "max-[599px]:w-full max-[599px]:text-[16px]")}>
+          <Button type="submit" loading={p.submitting} disabled={Boolean(p.disabledNote)} className={cn(BRAND_BUTTON, "max-[599px]:w-full")}>
             {bt("details.schedule")}
           </Button>
           {p.disabledNote && <p className="mt-2 text-[13px] text-ink-2">{p.disabledNote}</p>}

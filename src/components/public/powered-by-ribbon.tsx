@@ -6,7 +6,7 @@
 // and the app name 14px bold, band shadow 0 2px 4px 0 rgb(0 0 0 / 20%), two 6x6 fold squares where the band wraps the
 // card edge; on phones (below 600px, full-bleed card) the box sits flush with the corner and a thicker 40px band (top
 // 12.5px, left -7.5px: it meets both viewport edges 37px to 93px from the corner, as captured at 390px) runs straight
-// off the edges with no fold squares, with an 8px label and a 15px name. Render it inside a `relative` card that does
+// off the edges with no fold squares, with a 7px label and a 15px name. Render it inside a `relative` card that does
 // not clip its overflow. Hidden when branding hides it (the caller omits it).
 import { APP_NAME } from "@/lib/brand";
 
@@ -38,7 +38,7 @@ export function PoweredByRibbon({ href = "/", appName = APP_NAME }: PoweredByRib
           "max-[599px]:top-[12.5px] max-[599px]:-left-[7.5px] max-[599px]:h-10"
         }
       >
-        <span className="block text-[8px] leading-[10px] font-bold tracking-normal uppercase">
+        <span className="block text-[8px] leading-[10px] font-bold tracking-normal uppercase max-[599px]:text-[7px]">
           Powered by
         </span>
         <span className="block max-w-[110px] truncate text-[14px] leading-4 font-bold max-[599px]:text-[15px] max-[599px]:leading-[18px]">{appName}</span>

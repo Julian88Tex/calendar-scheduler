@@ -21,10 +21,13 @@ export type BackButtonProps = {
 const CLASS =
   "inline-flex size-[43px] shrink-0 items-center justify-center rounded-full border border-line bg-public-bg text-brand-strong transition-colors duration-100 hover:bg-brand-hover";
 
-/** Calendly's arrow: 16px wide and 14px tall once stroked (lucide's ArrowLeft draws a smaller, lighter square glyph). */
+/**
+ * Calendly's arrow: 16px wide and 14px tall once stroked (lucide's ArrowLeft draws a smaller, lighter square glyph),
+ * set 1px below the circle's center as Calendly's is.
+ */
 function Arrow() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 18 16" className="h-4 w-[18px] fill-none stroke-current" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" viewBox="0 0 18 16" className="h-4 w-[18px] translate-y-px fill-none stroke-current" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 2 2 8l6 6M2.5 8H16" />
     </svg>
   );
