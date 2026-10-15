@@ -738,7 +738,7 @@ export function BookingFlow(p: BookingPageProps) {
   const zonePicker = (className?: string) =>
     event.lockedTimeZone ? (
       <div className={cn("flex flex-col items-start gap-1", className)} data-testid="locked-zone">
-        <span className="text-[14px] leading-5 font-[650] text-ink">{bt("page.timeZone")}</span>
+        <span className="text-[14px] leading-5 font-[640] text-ink">{bt("page.timeZone")}</span>
         <LockedZone zone={event.lockedTimeZone} hour12={hour12} />
       </div>
     ) : zoneReady ? (

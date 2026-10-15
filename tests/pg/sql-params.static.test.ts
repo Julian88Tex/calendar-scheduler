@@ -13,7 +13,9 @@
 // A value only avoids all of this when drizzle binds it through a column encoder (typed operators such as
 // lt(table.col, date), .values(), .set()). This test type-checks every source file that builds SQL and fails when a raw
 // parameter (inside a sql`` template, sql.param, sql.join, or an operator whose left side is sql`` rather than a
-// column) has a type other than string, number or bigint, and when sql<number> counts or sums without a cast.
+// column) has a type other than string, number or bigint, and when sql<number> counts or sums without a cast. It does
+// not see where a parameter lands: a string or number is still wrong next to a boolean, a jsonb or a timestamp
+// without a cast, which the canaries show.
 // tests/pg/sql-params.pg.test.ts shows each behavior on real Postgres.
 import fs from "node:fs";
 import path from "node:path";

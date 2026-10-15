@@ -28,14 +28,14 @@ export function GlobeIcon({ className, strokeWidth = 2, style, radius = 10 }: Ic
   );
 }
 
-/** Calendar page with two rings and a "1": 18x20 inside a 22px box (the details row's time line). */
+/** Calendar page with two rings and a "1": about 18x20 inside a 22px box (the details row's time line). */
 export function CalendarDayIcon({ className, strokeWidth = 1.8, style }: IconProps) {
   return (
     <svg aria-hidden="true" focusable="false" viewBox="0 0 22 22" className={className} style={style} fill="none">
       <g stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2.8" y="3.8" width="16.4" height="16.4" rx="2" />
-        <path d="M7.2 1.8v3.8M14.8 1.8v3.8M2.8 8.6h16.4" />
-        <path d="M10 13.2l1.3-1v5" />
+        <rect x="3.4" y="3.8" width="15.9" height="16.4" rx="2" />
+        <path d="M7.55 1.8v3.8M15.15 1.8v3.8M3.4 8.6h15.9" />
+        <path d="M10.35 13.2l1.3-1v5" />
       </g>
     </svg>
   );
@@ -43,8 +43,8 @@ export function CalendarDayIcon({ className, strokeWidth = 1.8, style }: IconPro
 
 /**
  * Video camera: a square body with tight corners and a lens 8.7 units tall, centered 1.1 units above the box's middle
- * (in a 22px box: a 14x14 body and a 20px wide glyph, where Calendly draws it). Takes the stroke width from its props or
- * from a parent's [&_svg] rule, like the lucide icons it replaces.
+ * (in a 22px box: a 14x14 body and a 20px wide glyph, where Calendly draws it). Takes the stroke width from its props
+ * or from a parent's [&_svg] rule, like the lucide icons it replaces.
  */
 export function VideoCameraIcon({ className, strokeWidth = 2, style }: IconProps) {
   return (
@@ -60,8 +60,8 @@ export function VideoCameraIcon({ className, strokeWidth = 2, style }: IconProps
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="2" y="4.4" width="13.1" height="13" rx="1.4" />
-      <path d="M15.1 9.3 21.6 6.55v8.7l-6.5-2.75" />
+      <rect x="2.2" y="4.4" width="13.1" height="13" rx="1.4" />
+      <path d="M15.3 9.3 21.8 6.55v8.7l-6.5-2.75" />
     </svg>
   );
 }

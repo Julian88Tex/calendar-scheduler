@@ -121,7 +121,10 @@ export function EventDetailsPanel({
       >
         <HostHeaderView header={host} className={cn(details && "max-[599px]:hidden")} />
         <BookingEventTitle>{event.name || namePlaceholder}</BookingEventTitle>
-        <BookingDetailList className={cn(details ? "max-[599px]:mt-6 max-[599px]:gap-[17px] max-[599px]:self-stretch" : "max-[599px]:gap-4 max-[599px]:px-6")}>
+        {/* Desktop rows stop 12px short of the panel's padding, so long lines wrap where Calendly's do. */}
+        <BookingDetailList
+          className={cn(details ? "max-[599px]:mt-6 max-[599px]:gap-[17px] max-[599px]:self-stretch" : "max-[599px]:gap-4 max-[599px]:px-6", "min-[1000px]:pr-3")}
+        >
           <BookingDetailRow icon={<Clock />}>
             {onDurationChange && event.durations.length > 1 ? (
               <DurationPicker value={duration} options={event.durations} onChange={onDurationChange} />
@@ -137,15 +140,20 @@ export function EventDetailsPanel({
               {row.detail && <span className="block font-normal whitespace-pre-line">{row.detail}</span>}
             </BookingDetailRow>
           ))}
-          {/* Calendly sets these two icons 1.5px right of the clock, and the calendar in the text's #476788. */}
+          {/*
+            Calendly sets these two icons about 1.5px right of the clock (the calendar 1px higher, the globe a 19.5px
+            circle), the calendar in the text's #476788, and the zone name 1px lower than the other rows' text.
+          */}
           {when && (
-            <BookingDetailRow icon={<CalendarDayIcon className="translate-x-[1.5px]" />} iconClassName="text-ink-2" className="gap-[11px]">
+            <BookingDetailRow icon={<CalendarDayIcon className="translate-x-[1.5px] -translate-y-px" />} iconClassName="text-ink-2" className="gap-[11px]">
               <span data-testid="details-when">{when.text}</span>
             </BookingDetailRow>
           )}
           {(when || lockedZoneName) && (
-            <BookingDetailRow icon={<GlobeIcon className="translate-x-[1.5px]" />} className="gap-[11px]">
-              <span data-testid="details-zone">{when?.zoneName ?? lockedZoneName}</span>
+            <BookingDetailRow icon={<GlobeIcon className="translate-x-[1.75px]" radius={9.64} />} className="gap-[11px]">
+              <span data-testid="details-zone" className="relative top-px">
+                {when?.zoneName ?? lockedZoneName}
+              </span>
             </BookingDetailRow>
           )}
         </BookingDetailList>

@@ -293,6 +293,23 @@ test.describe("booking flows", () => {
     await expect(page.getByText("You can add up to 10 guests.")).toHaveCount(0);
   });
 
+  test("refused submits: a click keeps focus on Schedule Event, the keyboard moves it to the first invalid field", async ({ page }) => {
+    await page.goto("/julianjoseph/30min/2030-10-08T18:00:00Z", SLOW);
+    const schedule = page.getByRole("button", { name: "Schedule Event" });
+    // Like Calendly (live capture item 18), a pointer submit marks every empty field without moving focus.
+    await schedule.click();
+    await expect(page.locator('[data-field="name"]').getByRole("alert")).toHaveText("Can't be blank.");
+    await expect(page.locator('[data-field="email"]').getByRole("alert")).toHaveText("Can't be blank.");
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveAttribute("aria-invalid", "true");
+    await expect(schedule).toBeFocused();
+    // Enter in a field submits through the keyboard: focus goes to the first field that still needs an answer.
+    const name = page.getByRole("textbox", { name: "Name", exact: true });
+    await name.fill("Ana Lima");
+    await name.press("Enter");
+    await expect(page.getByRole("textbox", { name: "Email", exact: true })).toBeFocused();
+    await expect(page.locator('[data-field="name"]').getByRole("alert")).toHaveCount(0);
+  });
+
   test("the meal event offers its 9 locations and requires a choice", async ({ page, axe }) => {
     // Block Off Work on Tuesdays is 17:00 to 20:00 Pacific: 20:00 in New York.
     const times = await openDay(page, "/julianjoseph/meal", "Tuesday, October 8 - Times available");

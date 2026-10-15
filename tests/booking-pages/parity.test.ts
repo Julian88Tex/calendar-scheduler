@@ -1,7 +1,7 @@
 // Calendly parity details of the booking pages (docs/research/calendly-live-capture.md): the phone times view title
 // and date, location labels that run on, the legal links' fallbacks (BK-09: /terms and /privacy), the footer copy and
-// the terms sentence (its closing period inside the Privacy Notice link), the Calendly-cased copy deck strings and the
-// booking icons drawn like Calendly's.
+// the terms sentence (its closing period inside the Privacy Notice link), the Calendly-cased copy deck strings, the
+// booking icons and the warning icon drawn like Calendly's, the pages' letter spacing and the 40px ribbon band.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,9 @@ import { BookingLegalNotice, legalNoticeParts, RequiredMark } from "@/components
 import { longDate, runOnLabel, weekdayTitle } from "@/components/booking/lib/display";
 import { bt } from "@/components/booking/lib/t";
 import { legalLinkHref, privacyPolicyHref, PublicFooterLinks } from "@/components/public/public-footer-links";
-import { CalendarDayIcon, GlobeIcon } from "@/components/ui/booking-icons";
+import { PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
+import { PoweredByRibbon } from "@/components/public/powered-by-ribbon";
+import { CalendarDayIcon, GlobeIcon, VideoCameraIcon } from "@/components/ui/booking-icons";
 
 describe("phone times view header", () => {
   it("titles the day with its weekday and shows the full date with the year", () => {
@@ -115,6 +117,10 @@ describe("form parts", () => {
     expect(error).toContain('id="e1"');
     expect(error).toContain("Can&#x27;t be blank.");
     expect(renderToStaticMarkup(createElement(BookingFieldError, { error: null }))).toBe("");
+    // Calendly's warning icon: a 16x13 triangle with rounded corners (a round-joined outline) and a white "!".
+    expect(error).toContain('viewBox="0 0 16 13"');
+    expect(error).toContain('stroke-linejoin="round"');
+    expect(error).toContain('aria-hidden="true"');
   });
 });
 
@@ -131,10 +137,31 @@ describe("booking icons", () => {
     expect(small).toMatch(/<g[^>]*stroke-width="2.2"/);
   });
 
+  it("draws the video camera with a square body and leaves its stroke width to the row's rule", () => {
+    const html = renderToStaticMarkup(createElement(VideoCameraIcon, { className: "size-4" }));
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('focusable="false"');
+    expect(html).toMatch(/<rect[^>]*width="13.1"[^>]*height="13"/);
+    // The stroke width sits on the svg itself (BookingDetailRow's [&_svg] rule may thicken it, as for lucide icons).
+    expect(html).toMatch(/<svg[^>]*stroke-width="2"/);
+    expect(html).not.toContain("<g");
+  });
+
   it("draws the calendar as an 18x20 page inside a 22px box", () => {
     const html = renderToStaticMarkup(createElement(CalendarDayIcon, {}));
     expect(html).toContain('viewBox="0 0 22 22"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain("<rect");
+  });
+});
+
+describe("public text", () => {
+  it("tightens the booking pages' letter spacing and keeps the ribbon's", () => {
+    expect(PUBLIC_TEXT_TRACKING).toBe("tracking-[-0.01em]");
+    const ribbon = renderToStaticMarkup(createElement(PoweredByRibbon, { appName: "Kairos" }));
+    expect(ribbon).toContain('aria-label="Powered by Kairos"');
+    // The 40px band (inner edge corner to corner) with its own normal tracking.
+    expect(ribbon).toContain("h-10");
+    expect(ribbon).toContain("tracking-normal");
   });
 });

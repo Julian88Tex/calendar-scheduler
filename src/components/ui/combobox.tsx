@@ -6,8 +6,8 @@
 // search). Grouped options render under group headings. variant="public" is the booking page picker
 // (docs/research/calendly-live-capture.md item 17): no dividers, a tight shadow, a 2px blue search field inset 20px
 // (12px from the top, its magnifier 10px in), 13px extra-bold navy group headings, flush rows that wrap with a light
-// blue selected tint (no check mark), a 214px list viewport that lets the next row peek out at the bottom, a 6px radius,
-// Calendly's slightly tighter letter spacing for Figtree, and the browser's own scrollbar in a reserved gutter
+// blue selected tint (no check mark), a 214px list viewport that lets the next row peek out at the bottom, a 6px
+// radius, Calendly's slightly tighter letter spacing for Figtree, and the browser's own scrollbar in a reserved gutter
 // (scrollbar-gutter: stable): Calendly's list uses the native one, a classic 15px bar with arrows on Windows and Linux
 // and an overlay bar on macOS, and the reserved space keeps rows and times where Calendly's sit even where the bar is
 // hidden (headless screenshots run Chromium with --hide-scrollbars).
@@ -257,7 +257,7 @@ export function Combobox({
             {groups.map((g) => (
               <li key={g.group ?? "__none"} role="presentation">
                 {g.group && (
-                  <div className={isPublic ? "px-5 pt-[11px] pb-1 text-[13px] leading-5 font-extrabold text-ink uppercase" : "px-3 pt-3 pb-1 text-eyebrow text-ink-2"} aria-hidden="true">
+                  <div className={isPublic ? "px-5 pt-[9px] pb-1.5 text-[13px] leading-5 font-extrabold text-ink uppercase" : "px-3 pt-3 pb-1 text-eyebrow text-ink-2"} aria-hidden="true">
                     {g.group}
                   </div>
                 )}

@@ -23,12 +23,14 @@ const CLASS =
 
 /**
  * Calendly's arrow: 16px wide and 14px tall once stroked (lucide's ArrowLeft draws a smaller, lighter square glyph),
- * set 1px below the circle's center as Calendly's is.
+ * set 1px below the circle's center as Calendly's is: a 2.05 head and a crisp 2px shaft (the glyph box lands on
+ * whole pixels, so a 2px stroke centered on y=8 fills exactly two rows).
  */
 function Arrow() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 18 16" className="h-4 w-[18px] translate-y-px fill-none stroke-current" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 2 2 8l6 6M2.5 8H16" />
+    <svg aria-hidden="true" viewBox="0 0 18 16" className="h-4 w-[18px] translate-y-px fill-none stroke-current" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2 2 8l6 6" strokeWidth={2.05} />
+      <path d="M2.5 8H16" strokeWidth={2} />
     </svg>
   );
 }

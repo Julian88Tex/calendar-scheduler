@@ -22,7 +22,7 @@ follow-ups).
 
 - **Integration and unit tests** (Vitest, PGlite): the email outbox read model and Resend
   (`src/app/(dashboard)/app/settings/email-outbox/outbox.test.ts`), the fixture guard
-  (`src/app/reschedulings/host-dialogs-fixture/page.test.ts`), and the whole default project (191 files).
+  (`src/app/reschedulings/host-dialogs-fixture/page.test.ts`), and the whole default project (192 files).
 - **Equivalence check** of the meeting poll time helpers rewritten without Luxon: 379,068 comparisons against the old
   Luxon implementation over 20 time zones (including Lord Howe's 30 minute DST, Santiago and Havana with DST at
   midnight, Casablanca, Apia, Chatham) and every day of 2024 to 2027: no difference.
@@ -51,8 +51,11 @@ follow-ups).
 | Gmail sending not connected (EMAIL_PROVIDER=gmail): rows "Waiting for Gmail" with the reason (no internal prefix), "Reconnect Google" link to `/app/integrations/calendars/google`, the page banner; after 24 hours "Failed" with "Not sent: ..." (no "permanent: " prefix) and Resend, whose new copy waits for Gmail again | gmail-hold.spec | Pass |
 | `/reschedulings/host-dialogs-fixture` is the 404 page outside E2E test mode (before any session or database read; generic metadata) and keeps working for the lifecycle-ui e2e | page.test.ts, lifecycle-ui host-dialogs.spec | Pass |
 
-Golden-path suite: 10 tests in the default run plus 1 in the Gmail run, all passing (about 4 minutes in all). Vitest
-default project: 2,535 tests passing.
+Golden-path suite: 10 tests in the default run plus 1 in the Gmail run, all passing (about 4 minutes in all; two full
+runs). Vitest default project: 2,536 tests in 192 files passing. One earlier full run had the 60 Minute booking answer
+"Sorry, that time is no longer available." although the booking was made (the slot list then started after it): it
+happened while another agent was editing the booking components the dev server recompiles, and did not reproduce
+alone or in the next full run; see item 8 below.
 
 ## Changes made for go-live
 
@@ -107,6 +110,11 @@ default project: 2,535 tests passing.
 6. The Integrations hub "Email delivery" tile could link to the new outbox page (`_shell/integrations-hub.tsx`).
 7. The new route handler `src/app/api/public/polls/[slug]/state/route.ts` lives in the polls-core API folder (the
    proxy cannot read the database itself).
+8. **Possible double submit of "Schedule Event"** (booking-pages, under active parity work): seen once, see Results.
+   If the details form can post twice (a remount during the request, or a second click while the first request is in
+   flight), the second post answers "no longer available" for the invitee's own new booking. Worth a look: keep the
+   button busy until the navigation to `/booking/{id}` happens, and treat a conflict with the invitee's own just made
+   booking as success.
 
 ## Known gaps (not covered by this suite)
 

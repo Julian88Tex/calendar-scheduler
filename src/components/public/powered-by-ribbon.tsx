@@ -3,10 +3,10 @@
 // PoweredByRibbon (ARCHITECTURE 20.2, SPEC section 8 intro, GEN-01, BR-06): the diagonal "POWERED BY / {AppName}" band
 // in the public card's top-right corner. Exact geometry: a 105x105 clip box at top -5px, right -5px; a 160px band, 40px
 // thick as on every live capture (it meets the box top 56px from the corner), rotated 45 degrees with its inner edge
-// running corner to corner and its label stack centered, fill #505960 (hover #40474C), "POWERED BY" 8px uppercase
-// and the app name 14px bold, band shadow 0 2px 4px 0 rgb(0 0 0 / 20%), two 6x6 fold squares where the band wraps the
-// card edge; on phones (below 600px, full-bleed card) the box sits flush with the corner and the band, moved 8px out
-// (top 12.5px, left -7.5px: it meets both viewport edges 37px to 93px from the corner, as captured at 390px), runs straight
+// running corner to corner and its label stack centered, fill #505960 (hover #40474C), "POWERED BY" 8px uppercase and
+// the app name 14px bold, band shadow 0 2px 4px 0 rgb(0 0 0 / 20%), two 6x6 fold squares where the band wraps the card
+// edge; on phones (below 600px, full-bleed card) the box sits flush with the corner and the band, moved 8px out (top
+// 12.5px, left -7.5px: it meets both viewport edges 37px to 93px from the corner, as captured at 390px), runs straight
 // off the edges with no fold squares, with a 7px label and a 15px name. Render it inside a `relative` card that does
 // not clip its overflow. Hidden when branding hides it (the caller omits it).
 import { APP_NAME } from "@/lib/brand";
