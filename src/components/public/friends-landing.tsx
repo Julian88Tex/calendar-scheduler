@@ -1,3 +1,5 @@
+// OWNER: foundation-ui.
+//
 // FriendsLanding: the /{handle}?friends=1 landing card of friends mode (lib/friends.ts): the host's avatar, greeting,
 // note and sign-off, their favorite ways to hang as chips, and their event types under friendly names. The words come
 // from the host's Settings > Friends mode. Server and client safe.

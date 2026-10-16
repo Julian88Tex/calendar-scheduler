@@ -1,7 +1,9 @@
-"use client";
+// OWNER: foundation-ui.
+//
 // ToneToggle: the Friends / Business switch of friends mode (lib/friends.ts). Shown only on pages opened with the
 // ?friends parameter; each side links to the current URL (path and query as they are now, so a picked month or date
 // survives) with friends=1 or friends=0.
+"use client";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
