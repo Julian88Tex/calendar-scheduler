@@ -25,7 +25,7 @@ const FRIENDS_TEXT: Record<string, string> = {
   "page.selectTimeHeading": "Pick a time",
   "page.noTimes": "Nothing open that day. Try another one?",
   "page.noTimesInMonth": "I'm all booked up in {month}",
-  "page.backToLanding": "Back to all the ways to hang",
+  "page.backToLanding": "Back to all the options",
   "details.title": "Almost there!",
   "details.schedule": "Lock it in",
   "confirmation.title": "It's a date!",
@@ -36,12 +36,12 @@ const FRIENDS_TEXT: Record<string, string> = {
   "confirmation.sentEmail": "A confirmation is on its way to your inbox. See you soon!",
   "confirmation.needChanges": "Plans changed? No worries at all.",
   "confirmation.reschedule": "Pick a new time",
-  "confirmation.scheduleAnother": "Plan another hang",
+  "confirmation.scheduleAnother": "Book another time",
 };
 
 /** Fixed friends lines. {firstName} is the host's first name. The editable ones live in FriendsContent. */
 export const FRIENDS_COPY = {
-  landingTitle: "Hang out with {firstName}",
+  landingTitle: "Time with {firstName}",
   pageTitle: "Pick a time with {firstName}",
   empty: "{firstName} doesn't have any open times right now. Text me and we'll figure something out!",
 } as const;

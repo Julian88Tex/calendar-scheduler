@@ -34,7 +34,7 @@ export type ConfirmationView = {
   eventTypeSlug: string | null;
   /** Owner of a personal event type (friends mode content), else null. */
   eventTypeOwnerUserId: string | null;
-  /** "/{handle}" of that owner (friends mode "Plan another hang"), else null. */
+  /** "/{handle}" of that owner (friends mode "Book another time"), else null. */
   ownerLandingPath: string | null;
   hostNames: string[];
   hostAvatar: { src: string | null; name: string } | null;

@@ -17,7 +17,7 @@ export default async function FriendsModePage() {
   const friendsUrl = user.slug ? `${appUrl()}/${user.slug}?friends=1` : null;
   return (
     <div className="flex max-w-3xl min-w-0 flex-col">
-      <PageHeader title="Friends mode" description="A warmer version of your booking pages for the people you actually want to hang out with." />
+      <PageHeader title="Friends mode" description="A warmer version of your booking pages for the people you actually want to see." />
       <FriendsSettings content={content} eventTypes={eventTypes} friendsUrl={friendsUrl} />
     </div>
   );

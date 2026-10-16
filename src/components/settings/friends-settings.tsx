@@ -122,7 +122,7 @@ export function FriendsSettings({ content, eventTypes, friendsUrl }: FriendsSett
       </Card>
 
       <Card padding="lg" className="flex flex-col gap-5">
-        <CardHeader title="Favorite ways to hang" description={`Shown as small chips under your note. Up to ${FRIENDS_LIMITS.favorites}; remove them all to hide the row.`} />
+        <CardHeader title="Favorites" description={`Shown as small chips under your note. Up to ${FRIENDS_LIMITS.favorites}; remove them all to hide the row.`} />
         <FormField label="Heading">{(c) => <Input {...c} {...text("favoritesHeading")} maxLength={FRIENDS_LIMITS.short} />}</FormField>
         <ul className="flex flex-col gap-2" aria-label="Favorites">
           {v.favorites.map((f, i) => (

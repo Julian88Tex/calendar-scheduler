@@ -30,19 +30,19 @@ export const DEFAULT_FRIENDS_CONTENT: FriendsContent = {
   greeting: "Hey, friend!",
   note: "Really glad you're here. Life gets busy, but time with you is the kind I want to make room for. Pick whatever works and it goes straight on my calendar.",
   signOff: "Can't wait to see you,",
-  favoritesHeading: "Favorite ways to hang",
+  favoritesHeading: "Things I love doing",
   favorites: [
     { emoji: "🍕", label: "Pizza" },
     { emoji: "☕", label: "Coffee" },
     { emoji: "🚶", label: "Walk and talk" },
     { emoji: "📞", label: "Catch-up call" },
   ],
-  chooseHeading: "How do you want to hang?",
+  chooseHeading: "What sounds good?",
   detailsIntro: "Just tell me who's coming and I'll save the date.",
   confirmationNote: "Seriously, thanks for making the time. It means a lot.",
   events: {
     "30min": { name: "Quick video catch-up", blurb: "Thirty minutes to hear what's new with you." },
-    "60min": { name: "Long video hang", blurb: "A whole hour, no rush. Bring the stories." },
+    "60min": { name: "Long video chat", blurb: "A whole hour, no rush. Bring the stories." },
     meal: { name: "Grab pizza (or coffee)", blurb: "You pick the spot, I bring the appetite." },
   },
 };

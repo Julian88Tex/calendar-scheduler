@@ -4,7 +4,7 @@
 // alone opens it), noindex. Old invitee ids of a rescheduled booking open the current one; times use the invitee's
 // stored zone and time format; the ICS download is /booking/{inviteeId}/event.ics. ?friends=1 (carried from a friends
 // mode booking, lib/friends.ts) shows it in the friends voice and theme: friendly event name, the host by first name, the
-// host's thank-you note and "Plan another hang" back to /{handle}?friends=1.
+// host's thank-you note and "Book another time" back to /{handle}?friends=1.
 import type { Metadata } from "next";
 import type { Route } from "next";
 import { notFound, redirect } from "next/navigation";

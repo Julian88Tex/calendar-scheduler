@@ -38,7 +38,7 @@ test.describe("friends link", () => {
       await expect(page.getByTestId("tone-toggle")).toBeVisible();
       await expect(page.getByRole("heading", { level: 1, name: /Hey, friend!/ })).toBeVisible();
       await expect(page.getByTestId("friends-hello")).toContainText("Can't wait to see you,");
-      await expect(page.getByTestId("friends-favorites")).toContainText("Favorite ways to hang");
+      await expect(page.getByTestId("friends-favorites")).toContainText("Things I love doing");
       await expect(page.getByTestId("friends-favorites")).toContainText("Pizza");
       await expect(page.getByText("Always a yes")).toHaveCount(0);
       await expect(page.getByRole("link", { name: /Grab pizza \(or coffee\)/ })).toBeVisible();
