@@ -139,6 +139,7 @@ const DISPLAY_KEYS = new Set([
   "utm_content",
   "utm_term",
   "salesforce_uuid",
+  "friends",
 ]);
 
 /** Parameters a landing page forwards to its event links (prefill, UTM, display and embed parameters). */

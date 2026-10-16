@@ -4,6 +4,7 @@
 import "server-only";
 import type { Metadata } from "next";
 import { PublicPageShell } from "@/components/public/public-page-shell";
+import { FRIENDS_PARAM } from "./lib/friends";
 import { BookingFlow } from "./booking-flow";
 import type { BookingPageResult } from "./server/booking-page";
 import { descriptionOf } from "./server/booking-page";
@@ -32,7 +33,7 @@ export function BookingPageView({ result }: { result: BookingPageResult }) {
   }
   const p = result.props;
   return (
-    <PublicPageShell branding={p.branding} embed={p.embed.embed} showFooterLinks={false} hideGdprBanner={p.embed.hideGdprBanner} operatorEmail={p.operatorEmail} privacyUrl={p.privacyUrl} tone={p.tone}>
+    <PublicPageShell branding={p.branding} embed={p.embed.embed} showFooterLinks={false} hideGdprBanner={p.embed.hideGdprBanner} operatorEmail={p.operatorEmail} privacyUrl={p.privacyUrl} tone={p.tone} showToneToggle={p.carry.some(([k]) => k === FRIENDS_PARAM)}>
       <BookingFlow {...p} />
     </PublicPageShell>
   );

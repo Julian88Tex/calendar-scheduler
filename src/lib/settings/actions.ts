@@ -13,6 +13,8 @@ import { getSession } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
 import { assertRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { absoluteUrl } from "@/lib/url";
+import { FriendsSettingsInput, resetFriendsSettings, saveFriendsSettings } from "./friends";
+import type { FriendsContent } from "@/components/booking/lib/friends";
 import {
   changeHandle,
   checkHandle,
@@ -66,6 +68,24 @@ export async function setShowBrandingAction(raw: unknown): Promise<ActionResult<
     const saved = await setShowBranding(db, actor.user.id, showBranding);
     revalidatePath("/app/settings/branding");
     return { showBranding: saved };
+  });
+}
+
+/** Friends mode: the words, favorites and friendly event names of the ?friends=1 pages. */
+export async function saveFriendsSettingsAction(raw: unknown): Promise<ActionResult<FriendsContent>> {
+  return runAction(FriendsSettingsInput, raw, async (input, { actor, db }) => {
+    const saved = await saveFriendsSettings(db, actor.user.id, input);
+    revalidatePath("/app/settings/friends");
+    return saved;
+  });
+}
+
+/** Friends mode back to the default words. */
+export async function resetFriendsSettingsAction(): Promise<ActionResult<FriendsContent>> {
+  return runAction(NoInput, undefined, async (_input, { actor, db }) => {
+    const saved = await resetFriendsSettings(db, actor.user.id);
+    revalidatePath("/app/settings/friends");
+    return saved;
   });
 }
 

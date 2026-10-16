@@ -111,6 +111,8 @@ export type BookingPageProps = {
   appName: string;
   /** Path of the confirmation page for an invitee id ("/booking/{id}"). */
   confirmationBase: string;
-  /** Voice and look of the page: the classic public page, or the friends link (/friends, lib/friends.ts). */
+  /** Voice and look of the page: the classic public page, or friends mode (?friends=1, lib/friends.ts). */
   tone?: Tone;
+  /** Friends mode lines from the host's settings. */
+  friendsCopy?: { detailsIntro: string };
 };

@@ -58,7 +58,7 @@ import {
 } from "./lib/form";
 import { longDate, weekdayTitle } from "./lib/display";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
-import { FRIENDS_COPY, toneText } from "./lib/friends";
+import { toneText } from "./lib/friends";
 import { bt as baseText, type Vars } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
 import { calendarHref, detailsHref, landingForwardParams, parseDate, parseMonth, startFromPath, withCarried } from "./lib/url-state";
@@ -659,9 +659,9 @@ export function BookingFlow(p: BookingPageProps) {
                 {bt("details.title")}
               </span>
             </BookingPanelHeading>
-            {p.tone === "friends" && (
+            {p.tone === "friends" && p.friendsCopy?.detailsIntro && (
               <p className="mt-2 mb-4 text-[15px] leading-[22px] text-ink-2" data-testid="friends-details-intro">
-                {FRIENDS_COPY.detailsIntro}
+                {p.friendsCopy.detailsIntro}
               </p>
             )}
             {hideSide && whenText && (

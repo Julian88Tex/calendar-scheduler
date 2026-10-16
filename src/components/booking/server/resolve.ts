@@ -1,7 +1,8 @@
 // Page resolvers of the public booking routes (SPEC BK-03, BK-08, BK-23, BK-27). Server only. Cached per request with
 // primitive arguments, so generateMetadata and the page share one resolution.
 //
-//   resolveEventPage(handle, eventSlug, mode, start, query)   /{handle}/{eventSlug}[/{start}]
+//   resolveEventPage(handle, eventSlug, mode, start, query)   /{handle}/{eventSlug}[/{start}]; ?friends=1 is friends
+//                                                              mode (lib/friends.ts) for non-secret event types
 //   resolveCodePage(code, slug, mode, start, query)           /d/{code}/{slug}[/{start}]: a non-current slug answers a
 //                                                              301 to the current one, keeping the start and the query
 import "server-only";
@@ -9,6 +10,7 @@ import { cache } from "react";
 import { resolveTargetByCode, resolveTargetBySlugs } from "@/lib/booking";
 import { resolveBookingCode } from "@/lib/links";
 import { parseStartParam } from "@/lib/url";
+import { FRIENDS_PARAM, toneOfParam } from "../lib/friends";
 import { loadBookingPage, loadNewTypePreview, PREVIEW_SLUG, type BookingPageResult } from "./booking-page";
 
 export type ResolvedPage = BookingPageResult | { state: "redirect"; location: string } | null;
@@ -46,6 +48,7 @@ export const resolveEventPage = cache(
     }
     const target = await resolveTargetBySlugs(handle, eventSlug);
     if (!target) return null;
+    const tone = target.kind === "event_type" && !target.eventType.secret ? toneOfParam(sp.get(FRIENDS_PARAM)) : "public";
     return loadBookingPage({
       target,
       basePath: `/${encodeURIComponent(handle)}/${encodeURIComponent(target.eventType.slug)}`,
@@ -53,6 +56,7 @@ export const resolveEventPage = cache(
       searchParams: sp,
       mode,
       start,
+      tone,
     });
   },
 );

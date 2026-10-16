@@ -17,6 +17,8 @@ export type LandingItem = { id: string; name: string; color: string; slug: strin
 export type LandingData = {
   kind: "user" | "team";
   handle: string;
+  /** The user of a user landing page (friends mode content), null for teams. */
+  userId: string | null;
   name: string;
   avatarUrl: string | null;
   logoUrl: string | null;
@@ -51,6 +53,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
     const legal = await getLegalLinks();
     return {
       kind: "team",
+      userId: null,
       handle,
       name: team.team.name,
       avatarUrl: team.team.avatarUrl,
@@ -97,6 +100,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
   return {
     kind: "user",
     handle,
+    userId: owner.userId,
     name: profile.name,
     avatarUrl: profile.avatarUrl,
     logoUrl: profile.logoUrl,

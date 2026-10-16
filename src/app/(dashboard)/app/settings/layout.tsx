@@ -1,7 +1,7 @@
 // OWNER: foundation-ui.
 //
 // Settings section (SPEC BR-14 narrowed by docs/SCOPE.md): the account settings sub-navigation in groups: "Account"
-// (Profile, Branding, My Link, Login and security: the settings pages docs/SCOPE.md keeps; Notifications, Cookie
+// (Profile, Branding, My Link, Friends mode, Login and security: the settings pages docs/SCOPE.md keeps; Notifications, Cookie
 // settings, Privacy and Import from Calendly are not built), "Calendar" (links to the Availability tabs: Calendar
 // settings, Availability, Advanced) and "Integrations" (the hub). Becomes a select on phones. "Email outbox"
 // (golden-path-qa, docs/SCOPE.md item 15) is listed under "Account" for the people who may open it (the owner and
@@ -24,6 +24,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           { href: "/app/settings/profile", label: "Profile", group: "Account" },
           { href: "/app/settings/branding", label: "Branding", group: "Account" },
           { href: "/app/settings/link", label: "My Link", group: "Account" },
+          { href: "/app/settings/friends", label: "Friends mode", group: "Account" },
           { href: "/app/settings/login", label: "Login and security", group: "Account" },
           ...outbox,
           { href: "/app/availability/calendar-settings", label: "Calendar settings", group: "Calendar" },
