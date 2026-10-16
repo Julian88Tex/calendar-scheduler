@@ -3,7 +3,7 @@
 // Each item opens /friends/{eventSlug}?back=1, the same booking flow as the public page in the friends voice.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { FRIENDS_COPY, FRIENDS_PATH, firstNameOf, friendlyEventOf, friendsLine } from "@/components/booking/lib/friends";
+import { FRIENDS_ALWAYS_YES, FRIENDS_COPY, FRIENDS_PATH, firstNameOf, friendlyEventOf, friendsLine } from "@/components/booking/lib/friends";
 import { loadFriendsLanding } from "@/components/booking/server/friends";
 import { PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
 import { EventTypeList } from "@/components/public/event-type-list";
@@ -52,6 +52,17 @@ export default async function Page() {
             {FRIENDS_COPY.signOff}
             <span className="friends-signature mt-1 block text-[22px] font-bold text-brand-strong">{firstName}</span>
           </p>
+          <div className="mt-7" data-testid="friends-always-yes">
+            <h2 className="text-[13px] font-bold tracking-[0.08em] text-ink-2 uppercase">{FRIENDS_COPY.alwaysYesHeading}</h2>
+            <ul className="mt-3 flex flex-wrap justify-center gap-2">
+              {FRIENDS_ALWAYS_YES.map((c) => (
+                <li key={c.label} className="friends-chip rounded-full border border-line bg-public-bg px-3.5 py-1.5 text-[14px] leading-5 text-public-text">
+                  <span aria-hidden="true">{c.emoji}</span> {c.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="mt-6 text-[14px] leading-5 text-ink-2">{FRIENDS_COPY.timeZoneNote}</p>
         </div>
         <LandingEvents>
           <h2 className="pb-5 text-center text-[13px] font-bold tracking-[0.08em] text-ink-2 uppercase">{FRIENDS_COPY.chooseHeading}</h2>
