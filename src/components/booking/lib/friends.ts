@@ -20,7 +20,7 @@ const FRIENDS_TEXT: Record<string, string> = {
   "page.selectDateTime": "When works for you?",
   "page.selectDay": "Pick a day",
   "page.selectTimeHeading": "Pick a time",
-  "page.noTimes": "Nothing open that day. Try another one?",
+  "page.noTimes": "Nothing open that day. Try another one? (Pizza tastes the same any day.)",
   "page.noTimesInMonth": "I'm all booked up in {month}",
   "page.backToLanding": "Back to all the ways to hang",
   "details.title": "Almost there!",
@@ -40,14 +40,24 @@ const FRIENDS_TEXT: Record<string, string> = {
 export const FRIENDS_COPY = {
   landingTitle: "Hang out with {firstName}",
   greeting: "Hey, friend!",
-  note: "I'm really glad you're here. Life gets busy, but time with you is the kind I always want to make room for. Pick whatever works for you and it goes straight on my calendar.",
+  note: "I'm really glad you're here. Life gets busy, but time with you is the kind I always want to make room for. Pick whatever works for you and it goes straight on my calendar. Bonus points if pizza is involved.",
   signOff: "Can't wait to see you,",
   chooseHeading: "How do you want to hang?",
   detailsIntro: "Just tell me who's coming and I'll save the date.",
-  confirmationNote: "Seriously, thanks for making the time. It means a lot.",
+  confirmationNote: "Seriously, thanks for making the time. It means a lot. If food is involved, you already know my vote: pizza.",
   pageTitle: "Pick a time with {firstName}",
-  empty: "{firstName} doesn't have any open times right now. Text me and we'll figure something out!",
+  empty: "{firstName} doesn't have any open times right now. Text me and we'll figure something out, probably over pizza!",
+  alwaysYesHeading: "Always a yes",
+  timeZoneNote: "I'm on Pacific time, but every time here shows in yours.",
 } as const;
+
+/** The "Always a yes" chips on the landing page: the host's favorite ways to hang. */
+export const FRIENDS_ALWAYS_YES: { emoji: string; label: string }[] = [
+  { emoji: "🍕", label: "Pizza, any style" },
+  { emoji: "☕", label: "Coffee" },
+  { emoji: "🚶", label: "A long walk and talk" },
+  { emoji: "📞", label: "A catch-up call" },
+];
 
 export type FriendlyEvent = { name: string; blurb: string };
 
@@ -55,7 +65,7 @@ export type FriendlyEvent = { name: string; blurb: string };
 export const FRIENDLY_EVENTS: Record<string, FriendlyEvent> = {
   "30min": { name: "Quick video catch-up", blurb: "Thirty minutes to hear what's new with you." },
   "60min": { name: "Long video hang", blurb: "A whole hour, no rush. Bring the stories." },
-  meal: { name: "Grab a meal or coffee", blurb: "My favorite way to catch up. Pick a spot and I'll meet you there." },
+  meal: { name: "Grab pizza (or coffee)", blurb: "You pick the spot, I bring the appetite. Pizza is always a yes." },
 };
 
 /** Friendly wording of custom questions, by their exact label. Answers and required rules stay the same. */

@@ -34,6 +34,8 @@ test.describe("friends link", () => {
       await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
       await expect(page.getByRole("heading", { level: 1, name: /Hey, friend!/ })).toBeVisible();
       await expect(page.getByTestId("friends-hello")).toContainText("Can't wait to see you,");
+      await expect(page.getByTestId("friends-always-yes")).toContainText("Pizza, any style");
+      await expect(page.getByRole("link", { name: /Grab pizza \(or coffee\)/ })).toBeVisible();
       await axe(page);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${scheme}-1-landing.png`, fullPage: true });
 
