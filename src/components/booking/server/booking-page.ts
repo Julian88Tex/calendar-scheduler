@@ -25,14 +25,14 @@ import { log } from "@/lib/logger";
 import { now } from "@/lib/time/now";
 import { isValidTimeZone } from "@/lib/time/zones";
 import { absoluteUrl } from "@/lib/url";
-import { FRIENDS_UTM_SOURCE, type Tone } from "../lib/friends";
-import { firstNameOf, friendlyEventOf, friendlyQuestionLabel, friendsLine, type FriendsContent } from "../lib/friends-content";
+import { FRIENDS_TEXT, type Tone } from "../lib/friends";
+import { firstNameOf, friendlyQuestionLabel, personaFor, personaLine, personaUtmSource, type EventPersonaCopy, type Persona } from "../lib/personas";
 import type { PublicQuestion } from "../lib/form";
 import { hostHeader, headerName, type HostHeader, type HostPerson } from "../lib/hosts";
 import { toPublicLocations } from "../lib/locations";
 import { carriedParams, param, parseDate, parseDuration, parseMonth, type SearchParamsInput } from "../lib/url-state";
 import type { BookingPageProps, BrandHeaderView, EventView, ViewerView } from "../types";
-import { loadFriendsContent } from "./friends";
+import { loadEventPersonas, loadPersonas } from "./personas";
 import { getLegalLinks, loadHostProfile, loadPeople, type HostProfile } from "./host";
 
 export const PREVIEW_SLUG = "__preview__";
@@ -212,49 +212,59 @@ export type LoadBookingPageInput = {
   searchParams: SearchParamsInput;
   mode: "calendar" | "details";
   start?: Date | null;
-  /** "friends": friends mode (?friends=1, lib/friends.ts). Default "public". */
-  tone?: Tone;
+  /** The persona the link asks for (?for=, lib/personas.ts); applied only when the event type is shown to it. */
+  persona?: string | null;
 };
 
 /**
- * The friends link version of a page (lib/friends.ts): friendly event name, blurb and question wording, the warm theme
- * instead of the host's branding colors and no "Powered by" ribbon, never indexed, and bookings tagged with
- * utm_source=friends-link unless the link carries its own.
+ * The persona version of a page (lib/personas.ts): the event type's name and description for the persona, the persona's
+ * line above the booking form, and its look (the warm friends theme with friendly question wording and no branding,
+ * or the classic page in the host's branding). Pages of a persona other than the default are never indexed and tag
+ * bookings with utm_source={id}-link unless the link carries its own.
  */
-function asFriendsPage(r: BookingPageResult, slug: string, content: FriendsContent): BookingPageResult {
+function asPersonaPage(r: BookingPageResult, persona: Persona, copy: EventPersonaCopy): BookingPageResult {
+  const warm = persona.style === "warm";
+  const tone: Tone = warm ? "friends" : "public";
+  const linked = !persona.isDefault;
   const noBranding: PublicBranding = { primaryColor: null, backgroundColor: null, textColor: null };
-  if (r.state !== "ok") return { ...r, shell: { ...r.shell, branding: noBranding, ribbon: false, tone: "friends" }, meta: { ...r.meta, noindex: true } };
+  const meta = linked ? { ...r.meta, noindex: true } : r.meta;
+  if (r.state !== "ok") return { ...r, shell: warm ? { ...r.shell, branding: noBranding, ribbon: false, tone } : r.shell, meta };
   const p = r.props;
-  const friendly = friendlyEventOf(content, slug);
   const event: EventView = {
     ...p.event,
-    name: friendly?.name || p.event.name,
-    descriptionHtml: friendly?.blurb ? null : p.event.descriptionHtml,
-    descriptionText: friendly?.blurb || p.event.descriptionText,
-    questions: p.event.questions.map((q) => ({ ...q, label: friendlyQuestionLabel(q.label) })),
+    name: copy.name || p.event.name,
+    descriptionHtml: copy.description ? null : p.event.descriptionHtml,
+    descriptionText: copy.description || p.event.descriptionText,
+    questions: warm ? p.event.questions.map((q) => ({ ...q, label: friendlyQuestionLabel(q.label) })) : p.event.questions,
   };
-  const firstName = firstNameOf(p.hostName);
+  const title = personaLine("pageTitle", firstNameOf(p.hostName));
   return {
     state: "ok",
     props: {
       ...p,
-      tone: "friends",
-      friendsCopy: { detailsIntro: content.detailsIntro },
+      tone,
+      ...(warm ? { textOverrides: FRIENDS_TEXT } : {}),
+      persona: { id: persona.id, detailsIntro: persona.detailsIntro },
       event,
-      branding: noBranding,
-      ribbon: false,
-      prefill: { ...p.prefill, tracking: { utmSource: FRIENDS_UTM_SOURCE, ...p.prefill.tracking } },
+      ...(warm ? { branding: noBranding, ribbon: false } : {}),
+      prefill: linked ? { ...p.prefill, tracking: { utmSource: personaUtmSource(persona.id), ...p.prefill.tracking } } : p.prefill,
     },
-    meta: { ...r.meta, title: friendsLine("pageTitle", firstName), ogTitle: `${friendsLine("pageTitle", firstName)}: ${event.name}`, noindex: true },
+    meta: { ...meta, title: warm ? title : meta.title, ogTitle: warm ? `${title}: ${event.name}` : meta.ogTitle.replace(p.event.name, event.name) },
   };
 }
 
-/** The booking page of a target (see the file header). */
+/**
+ * The booking page of a target (see the file header), as the persona the link asks for (?for=, the default persona
+ * without it) when the event type is shown to that persona; otherwise the plain page.
+ */
 export async function loadBookingPage(input: LoadBookingPageInput): Promise<BookingPageResult> {
   const r = await loadPage(input);
-  if (input.tone !== "friends") return r;
   const et = input.target.eventType;
-  return asFriendsPage(r, et.slug, await loadFriendsContent(et.ownerUserId ?? et.hosts[0]?.userId ?? null));
+  if (input.target.kind !== "event_type" || et.secret || et.scope === "team") return r;
+  const [personas, enabled] = await Promise.all([loadPersonas(et.ownerUserId ?? null), loadEventPersonas(et.id)]);
+  const persona = personaFor(personas, input.persona);
+  const copy = persona ? enabled[persona.id] : undefined;
+  return persona && copy ? asPersonaPage(r, persona, copy) : r;
 }
 
 async function loadPage(input: LoadBookingPageInput): Promise<BookingPageResult> {

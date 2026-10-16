@@ -1,7 +1,7 @@
-// /friends/{eventSlug}: the old friends link booking page; redirects to /{handle}/{eventSlug}?friends=1 (query kept).
+// /friends/{eventSlug}: the old friends link booking page; redirects to /{handle}/{eventSlug}?for=friends (query kept).
 import type { Route } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
-import { friendsHandle, friendsQuery } from "@/components/booking/server/friends";
+import { friendsHandle, friendsQuery } from "@/components/booking/server/personas";
 
 type Props = {
   params: Promise<{ eventSlug: string }>;

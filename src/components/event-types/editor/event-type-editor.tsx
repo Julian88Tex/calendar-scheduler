@@ -7,7 +7,7 @@
 // asks first. Viewers get a read-only editor. Client component; the page passes the server data.
 "use client";
 
-import { AlignLeft, CalendarClock, CheckCircle2, ClipboardList, Clock, Eye, Bell, Link2, MapPin, Timer } from "lucide-react";
+import { AlignLeft, CalendarClock, CheckCircle2, ClipboardList, Clock, Eye, Bell, Link2, MapPin, Timer, Users } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +52,7 @@ import { ConfirmationSection } from "./confirmation-section";
 import { EditorHeader } from "./editor-header";
 import { InviteeFormSection } from "./invitee-form-section";
 import { LimitsSection } from "./limits-section";
+import { PersonasSection, personasSummary } from "./personas-section";
 import { effectiveMode, NotificationsSection } from "./notifications-section";
 import { PreviewPane } from "./preview-pane";
 import { useUnsavedGuard } from "./use-unsaved-guard";
@@ -75,6 +76,7 @@ const SECTION_TITLES: Record<EditorSectionId, string> = {
   inviteeForm: "Invitee form",
   notifications: "Notifications",
   confirmation: "Confirmation page",
+  personas: "Personas",
 };
 
 const sectionDomId = (id: EditorSectionId) => `section-${id}`;
@@ -388,6 +390,9 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
             )}
             {showMore && (
               <>
+                {data.personas &&
+                  draft.personas &&
+                  sectionCard("personas", <Users aria-hidden="true" />, personasSummary(draft, data.personas), <PersonasSection {...common} personas={data.personas} />)}
                 {sectionCard(
                   "description",
                   <AlignLeft aria-hidden="true" />,

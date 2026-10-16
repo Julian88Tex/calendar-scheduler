@@ -136,6 +136,7 @@ export const MESSAGES = {
   choiceDuplicate: "Answer choices must be unique.",
   descriptionTooLong: `Use ${DESCRIPTION_MAX.toLocaleString("en-US")} characters or fewer.`,
   internalNoteTooLong: `Use ${INTERNAL_NOTE_MAX.toLocaleString("en-US")} characters or fewer.`,
+  personaTooLong: "Keep it shorter.",
   redirectRequired: "Enter the URL to redirect invitees to.",
   url: "Enter a URL that starts with https:// or http://",
   linkName: `Enter a link name of up to ${LINK_NAME_MAX} characters.`,

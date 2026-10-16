@@ -11,6 +11,8 @@ import { PUBLIC_TEXT_TRACKING } from "./booking-card";
 
 export type ProfileHeaderProps = {
   name: string;
+  /** Page h1 instead of the name (a persona's greeting). */
+  heading?: string | null;
   avatarUrl?: string | null;
   welcomeMessage?: string | null;
   /** Branding logo (BR-05), shown at the card's top-left. */
@@ -20,8 +22,8 @@ export type ProfileHeaderProps = {
   className?: string;
 };
 
-export function ProfileHeader({ name, avatarUrl, welcomeMessage, logoUrl, hidden, className }: ProfileHeaderProps) {
-  if (hidden) return <h1 className="sr-only">{name}</h1>;
+export function ProfileHeader({ name, heading, avatarUrl, welcomeMessage, logoUrl, hidden, className }: ProfileHeaderProps) {
+  if (hidden) return <h1 className="sr-only">{heading || name}</h1>;
   return (
     <div className={cn("relative flex flex-col items-center px-6 pt-[25px] pb-[21px] text-center min-[650px]:pb-[41px]", className)}>
       {logoUrl && (
@@ -29,7 +31,7 @@ export function ProfileHeader({ name, avatarUrl, welcomeMessage, logoUrl, hidden
         <img src={logoUrl} alt="" className="mb-4 max-h-[60px] max-w-[160px] object-contain min-[650px]:absolute min-[650px]:top-[26px] min-[650px]:left-8 min-[650px]:mb-0" />
       )}
       <Avatar src={avatarUrl} name={name} alt="" size={65} />
-      <h1 className="mt-[17px] text-[16px] leading-6 font-[650] break-words text-ink-2">{name}</h1>
+      <h1 className="mt-[17px] text-[16px] leading-6 font-[650] break-words text-ink-2">{heading || name}</h1>
       {welcomeMessage && (
         <p className={cn("mt-6 max-w-[278px] text-[14px] leading-[21px] break-words whitespace-pre-line text-ink-2", PUBLIC_TEXT_TRACKING)}>{welcomeMessage}</p>
       )}

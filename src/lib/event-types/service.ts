@@ -53,6 +53,7 @@ import { slugify } from "@/lib/slugs";
 import { now } from "@/lib/time/now";
 import { copyEventTypeReminders } from "@/lib/workflows";
 import { DEFAULT_NAMES, DESCRIPTION_MAX, MESSAGES, SUPPORTED_LOCALES } from "./constants";
+import { eventPersonasOf, type EventPersonas } from "@/components/booking/lib/personas";
 import { canonicalJson, copyName, copySlugCandidates, dedupeSlug, defaultDraft, draftOfRow, draftVersion, durationColumns } from "./draft";
 import { isHttpUrl, normalizeLocations, validateDraft, zEventSlug, type SaveEventTypeInput } from "./schemas";
 import type { EventTypeDraft, SaveEventTypeResult, ScheduleChoiceDraft } from "./types";
@@ -298,7 +299,14 @@ async function currentDraft(db: DbOrTx, row: EventTypeRow): Promise<EventTypeDra
         ? { kind: "custom", content: { timezone: state.schedule.timezone, weeklyHours: state.schedule.weeklyHours, overrides: state.schedule.overrides } }
         : { kind: "schedule", scheduleId: state.scheduleId };
   }
-  return draftOfRow(row, questions, schedule);
+  return draftOfRow(row, questions, schedule, await personasOfRow(db, row));
+}
+
+/** The persona list of a personal event type (built-in personas from its owner when never saved), else null. */
+export async function personasOfRow(db: DbOrTx, row: EventTypeRow): Promise<EventPersonas | null> {
+  if (!row.ownerUserId || row.teamId || row.scope !== "personal") return null;
+  const [u] = await db.select({ preferences: users.preferences }).from(users).where(eq(users.id, row.ownerUserId)).limit(1);
+  return eventPersonasOf(row.metadata, row.slug, u?.preferences ?? null);
 }
 
 /** The editor version (draftVersion) of the stored event type. */
@@ -386,6 +394,7 @@ async function createEventType(db: DB | DbOrTx, actor: ActorCtx, raw: unknown): 
         .insert(eventTypes)
         .values({
           ...columnsOfDraft(draft, "solo"),
+          ...(draft.personas ? { metadata: { personas: draft.personas } } : {}),
           organizationId: actor.orgId,
           ownerUserId,
           teamId: null,
@@ -445,7 +454,12 @@ async function updateEventType(db: DB | DbOrTx, actor: ActorCtx, id: string, ver
     try {
       await tx
         .update(eventTypes)
-        .set({ ...columns, slug: draft.slug, updatedAt: now() })
+        .set({
+          ...columns,
+          ...(draft.personas && !row.teamId ? { metadata: { ...(row.metadata ?? {}), personas: draft.personas } } : {}),
+          slug: draft.slug,
+          updatedAt: now(),
+        })
         .where(eq(eventTypes.id, id));
     } catch (e) {
       if (isUniqueViolation(e)) throw slugTakenError();

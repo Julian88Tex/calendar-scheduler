@@ -5,6 +5,7 @@
 // - getConferencingOptionsFor: the LocationEditor's connect prompts (the owner's own options only).
 import "server-only";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { eventPersonasOf, personasOf } from "@/components/booking/lib/personas";
 import { getDb, type DbOrTx } from "@/db";
 import { availabilitySchedules, calendarConnections, calendars, eventTypeHosts, eventTypeQuestions, eventTypes, users } from "@/db/schema";
 import type { WeeklyHours } from "@/db/types";
@@ -167,7 +168,9 @@ export async function getEventTypeEditorData(actor: ActorCtx, eventTypeId: strin
   const parts = await sharedEditorParts(ownerId, row.id, d);
   const kind = uiKindOf(row);
   const path = owner.handle && !row.teamId ? `/${owner.handle}/${row.slug}` : null;
-  const draft = draftOfRow(row, questions, schedule);
+  const personal = Boolean(row.ownerUserId && !row.teamId && row.scope === "personal");
+  const ownerPrefs = personal ? (await d.select({ preferences: users.preferences }).from(users).where(eq(users.id, row.ownerUserId!)).limit(1))[0]?.preferences : null;
+  const draft = draftOfRow(row, questions, schedule, personal ? eventPersonasOf(row.metadata, row.slug, ownerPrefs) : null);
   return {
     mode: "edit",
     eventTypeId: row.id,
@@ -190,6 +193,7 @@ export async function getEventTypeEditorData(actor: ActorCtx, eventTypeId: strin
     invitationsAvailable: parts.invitations,
     hostLimits: parts.limits,
     today: isoDateInZone(now(), owner.timezone),
+    personas: personal ? personasOf(ownerPrefs) : null,
   };
 }
 
@@ -198,6 +202,10 @@ export async function getNewEventTypeEditorData(actor: ActorCtx, db?: DbOrTx): P
   const d = db ?? (await getDb());
   const owner = await loadOwner(d, actor.user.id);
   const [draft, parts] = await Promise.all([newEventTypeDefaults(d, actor), sharedEditorParts(actor.user.id, null, d)]);
+  const [ownerRow] = await d.select({ preferences: users.preferences }).from(users).where(eq(users.id, actor.user.id)).limit(1);
+  const personas = personasOf(ownerRow?.preferences);
+  // A new event type starts out shown to every persona under its real name.
+  draft.personas = Object.fromEntries(personas.map((p) => [p.id, { name: "", description: "" }]));
   if (draft.schedule.kind === "schedule" && !draft.schedule.scheduleId) {
     draft.schedule = { kind: "schedule", scheduleId: parts.schedules.find((s) => s.isDefault)?.id ?? parts.schedules[0]?.id ?? null };
   }
@@ -223,6 +231,7 @@ export async function getNewEventTypeEditorData(actor: ActorCtx, db?: DbOrTx): P
     invitationsAvailable: parts.invitations,
     hostLimits: parts.limits,
     today: isoDateInZone(now(), owner.timezone),
+    personas,
   };
 }
 

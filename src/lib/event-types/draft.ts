@@ -71,6 +71,7 @@ export function defaultDraft(p: {
     confirmationLinks: [],
     secret: false,
     internalNote: "",
+    personas: null,
   };
 }
 
@@ -109,8 +110,12 @@ export function sortedLocations(list: readonly LocationConfig[] | null | undefin
     .map((l, i) => ({ ...l, position: i }));
 }
 
-/** An event type row (plus questions and its schedule choice) as the editor draft. */
-export function draftOfRow(row: EventTypeRow, questions: readonly QuestionRow[], schedule: ScheduleChoiceDraft): EventTypeDraft {
+/**
+ * An event type row (plus questions and its schedule choice) as the editor draft, with its persona list resolved by
+ * the caller (eventPersonasOf; null for team types). Kept out of here so the booking page's preview code does not load
+ * the persona helpers (GEN-07).
+ */
+export function draftOfRow(row: EventTypeRow, questions: readonly QuestionRow[], schedule: ScheduleChoiceDraft, personas: EventTypeDraft["personas"] = null): EventTypeDraft {
   return {
     name: row.name,
     color: row.color,
@@ -152,6 +157,7 @@ export function draftOfRow(row: EventTypeRow, questions: readonly QuestionRow[],
     confirmationLinks: (row.confirmationLinks ?? []).map((l) => ({ label: l.label, url: l.url })),
     secret: row.secret,
     internalNote: row.internalNote ?? "",
+    personas,
   };
 }
 

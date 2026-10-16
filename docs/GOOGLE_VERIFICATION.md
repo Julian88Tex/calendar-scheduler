@@ -55,8 +55,9 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
    - `https://www.googleapis.com/auth/calendar.freebusy` (used by meeting poll voters; add it with **Manually add
      scopes** if it is missing)
 4. **Audience**: External, In production (already the case).
-5. Check the home page signed out (a private window): https://julendly.vercel.app/ shows your name and
-   photo, what the site is, the "How it uses Google" paragraph, the Privacy Policy and Terms links and a Sign in link.
+5. Check the home page signed out (a private window): https://julendly.vercel.app/ shows the Julendly
+   logo and name, what the app is, a Sign in button, the "How it uses Google" paragraph and the Privacy Policy and
+   Terms links.
 6. Record and upload the demo video (below) to YouTube as **Unlisted**.
 7. Open **Verification Center** and click **Prepare for verification** (or **Submit for verification**), then paste the
    texts below into the matching fields.
@@ -236,9 +237,8 @@ in use. Record at 1080p in a desktop browser, keep the address bar visible the w
 and upload it to YouTube as Unlisted. About 4 to 6 minutes. Do it in a normal browser window where you are signed in
 to Google, and use a private window only for the poll voter shot.
 
-1. **Home page.** Open `https://julendly.vercel.app/` signed out. Show the app name (Julendly), your
-   name and photo, the sentence about the personal scheduling site, the "How it uses Google" paragraph, and the Sign in
-   link. Say: "This is the app's home page on the app's domain."
+1. **Home page.** Open `https://julendly.vercel.app/` signed out. Show the app name (Julendly), the
+   sentence about what the app does, the "How it uses Google" paragraph, and the Sign in button. Say: "This is the app's home page on the app's domain."
 2. **Privacy policy.** Click **Privacy Policy** in that paragraph. Scroll to "Google data" (what is read, the Limited
    Use statement). Go back and show **Terms of Service** briefly.
 3. **Sign in.** Click **Sign in**, then **Continue with Google**. On Google's page, zoom into the address bar to show

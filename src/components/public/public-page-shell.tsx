@@ -8,14 +8,12 @@
 // the BK-03 spacing (66px top, 30px bottom, 5% sides; none on phones), embed mode (transparent canvas, no padding),
 // the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
 import type * as React from "react";
-import { Suspense } from "react";
 import type { Tone } from "@/components/booking/lib/friends";
 import { cn } from "@/lib/cn";
 import { CookieBanner } from "./cookie-banner";
 import { DarkReaderLock } from "./dark-reader-lock";
 import { PublicFooterLinks } from "./public-footer-links";
 import { PublicThemeToggle } from "./public-theme-toggle";
-import { ToneToggle } from "./tone-toggle";
 
 export type PublicBranding = {
   /** Hex colors (BR-07; empty means the classic tokens). */
@@ -39,10 +37,8 @@ export type PublicPageShellProps = {
   className?: string;
   /** Privacy policy URL for the footer links (default /privacy). */
   privacyUrl?: string | null;
-  /** "friends": the warm friends link theme (data-tone="friends", globals.css), light or dark like the classic one. */
+  /** "friends": the warm theme of a warm persona (data-tone="friends", globals.css), light or dark like the classic one. */
   tone?: Tone;
-  /** Show the Friends / Business switch of friends mode (pages opened with ?friends, lib/friends.ts). */
-  showToneToggle?: boolean;
 };
 
 const HEX = /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/;
@@ -80,7 +76,6 @@ export function PublicPageShell({
   className,
   privacyUrl,
   tone,
-  showToneToggle,
 }: PublicPageShellProps) {
   const autoTheme = !embed && !normalizeBrandColor(branding?.backgroundColor) && !normalizeBrandColor(branding?.textColor);
   return (
@@ -93,13 +88,6 @@ export function PublicPageShell({
       className={cn("min-h-dvh overflow-x-clip text-ink", embed ? "bg-transparent" : "bg-canvas", className)}
     >
       <main id="main" className={cn(embed ? "p-0" : "px-0 pt-0 pb-0 min-[600px]:px-[5%] min-[600px]:pt-[66px] min-[600px]:pb-[30px]")}>
-        {showToneToggle && !embed && (
-          <div className="mx-auto flex max-w-[1060px] justify-center px-4 py-3 min-[600px]:-mt-[52px] min-[600px]:px-0 min-[600px]:pt-0 min-[600px]:pb-4">
-            <Suspense fallback={<div className="h-[30px]" />}>
-              <ToneToggle tone={tone ?? "public"} />
-            </Suspense>
-          </div>
-        )}
         {children}
       </main>
       {showFooterLinks && !embed && (

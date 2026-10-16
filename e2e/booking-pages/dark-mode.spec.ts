@@ -93,7 +93,7 @@ test.describe("public pages dark mode", () => {
     await axe(page);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/toggle-2-dark-on-light-device.png` });
 
-    // The friends link has the toggle too, in its warm palette.
+    // The friends persona has the theme toggle too, in its warm palette.
     await page.goto("/friends", { timeout: 60_000 });
     await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(20, 18, 17)");
     await page.getByRole("button", { name: "Switch to light mode" }).click();

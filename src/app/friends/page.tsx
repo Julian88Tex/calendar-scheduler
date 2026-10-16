@@ -1,8 +1,8 @@
-// /friends: the old friends link. Friends mode now lives on the public pages (lib/friends.ts), so this answers with a
-// redirect to the instance owner's /{handle}?friends=1 (the rest of the query kept); 404 before anyone signed up.
+// /friends: the old friends link. The friends persona now lives on the public pages (lib/personas.ts), so this answers with a
+// redirect to the instance owner's /{handle}?for=friends (the rest of the query kept); 404 before anyone signed up.
 import type { Route } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
-import { friendsHandle, friendsQuery } from "@/components/booking/server/friends";
+import { friendsHandle, friendsQuery } from "@/components/booking/server/personas";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 

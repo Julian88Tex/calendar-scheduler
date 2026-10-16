@@ -1,7 +1,7 @@
-// /friends/{eventSlug}/{start}: the old friends link details step; redirects to /{handle}/{eventSlug}/{start}?friends=1.
+// /friends/{eventSlug}/{start}: the old friends link details step; redirects to /{handle}/{eventSlug}/{start}?for=friends.
 import type { Route } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
-import { friendsHandle, friendsQuery } from "@/components/booking/server/friends";
+import { friendsHandle, friendsQuery } from "@/components/booking/server/personas";
 
 type Props = {
   params: Promise<{ eventSlug: string; start: string }>;

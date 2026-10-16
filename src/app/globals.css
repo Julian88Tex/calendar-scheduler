@@ -159,7 +159,7 @@
   color-scheme: dark;
 }
 
-/* Friends mode (?friends=1, src/components/booking/lib/friends.ts): the same public tokens in a warm palette
+/* Warm personas (?for={id}, src/components/booking/lib/personas.ts): the same public tokens in a warm palette
    (cream canvas, espresso text, terracotta accents), rounder cards and pill time buttons. Light or dark by the device
    setting like the classic public pages; Dark Reader stays locked out through the shell's data-public-auto. */
 [data-public-auto][data-tone="friends"] {

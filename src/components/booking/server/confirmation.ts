@@ -30,11 +30,12 @@ export type ConfirmationView = {
   rescheduled: boolean;
   past: boolean;
   eventName: string;
-  /** Slug of the meeting's event type (friendly names in friends mode), null when it is gone. */
+  /** The meeting's event type (its wording for a persona), null when it is gone. */
+  eventTypeId: string | null;
   eventTypeSlug: string | null;
-  /** Owner of a personal event type (friends mode content), else null. */
+  /** Owner of a personal event type (their personas), else null. */
   eventTypeOwnerUserId: string | null;
-  /** "/{handle}" of that owner (friends mode "Book another time"), else null. */
+  /** "/{handle}" of that owner (a persona's "Book another time"), else null. */
   ownerLandingPath: string | null;
   hostNames: string[];
   hostAvatar: { src: string | null; name: string } | null;
@@ -168,6 +169,7 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
     rescheduled: Boolean(current.oldInviteeId),
     past,
     eventName: event.name,
+    eventTypeId: et ? event.eventTypeId : null,
     eventTypeSlug: et?.slug ?? null,
     eventTypeOwnerUserId: et && !et.teamId ? (et.ownerUserId ?? null) : null,
     ownerLandingPath: await ownerLandingPath(et?.ownerUserId, et?.teamId),

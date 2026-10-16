@@ -58,8 +58,8 @@ import {
 } from "./lib/form";
 import { longDate, weekdayTitle } from "./lib/display";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
-import { FRIENDS_PARAM, toneText } from "./lib/friends";
-import { bt as baseText, type Vars } from "./lib/t";
+import { PERSONA_PARAM } from "./lib/persona-limits";
+import { bt as baseText, interpolate, type Vars } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
 import { calendarHref, detailsHref, landingForwardParams, parseDate, parseMonth, startFromPath, withCarried } from "./lib/url-state";
 import { OwnerBanner, PreviewBanner } from "./owner-banner";
@@ -170,8 +170,12 @@ function busyWindow(month: string): { start: string; end: string } {
 }
 
 export function BookingFlow(p: BookingPageProps) {
-  // Every string of the flow reads through the page's tone (the friends link swaps some, lib/friends.ts).
-  const bt = (key: string, vars?: Vars) => (p.tone ? toneText(p.tone, key, vars) : baseText(key, vars));
+  // Every string of the flow reads through the page's overrides (warm personas swap some, lib/friends.ts; sent as props
+  // so the strings stay out of the client JS, GEN-07).
+  const bt = (key: string, vars?: Vars) => {
+    const own = p.textOverrides?.[key];
+    return own === undefined ? baseText(key, vars) : interpolate(own, vars);
+  };
   const router = useRouter();
   const draft = usePreviewDraft(p.preview);
   const event = useMemo(() => applyDraft(p.event, draft), [p.event, draft]);
@@ -476,8 +480,8 @@ export function BookingFlow(p: BookingPageProps) {
       }
       return;
     }
-    // Embed keys, plus friends mode so the confirmation keeps the friends voice (lib/friends.ts).
-    const carry = p.carry.filter(([k]) => EMBED_KEYS.includes(k) || (k === FRIENDS_PARAM && p.tone === "friends"));
+    // Embed keys, plus the persona so the confirmation keeps its voice (lib/personas.ts).
+    const carry = p.carry.filter(([k]) => EMBED_KEYS.includes(k) || (k === PERSONA_PARAM && p.persona !== undefined));
     router.push(withCarried(`${p.confirmationBase}/${encodeURIComponent(b.inviteeId)}`, carry) as Route);
   };
 
@@ -660,9 +664,9 @@ export function BookingFlow(p: BookingPageProps) {
                 {bt("details.title")}
               </span>
             </BookingPanelHeading>
-            {p.tone === "friends" && p.friendsCopy?.detailsIntro && (
-              <p className="mt-2 mb-4 text-[15px] leading-[22px] text-ink-2" data-testid="friends-details-intro">
-                {p.friendsCopy.detailsIntro}
+            {p.persona?.detailsIntro && (
+              <p className="mt-2 mb-4 text-[15px] leading-[22px] text-ink-2" data-testid="persona-details-intro">
+                {p.persona.detailsIntro}
               </p>
             )}
             {hideSide && whenText && (
