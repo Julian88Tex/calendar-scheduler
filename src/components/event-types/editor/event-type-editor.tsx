@@ -392,7 +392,7 @@ export function EventTypeEditor({ data, initialSection = null, remindersInitial 
               <>
                 {data.personas &&
                   draft.personas &&
-                  sectionCard("personas", <Users aria-hidden="true" />, personasSummary(draft, data.personas), <PersonasSection {...common} personas={data.personas} />)}
+                  sectionCard("personas", <Users aria-hidden="true" />, personasSummary(draft, data.personas), <PersonasSection {...common} personas={data.personas} publicUrl={data.publicUrl} />)}
                 {sectionCard(
                   "description",
                   <AlignLeft aria-hidden="true" />,

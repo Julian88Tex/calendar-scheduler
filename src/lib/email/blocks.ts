@@ -19,7 +19,7 @@
 // Every text value is escaped here; only `html` blocks (and `html` on a field) take trusted markup (already sanitized
 // rich text such as event descriptions or workflow bodies). Pure (no I/O).
 import { escapeHtml, escapeHtmlMultiline, htmlToText, safeHref } from "./html";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailButtonHtml, emailPrimaryColor, renderEmailLayout, renderEmailText } from "./layout";
+import { EMAIL_FONT_STACK, emailButtonHtml, emailPalette, emailPrimaryColor, renderEmailLayout, renderEmailText, type EmailPalette } from "./layout";
 import type { EmailBrand, RenderedEmail } from "./types";
 
 /** One line of a field value: plain text, a link, or a struck-through former value ("Former time"). */
@@ -65,15 +65,15 @@ export type ComposeEmailInput = {
   footerLinks?: { label: string; url: string }[];
 };
 
-const P = `margin:0 0 16px 0;font-family:${EMAIL_FONT_STACK};font-size:16px;line-height:24px;color:${EMAIL_COLORS.text}`;
+const paragraph = (c: EmailPalette) => `margin:0 0 16px 0;font-family:${EMAIL_FONT_STACK};font-size:16px;line-height:24px;color:${c.text}`;
 
-function lineHtml(line: EmailFieldLine, linkColor: string): string {
+function lineHtml(line: EmailFieldLine, linkColor: string, c: EmailPalette): string {
   if (typeof line === "string") return escapeHtmlMultiline(line);
   let inner = escapeHtmlMultiline(line.text);
   const href = safeHref(line.href);
   if (href) inner = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" style="color:${linkColor};text-decoration:underline">${inner}</a>`;
-  if (line.strike) inner = `<s style="text-decoration:line-through;color:${EMAIL_COLORS.secondary}">${inner}</s>`;
-  else if (line.muted) inner = `<span style="color:${EMAIL_COLORS.secondary}">${inner}</span>`;
+  if (line.strike) inner = `<s style="text-decoration:line-through;color:${c.secondary}">${inner}</s>`;
+  else if (line.muted) inner = `<span style="color:${c.secondary}">${inner}</span>`;
   return inner;
 }
 
@@ -91,13 +91,13 @@ function fieldLines(f: EmailField): EmailFieldLine[] {
   return [];
 }
 
-function fieldsHtml(items: EmailField[], linkColor: string): string {
+function fieldsHtml(items: EmailField[], linkColor: string, c: EmailPalette): string {
   const rows = items
     .map((f) => {
-      const body = f.html ?? fieldLines(f).map((l) => lineHtml(l, linkColor)).join("<br>");
+      const body = f.html ?? fieldLines(f).map((l) => lineHtml(l, linkColor, c)).join("<br>");
       if (!body) return "";
       return (
-        `<tr><td style="padding:0 0 16px 0;font-family:${EMAIL_FONT_STACK};font-size:16px;line-height:24px;color:${EMAIL_COLORS.text}">` +
+        `<tr><td style="padding:0 0 16px 0;font-family:${EMAIL_FONT_STACK};font-size:16px;line-height:24px;color:${c.text}">` +
         `<div style="font-weight:700;margin:0 0 2px 0">${escapeHtml(f.label)}</div>` +
         `<div style="word-break:break-word">${body}</div></td></tr>`
       );
@@ -118,21 +118,23 @@ function fieldsText(items: EmailField[]): string {
     .join("\n\n");
 }
 
-const NOTICE: Record<"info" | "warning" | "success", { bg: string; fg: string }> = {
-  info: { bg: EMAIL_COLORS.infoBg, fg: EMAIL_COLORS.text },
-  warning: { bg: EMAIL_COLORS.warningBg, fg: EMAIL_COLORS.warningText },
-  success: { bg: EMAIL_COLORS.successBg, fg: EMAIL_COLORS.successText },
-};
+const notice = (c: EmailPalette): Record<"info" | "warning" | "success", { bg: string; fg: string }> => ({
+  info: { bg: c.infoBg, fg: c.text },
+  warning: { bg: c.warningBg, fg: c.warningText },
+  success: { bg: c.successBg, fg: c.successText },
+});
 
 /** HTML of one block (inside the layout body cell). */
-export function emailBlockHtml(block: EmailBlock, brand?: Pick<EmailBrand, "primaryColor"> | null): string {
+export function emailBlockHtml(block: EmailBlock, brand?: Pick<EmailBrand, "primaryColor" | "persona"> | null): string {
   const primary = emailPrimaryColor(brand);
+  const c = emailPalette(brand);
+  const P = paragraph(c);
   switch (block.kind) {
     case "text": {
       if (!block.text.trim()) return "";
       const style =
         P +
-        (block.muted ? `;color:${EMAIL_COLORS.secondary}` : "") +
+        (block.muted ? `;color:${c.secondary}` : "") +
         (block.small ? ";font-size:14px;line-height:20px" : "") +
         (block.bold ? ";font-weight:700" : "");
       return `<p style="${style}">${escapeHtmlMultiline(block.text)}</p>`;
@@ -142,7 +144,7 @@ export function emailBlockHtml(block: EmailBlock, brand?: Pick<EmailBrand, "prim
     case "button":
       return emailButtonHtml(block.label, block.url, primary);
     case "fields":
-      return fieldsHtml(block.items, primary);
+      return fieldsHtml(block.items, primary, c);
     case "links": {
       const links = block.links.filter((l) => safeHref(l.url));
       if (!links.length) return "";
@@ -152,7 +154,7 @@ export function emailBlockHtml(block: EmailBlock, brand?: Pick<EmailBrand, "prim
             `<a href="${escapeHtml(safeHref(l.url))}" target="_blank" rel="noopener" style="color:${primary};font-weight:600;` +
             `text-decoration:underline">${escapeHtml(l.label)}</a>`,
         )
-        .join(`<span style="color:${EMAIL_COLORS.divider}">&nbsp;&nbsp;|&nbsp;&nbsp;</span>`);
+        .join(`<span style="color:${c.divider}">&nbsp;&nbsp;|&nbsp;&nbsp;</span>`);
       return (
         `<p style="${P};margin-top:8px">` +
         (block.text ? `${escapeHtml(block.text)}<br>` : "") +
@@ -161,17 +163,17 @@ export function emailBlockHtml(block: EmailBlock, brand?: Pick<EmailBrand, "prim
     }
     case "notice": {
       if (!block.text.trim()) return "";
-      const c = NOTICE[block.tone];
+      const n = notice(c)[block.tone];
       return (
         `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:0 0 16px 0">` +
-        `<tr><td bgcolor="${c.bg}" style="background-color:${c.bg};border-radius:8px;padding:12px 16px;font-family:${EMAIL_FONT_STACK};` +
-        `font-size:14px;line-height:20px;color:${c.fg}">` +
+        `<tr><td bgcolor="${n.bg}" style="background-color:${n.bg};border-radius:${Math.min(c.radius, 12)}px;padding:12px 16px;font-family:${EMAIL_FONT_STACK};` +
+        `font-size:14px;line-height:20px;color:${n.fg}">` +
         (block.title ? `<div style="font-weight:700;margin:0 0 4px 0">${escapeHtml(block.title)}</div>` : "") +
         `${escapeHtmlMultiline(block.text)}</td></tr></table>`
       );
     }
     case "divider":
-      return `<div style="border-top:1px solid ${EMAIL_COLORS.divider};height:1px;line-height:1px;font-size:1px;margin:8px 0 24px 0">&nbsp;</div>`;
+      return `<div style="border-top:1px solid ${c.divider};height:1px;line-height:1px;font-size:1px;margin:8px 0 24px 0">&nbsp;</div>`;
   }
 }
 

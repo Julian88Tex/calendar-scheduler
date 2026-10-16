@@ -186,6 +186,7 @@ export async function publicBooking(
     locationAnswer: body.locationAnswer ?? undefined,
     answers: body.answers,
     tracking: Object.fromEntries(Object.entries(body.tracking ?? {}).filter(([, v]) => typeof v === "string" && v)) as CreateBookingInput["tracking"],
+    persona: body.persona ?? null,
     routingFormSubmissionId: body.routingFormSubmissionId ?? null,
     clientRequestId: body.clientRequestId,
     verification: body.verification ?? null,

@@ -17,7 +17,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
 import { inviteeGuests, inviteeNoShows, invitees, meetingActivity, scheduledEventHosts, scheduledEvents, users, workflowExecutions, workflows } from "@/db/schema";
-import { emailBrandForUser, isValidEmailAddress, meetingSender, renderMeetingEmail, sendEmail, type MeetingEmailKind } from "@/lib/email";
+import { applyEmailPersona, emailBrandForUser, emailPersonaFor, isValidEmailAddress, meetingSender, renderMeetingEmail, sendEmail, type MeetingEmailKind } from "@/lib/email";
 import { sanitizeRichText } from "@/lib/html";
 import { getT, resolveLocale } from "@/lib/i18n";
 import { reminderDecision } from "@/lib/jobs/timing";
@@ -248,6 +248,8 @@ async function runExecution(executionId: string, ctx: JobContext): Promise<{ res
   if (!recipients.length) return { result: await markSkipped(db, execution, "no_recipient") };
 
   const brand = await emailBrandForUser(event.organizerUserId, db);
+  // Invitee and guest reminders speak as the persona the booking came through (src/lib/email/persona.ts).
+  const persona = invitee ? await emailPersonaFor({ hostUserId: event.organizerUserId, eventTypeId: event.eventTypeId, inviteeMetadata: invitee.metadata, db }) : null;
   const meetingLocale = event.locale || event.settingsSnapshot?.locale || "en";
   const bodyTemplate = snapshot.bodyHtml ? sanitizeRichText(snapshot.bodyHtml) || null : null;
   // Render every message first, then re-check right before sending (the slow part is the rendering): a meeting
@@ -270,12 +272,13 @@ async function runExecution(executionId: string, ctx: JobContext): Promise<{ res
       const n = Number(vars.invitees_count ?? 0);
       ctxVars = { ...vars, invitee_full_name: `${n} ${n === 1 ? "invitee" : "invitees"}` };
     }
+    const themed = r.kind === "invitee" || r.kind === "guest" ? applyEmailPersona(brand, ctxVars, persona) : { brand, ctx: ctxVars };
     const kind: MeetingEmailKind = r.kind === "host" ? "host_reminder" : "invitee_reminder";
     const locale = r.kind === "host" ? "en" : resolveLocale(r.kind === "other" ? meetingLocale : (invitee?.locale ?? meetingLocale));
     const email = renderMeetingEmail({
       kind,
-      ctx: ctxVars,
-      brand,
+      ctx: themed.ctx,
+      brand: themed.brand,
       locale,
       location: event.location,
       questions: invitee?.questionsAndAnswers ?? null,

@@ -15,7 +15,7 @@
 // - htmlToText, escapeHtml and address helpers
 import "server-only";
 
-export type { EmailBrand, EmailCategory, EmailMessage, EmailTransportName, IcsMethod, RenderedEmail, SendEmailResult } from "./types";
+export type { EmailBrand, EmailCategory, EmailPersonaVoice, EmailMessage, EmailTransportName, IcsMethod, RenderedEmail, SendEmailResult } from "./types";
 export {
   EMAIL_MAX_ATTEMPTS,
   EMAIL_OUTBOX_PATH,
@@ -57,12 +57,16 @@ export {
 export {
   EMAIL_COLORS,
   EMAIL_FONT_STACK,
+  WARM_EMAIL_COLORS,
   emailButtonHtml,
+  emailPalette,
   emailPrimaryColor,
   renderEmailLayout,
   renderEmailText,
   type EmailLayoutInput,
+  type EmailPalette,
 } from "./layout";
+export { applyEmailPersona, emailPersonaFor, type EmailPersona } from "./persona";
 export {
   composeEmail,
   emailBlockHtml,

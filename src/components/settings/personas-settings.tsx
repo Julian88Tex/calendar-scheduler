@@ -15,13 +15,13 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { FormField } from "@/components/ui/form-field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { savePersonasSettingsAction } from "@/lib/settings/actions";
 import type { PersonaFormValue } from "@/lib/settings/personas";
+import { PersonaLookPicker } from "./persona-look-picker";
 import { useUnsavedChangesGuard } from "./use-unsaved-changes";
 
 export type PersonasSettingsProps = {
@@ -149,19 +149,7 @@ export function PersonasSettings({ personas, baseUrl }: PersonasSettingsProps) {
             <CopyButton value={link} size="sm" />
           </div>
         )}
-        <FormField label="Look">
-          {(c) => (
-            <NativeSelect
-              {...c}
-              value={p.style}
-              onChange={(e) => update({ style: e.target.value === "warm" ? "warm" : "classic" })}
-              options={[
-                { value: "classic", label: "Classic: your normal booking pages" },
-                { value: "warm", label: "Warm: playful colors and friendly wording" },
-              ]}
-            />
-          )}
-        </FormField>
+        <PersonaLookPicker value={p.style} onChange={(style) => update({ style })} />
         <Switch label="Default persona (links without ?for= show it)" labelPosition="start" checked={p.isDefault} disabled={p.isDefault} onCheckedChange={makeDefault} />
       </Card>
 

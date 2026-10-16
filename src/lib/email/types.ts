@@ -50,8 +50,23 @@ export type EmailBrand = {
   avatarUrl?: string | null;
   /** Footer "Powered by {AppName}" (hidden when the owner turned branding off). */
   showPoweredBy: boolean;
-  /** Button and link color (hex); defaults to #006BFF. */
+  /** Button and link color (hex); defaults to #006BFF. Ignored by the warm look, which has its own. */
   primaryColor?: string;
+  /**
+   * The persona the booking came through (?for=, Settings > Personas), for invitee and guest emails: "warm" swaps
+   * the palette to the warm public pages' cream and terracotta with rounder corners, and adds the persona's friendly
+   * greeting, thank-you line and sign-off to the standard meeting emails.
+   */
+  persona?: EmailPersonaVoice | null;
+};
+
+export type EmailPersonaVoice = {
+  look: "classic" | "warm";
+  /** The persona's thank-you line (confirmations only; empty: none). */
+  note?: string | null;
+  /** "Can't wait to see you," followed by the host's first name (empty: none). */
+  signOff?: string | null;
+  hostFirstName?: string | null;
 };
 
 /** A rendered template: what every module email template function returns. */

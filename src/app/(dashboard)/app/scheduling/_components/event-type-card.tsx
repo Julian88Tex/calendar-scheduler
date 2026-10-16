@@ -26,6 +26,8 @@ import { metaLine } from "./list-text";
 
 export type EventTypeCardProps = {
   item: EventTypeListItem;
+  /** "Links for" picked a persona this event type is not shown to: its name. */
+  hiddenFor?: string | null;
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
   busy: boolean;
@@ -122,6 +124,11 @@ export function EventTypeCard(p: EventTypeCardProps) {
               </div>
               <p className="text-body-md text-ink-2">{metaLine(item)}</p>
               <p className="text-body-md text-ink-2">{item.availabilitySummary}</p>
+              {p.hiddenFor && (
+                <p className="text-body-md text-ink-2" data-testid="hidden-for-persona">
+                  Hidden from {p.hiddenFor}: its link opens the plain page.
+                </p>
+              )}
               {item.internalNote && (
                 <p className="mt-1 flex min-w-0 items-start gap-1.5 text-body-sm text-ink-2">
                   <StickyNote aria-hidden="true" className="mt-px size-3.5 shrink-0" />

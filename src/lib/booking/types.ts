@@ -88,6 +88,8 @@ export type CreateBookingInput = {
   locationAnswer?: { configId: string; value?: string | null };
   answers?: { questionId: string; value: string | string[] }[];
   tracking?: Tracking;
+  /** The persona link the booking came through (?for={id}); stored on the invitee so emails speak in its look. */
+  persona?: string | null;
   routingFormSubmissionId?: string | null;
   /** Set by lifecycle reschedule. */
   reschedule?: { inviteeId: string; reason?: string | null } | null;
