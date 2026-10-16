@@ -1,8 +1,9 @@
 // OWNER: foundation-ui.
 //
 // PublicPageShell (ARCHITECTURE 20.2, SPEC section 8, BK-03, BK-25, BK-26, BR-07, GEN-22): the #FAFAFA canvas of public
-// pages in the classic tokens, light or dark by the visitor's device setting (data-public-auto; branding background or
-// text colors and embeds stay light with data-force-light, whatever the dashboard theme), with branding
+// pages in the classic tokens, light or dark by the visitor's device setting or their PublicThemeToggle choice
+// (data-public-auto; branding background or text colors and embeds stay light with data-force-light and show no
+// toggle, whatever the dashboard theme), with branding
 // colors as CSS variables (--primary-color for every blue, --public-bg for the card, --public-text for its text),
 // the BK-03 spacing (66px top, 30px bottom, 5% sides; none on phones), embed mode (transparent canvas, no padding),
 // the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
@@ -12,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { CookieBanner } from "./cookie-banner";
 import { DarkReaderLock } from "./dark-reader-lock";
 import { PublicFooterLinks } from "./public-footer-links";
+import { PublicThemeToggle } from "./public-theme-toggle";
 
 export type PublicBranding = {
   /** Hex colors (BR-07; empty means the classic tokens). */
@@ -93,6 +95,7 @@ export function PublicPageShell({
       )}
       {!hideGdprBanner && <CookieBanner trackersConfigured={trackersConfigured} />}
       {autoTheme && <DarkReaderLock />}
+      {autoTheme && <PublicThemeToggle />}
     </div>
   );
 }

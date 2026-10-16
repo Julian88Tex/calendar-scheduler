@@ -1,6 +1,6 @@
 // OWNER: foundation-ui.
 //
-// Logo (ARCHITECTURE 20.2, SPEC GEN-01): our own geometric "K" mark in brand blue plus the wordmark from
+// Logo (ARCHITECTURE 20.2, SPEC GEN-01): our own geometric "J" mark (Julendly) in brand blue plus the wordmark from
 // NEXT_PUBLIC_APP_NAME (never Calendly's logo). "mark" renders the icon only (collapsed sidebar, favicons). Server and
 // client safe.
 import type { Route } from "next";
@@ -22,9 +22,8 @@ export function LogoMark({ size = 32, className }: { size?: number; className?: 
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false" className={cn("shrink-0", className)}>
       <rect width="32" height="32" rx="9" fill="#006BFF" />
-      <path d="M11.5 8.5v15" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
-      <path d="M21.5 8.5L14 16l7.5 7.5" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="22.4" cy="16" r="2.1" fill="#8CC6FD" />
+      <path d="M18.5 8.5v9.25a4.75 4.75 0 0 1-9.5 0" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="23.4" cy="9.6" r="2.1" fill="#8CC6FD" />
     </svg>
   );
 }
