@@ -25,6 +25,9 @@ Your site is live at https://julendly.vercel.app (Vercel, free plan, Neon Postgr
   calendar-scheduler-smoky.vercel.app, forwards every page to the same page here (release f353499); its /api paths
   still answer directly, so the Apps Script cron trigger and Google's calendar-change notifications registered there
   keep working. Google's consent screen, sign-in callback and Search Console property were moved to the new address.
+- The logo is a J (it was still the old K), and public pages, the friends page included, have a sun/moon button to
+  switch light and dark. Until a visitor uses it they follow the device setting; their choice is remembered (release
+  50ab27d, October 16).
 - Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
   from the invitee link deleted the event and sent both cancellation emails.
 
