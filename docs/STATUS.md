@@ -31,12 +31,13 @@ Your site is live at https://julendly.vercel.app (Vercel, free plan, Neon Postgr
 - Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
   from the invitee link deleted the event and sent both cancellation emails.
 
-How releases work: the `production` branch is what is live. A commit whose message contains `[deploy]` on that
-branch builds and goes live; nothing else builds, so work in progress never reaches your site.
+How releases work: `main` is what is live, and every change merges into it through a pull request. A commit on `main`
+whose message contains `[deploy]` builds and goes live; merges without it do not build, so nothing reaches your site
+until a release is made (since October 16; before that, releases went to a separate `production` branch, now frozen).
 
 ## Testable locally
 
-Check out the `claude/scheduler-app` branch, then `npm install`, `npm run db:seed -- --demo`, `npm run dev`, and open
+Check out the `main` branch, then `npm install`, `npm run db:seed -- --demo`, `npm run dev`, and open
 http://localhost:3000. Sign in with `owner@example.com` / `password123`. Everything listed under the milestones below
 works there, with emails stored in the database outbox instead of being sent.
 

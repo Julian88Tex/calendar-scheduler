@@ -286,7 +286,7 @@ to Google, and use a private window only for the poll voter shot.
 4. In this repository, open `src/lib/site-verification.ts` and set it:
    `export const GOOGLE_SITE_VERIFICATION: string | null = "THE_CONTENT_VALUE";`
    The root layout then renders that meta tag on every page, the home page included.
-5. Deploy it: commit the change on the `production` branch with `[deploy]` in the commit message (docs/STATUS.md, "How
+5. Deploy it: commit the change on `main` with `[deploy]` in the commit message (docs/STATUS.md, "How
    releases work") and wait for the Vercel deployment to finish.
 6. Check that the tag is live: open `view-source:https://julendly.vercel.app/` and search for
    `google-site-verification`, or run
