@@ -79,7 +79,7 @@
    the host chose branding background or text colors or the page is embedded; those stay light ([data-force-light]).
    Branding --primary-color is set inline on the shell, so it still wins here. */
 @media (prefers-color-scheme: dark) {
-  [data-public-auto] {
+  :root:not([data-public-theme="light"]) [data-public-auto] {
     --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
     --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
     --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
@@ -101,22 +101,62 @@
     color-scheme: dark;
   }
   /* Brand colored text (links, labels) is lightened so any branding color reads on the dark card. */
-  [data-public-auto] .text-brand,
-  [data-public-auto] .hover\:text-brand:hover {
+  :root:not([data-public-theme="light"]) [data-public-auto] .text-brand,
+  :root:not([data-public-theme="light"]) [data-public-auto] .hover\:text-brand:hover {
     color: color-mix(in srgb, var(--primary-color) 55%, #ffffff);
   }
-  [data-public-auto] .bg-white {
+  :root:not([data-public-theme="light"]) [data-public-auto] .bg-white {
     background-color: var(--white);
   }
-  [data-public-auto] .ring-white {
+  :root:not([data-public-theme="light"]) [data-public-auto] .ring-white {
     --tw-ring-color: var(--white);
   }
   /* Overscroll and the area outside the shell match the dark canvas. */
-  :root:has([data-public-auto]),
-  body:has([data-public-auto]) {
+  :root:not([data-public-theme="light"]):has([data-public-auto]),
+  :root:not([data-public-theme="light"]) body:has([data-public-auto]) {
     background-color: #0e1217;
     color-scheme: dark;
   }
+}
+/* The visitor's own choice from the theme toggle (PublicThemeToggle, cookie kairos_public_theme): dark whatever the
+   device setting; "light" on <html> turns the media query block above off. */
+:root[data-public-theme="dark"] [data-public-auto] {
+  --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+  --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+  --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+  --primary-soft: #102640; --primary-soft-2: #163257;
+  --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+  --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+  --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+  --overlay: rgba(0, 0, 0, 0.6); --ribbon: #3a4148; --ribbon-hover: #4a525a;
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+  --shadow-embed: 0 16px 48px 0 rgb(0 0 0 / 30%), 0 0 24px 0 rgb(0 0 0 / 30%);
+  --focus: #7ab4ff;
+  --slot-selected: rgba(228, 233, 240, 0.25);
+  --row-hover: #1b222b;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
+  color-scheme: dark;
+}
+/* Brand colored text (links, labels) is lightened so any branding color reads on the dark card. */
+:root[data-public-theme="dark"] [data-public-auto] .text-brand,
+:root[data-public-theme="dark"] [data-public-auto] .hover\:text-brand:hover {
+  color: color-mix(in srgb, var(--primary-color) 55%, #ffffff);
+}
+:root[data-public-theme="dark"] [data-public-auto] .bg-white {
+  background-color: var(--white);
+}
+:root[data-public-theme="dark"] [data-public-auto] .ring-white {
+  --tw-ring-color: var(--white);
+}
+/* Overscroll and the area outside the shell match the dark canvas. */
+:root[data-public-theme="dark"]:has([data-public-auto]),
+:root[data-public-theme="dark"] body:has([data-public-auto]) {
+  background-color: #0e1217;
+  color-scheme: dark;
 }
 
 /* Friends mode (?friends=1, src/components/booking/lib/friends.ts): the same public tokens in a warm palette
@@ -136,7 +176,7 @@
   background-image: radial-gradient(1200px 500px at 15% -10%, #f9dcc4 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #fde9cf 0%, transparent 55%);
 }
 @media (prefers-color-scheme: dark) {
-  [data-public-auto][data-tone="friends"] {
+  :root:not([data-public-theme="light"]) [data-public-auto][data-tone="friends"] {
     /* Warm charcoal rather than brown: neutral surfaces with a hint of warmth, cream text, a brighter terracotta. */
     --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
     --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
@@ -149,11 +189,28 @@
     --slot-selected: rgba(244, 239, 233, 0.22);
     background-image: radial-gradient(1000px 420px at 15% -10%, rgb(201 91 55 / 0.16) 0%, transparent 60%);
   }
-  :root:has([data-tone="friends"]),
-  body:has([data-tone="friends"]) {
+  :root:not([data-public-theme="light"]):has([data-tone="friends"]),
+  :root:not([data-public-theme="light"]) body:has([data-tone="friends"]) {
     background-color: #141211;
   }
 }
+:root[data-public-theme="dark"] [data-public-auto][data-tone="friends"] {
+  --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
+  --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
+  --primary: #c95b37; --primary-hover: #d66a45; --primary-active: #e07a55; --primary-text: #f2a07e;
+  --primary-soft: #2f201a; --primary-soft-2: #3c271e;
+  --focus: #f2a07e; --row-hover: #262220;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --shadow-card: 0 10px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --slot-selected: rgba(244, 239, 233, 0.22);
+  background-image: radial-gradient(1000px 420px at 15% -10%, rgb(201 91 55 / 0.16) 0%, transparent 60%);
+}
+:root[data-public-theme="dark"]:has([data-tone="friends"]),
+:root[data-public-theme="dark"] body:has([data-tone="friends"]) {
+  background-color: #141211;
+}
+
 [data-tone="friends"] .friends-avatar {
   box-shadow: 0 0 0 4px var(--public-bg), 0 0 0 7px color-mix(in srgb, var(--primary-color) 35%, transparent);
 }

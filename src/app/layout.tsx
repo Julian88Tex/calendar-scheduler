@@ -4,13 +4,14 @@
 // "force-dynamic", nothing reads the database during `next build`, tech-reference 1.3), self-hosted Figtree, the
 // global CSS tokens, a skip link, the Toaster and the document language. GEN-22: for /app pages the theme attribute
 // comes from the preference cookie (kept in sync by the dashboard's ThemeController) and is set on <html> in the
-// server response, so dark mode never flashes; public pages always render the light classic tokens.
+// server response, so dark mode never flashes; public pages follow the device setting unless the visitor picked light or
+// dark with the public theme toggle (data-public-theme from its cookie).
 import "@fontsource-variable/figtree";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { cookies, headers } from "next/headers";
 import type * as React from "react";
-import { parseTheme, THEME_COOKIE, themeAttribute, themedPath } from "@/components/shell/theme";
+import { parsePublicTheme, parseTheme, PUBLIC_THEME_COOKIE, THEME_COOKIE, themeAttribute, themedPath } from "@/components/shell/theme";
 import { Toaster } from "@/components/ui/toast";
 import { PATHNAME_HEADER } from "@/lib/auth/session";
 import { APP_NAME } from "@/lib/brand";
@@ -34,9 +35,12 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [h, jar] = await Promise.all([headers(), cookies()]);
   const pathname = (h.get(PATHNAME_HEADER) ?? "").split("?")[0];
-  const theme = themedPath(pathname) ? themeAttribute(parseTheme(jar.get(THEME_COOKIE)?.value)) : undefined;
+  const dashboard = themedPath(pathname);
+  const theme = dashboard ? themeAttribute(parseTheme(jar.get(THEME_COOKIE)?.value)) : undefined;
+  // Public pages: the visitor's light/dark choice (PublicThemeToggle) is set before paint, so it never flashes.
+  const publicTheme = dashboard ? undefined : parsePublicTheme(jar.get(PUBLIC_THEME_COOKIE)?.value);
   return (
-    <html lang="en" data-theme={theme} suppressHydrationWarning>
+    <html lang="en" data-theme={theme} data-public-theme={publicTheme} suppressHydrationWarning>
       <body className="min-h-dvh bg-canvas font-sans text-ink antialiased">
         <a
           href="#main"
