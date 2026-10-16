@@ -4,6 +4,7 @@
 //   status 503 (the /setup page itself renders normally), and API requests get 503 { "error": "setup_required" },
 //   except /api/health. getDb() throws SetupRequiredError as the second line of defense.
 // - /app/* without a `sid` cookie redirects to /login?next=... (the real session check happens in server code).
+// - Page requests on a retired address (LEGACY_HOSTS) get a 308 to the same path on APP_URL; /api/* is left alone.
 // - Passes the current path to server code in the x-kairos-url request header (login redirects keep ?next=).
 // - Security headers (GEN-08) for normal responses come from next.config.ts headers(); responses generated here get
 //   the same headers from src/lib/net/frame-policy.ts.
@@ -25,7 +26,7 @@ export const POLL_GATE_HEADER = "x-kairos-poll-gate";
 
 const VOTER_PAGE = /^\/p\/([A-Za-z0-9-]{1,100})\/?$/;
 
-export { isSetupMode, proxyDecision, type ProxyDecision } from "./lib/net/proxy-decision";
+export { isSetupMode, legacyHostRedirect, proxyDecision, type ProxyDecision } from "./lib/net/proxy-decision";
 
 function withSecurityHeaders(res: NextResponse, pathname: string): NextResponse {
   for (const h of securityHeadersFor(pathname)) res.headers.set(h.key, h.value);
@@ -107,7 +108,12 @@ async function goneVoterPage(request: NextRequest, pathname: string, search: str
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
-  const decision = proxyDecision({ pathname, search, hasSession: request.cookies.has(SESSION_COOKIE_NAME) });
+  const decision = proxyDecision({
+    pathname,
+    search,
+    hasSession: request.cookies.has(SESSION_COOKIE_NAME),
+    host: request.headers.get("x-forwarded-host") ?? request.headers.get("host"),
+  });
   switch (decision.kind) {
     case "setup_api":
       return withSecurityHeaders(
@@ -121,6 +127,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       return withSecurityHeaders(await setupPageResponse(request), "/setup");
     case "login_redirect":
       return withSecurityHeaders(NextResponse.redirect(new URL(decision.location, request.url)), pathname);
+    case "host_redirect":
+      return withSecurityHeaders(NextResponse.redirect(decision.location, 308), pathname);
     case "next": {
       const gone = await goneVoterPage(request, pathname, search);
       if (gone) return withSecurityHeaders(gone, pathname);

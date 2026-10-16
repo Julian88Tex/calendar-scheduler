@@ -1,7 +1,7 @@
 // src/proxy.ts decisions (ARCHITECTURE section 4, SPEC GEN-08 framing, GEN-09 setup gating).
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSetupMode, proxy, proxyDecision } from "@/proxy";
+import { isSetupMode, legacyHostRedirect, proxy, proxyDecision } from "@/proxy";
 
 const env = process.env as Record<string, string | undefined>;
 const SETUP = { VERCEL: "1" };
@@ -96,5 +96,45 @@ describe("proxy()", () => {
     const res2 = await proxy(req("http://localhost:3000/"));
     expect(res2.status).toBe(503);
     expect(await res2.text()).toContain("Setup page from /setup");
+  });
+});
+
+describe("retired address redirect", () => {
+  const ENV = { APP_URL: "https://julendly.vercel.app" };
+  const OLD = "calendar-scheduler-smoky.vercel.app";
+
+  it("forwards page requests on the old address to the same path on APP_URL", () => {
+    expect(legacyHostRedirect({ host: OLD, pathname: "/julianjoseph/30min", search: "?month=2026-11", env: ENV })).toBe(
+      "https://julendly.vercel.app/julianjoseph/30min?month=2026-11",
+    );
+    expect(legacyHostRedirect({ host: OLD.toUpperCase(), pathname: "/", env: ENV })).toBe("https://julendly.vercel.app/");
+    expect(proxyDecision({ pathname: "/app/scheduling", hasSession: false, host: OLD, env: ENV })).toEqual({
+      kind: "host_redirect",
+      location: "https://julendly.vercel.app/app/scheduling",
+    });
+  });
+
+  it("leaves API routes, other hosts and a missing APP_URL alone", () => {
+    expect(legacyHostRedirect({ host: OLD, pathname: "/api/webhooks/calendars/google", env: ENV })).toBeNull();
+    expect(legacyHostRedirect({ host: OLD, pathname: "/api", env: ENV })).toBeNull();
+    expect(legacyHostRedirect({ host: "julendly.vercel.app", pathname: "/", env: ENV })).toBeNull();
+    expect(legacyHostRedirect({ host: "calendar-scheduler-git-x-julian88texs-projects.vercel.app", pathname: "/", env: ENV })).toBeNull();
+    expect(legacyHostRedirect({ host: OLD, pathname: "/", env: {} })).toBeNull();
+    expect(legacyHostRedirect({ host: OLD, pathname: "/", env: { APP_URL: `https://${OLD}` } })).toBeNull();
+    expect(legacyHostRedirect({ host: null, pathname: "/", env: ENV })).toBeNull();
+  });
+
+  it("proxy answers 308 on the old address and passes webhooks through", async () => {
+    env.APP_URL = "https://julendly.vercel.app";
+    try {
+      const page = await proxy(new NextRequest(`https://${OLD}/julianjoseph?x=1`, { headers: { host: OLD } }));
+      expect(page.status).toBe(308);
+      expect(page.headers.get("location")).toBe("https://julendly.vercel.app/julianjoseph?x=1");
+      const hook = await proxy(new NextRequest(`https://${OLD}/api/webhooks/calendars/google`, { method: "POST", headers: { host: OLD } }));
+      expect(hook.status).not.toBe(308);
+      expect(hook.headers.get("location")).toBeNull();
+    } finally {
+      delete env.APP_URL;
+    }
   });
 });
