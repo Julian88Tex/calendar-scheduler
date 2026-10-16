@@ -263,6 +263,7 @@ export async function listEventTypes(actor: ActorCtx, db?: DbOrTx): Promise<Even
   if (!rows.length) return [];
   const owner = await loadOwner(d, actor.user.id);
   const hour12 = owner.timeFormat !== "24h";
+  const [prefsRow] = await d.select({ preferences: users.preferences }).from(users).where(eq(users.id, actor.user.id)).limit(1);
   const hostRows = await d
     .select({ eventTypeId: eventTypeHosts.eventTypeId, scheduleId: eventTypeHosts.scheduleId })
     .from(eventTypeHosts)
@@ -309,6 +310,7 @@ export async function listEventTypes(actor: ActorCtx, db?: DbOrTx): Promise<Even
       availabilitySummary: schedule ? weeklySummary(weekly, hour12, owner.weekStart) : "No schedule",
       publicPath: path,
       publicUrl: path ? absoluteUrl(path) : null,
+      personaIds: Object.keys(eventPersonasOf(r.metadata, r.slug, prefsRow?.preferences ?? null)),
       access: "owner" as const,
       updatedAt: r.updatedAt.toISOString(),
     };

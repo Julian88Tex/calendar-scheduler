@@ -118,6 +118,13 @@ const COPY: Record<MeetingEmailKind, { subject: string; intro: string }> = {
   host_reminder: { subject: "subjects.hostReminder", intro: "intro.hostReminder" },
 };
 
+/** Warm persona wording (English, like the warm public pages: src/components/booking/lib/friends.ts). */
+const WARM_COPY = {
+  subject: "It's a date! {{event_name}} with {{my_name}}",
+  greeting: "Hey there!",
+  greetingNamed: "Hey {{name}}!",
+} as const;
+
 const str = (v: TemplateContext[string]): string => (v === null || v === undefined ? "" : String(v)).trim();
 
 /** "10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)": Calendly's Event Date/Time line, in the context's zone and format. */
@@ -241,10 +248,15 @@ export function renderMeetingEmail(input: MeetingEmailInput): RenderedEmail {
   const canceled = input.kind.endsWith("_canceled");
   const vars: TemplateContext = { ...ctx, app_name: appName() };
 
-  const subject = renderTemplate(input.subjectTemplate?.trim() || M(copy.subject), vars);
+  const voice = audience !== "host" && input.brand.persona?.look === "warm" ? input.brand.persona : null;
+  const confirmed = input.kind === "invitee_confirmation" || input.kind === "guest_confirmation";
+  const subject = renderTemplate(input.subjectTemplate?.trim() || (voice && confirmed ? WARM_COPY.subject : M(copy.subject)), vars);
   const firstName = str(ctx.invitee_first_name);
-  const greeting =
-    audience === "host"
+  const greeting = voice
+    ? firstName && audience === "invitee"
+      ? renderTemplate(WARM_COPY.greetingNamed, { name: firstName })
+      : WARM_COPY.greeting
+    : audience === "host"
       ? str(ctx.my_name)
         ? renderTemplate(M("greeting.named"), { name: str(ctx.my_name) })
         : M("greeting.plain")
@@ -265,6 +277,9 @@ export function renderMeetingEmail(input: MeetingEmailInput): RenderedEmail {
     blocks.push({ kind: "text", text: intro });
     for (const n of input.notices ?? []) blocks.push({ kind: "notice", tone: n.tone, title: n.title ?? null, text: n.text });
     blocks.push({ kind: "fields", items: meetingEmailFields({ ...input, locale }) });
+    if (voice && confirmed && voice.note?.trim()) blocks.push({ kind: "text", text: voice.note.trim() });
+    const signOff = voice?.signOff?.trim();
+    if (signOff && !canceled) blocks.push({ kind: "text", text: `${signOff}\n${str(voice?.hostFirstName) || str(ctx.my_name)}` });
   }
 
   if (audience === "host" && input.meetingUrl && safeHref(input.meetingUrl)) {

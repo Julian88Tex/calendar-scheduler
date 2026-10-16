@@ -4,14 +4,15 @@
 "use client";
 
 import Link from "next/link";
-import type { Persona } from "@/components/booking/lib/personas";
+import { personaUrl, type Persona } from "@/components/booking/lib/personas";
 import { PERSONA_LIMITS } from "@/components/booking/lib/persona-limits";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { htmlSummary } from "@/lib/event-types/draft";
 import { errorOf, type SectionProps } from "./fields";
 
-export function PersonasSection({ draft, update, errors, disabled, personas }: SectionProps & { personas: Persona[] }) {
+export function PersonasSection({ draft, update, errors, disabled, personas, publicUrl }: SectionProps & { personas: Persona[]; publicUrl?: string | null }) {
   const current = draft.personas ?? {};
   const realDescription = htmlSummary(draft.descriptionHtml) || "Short description";
   const set = (id: string, copy: { name: string; description: string } | null) => {
@@ -59,6 +60,12 @@ export function PersonasSection({ draft, update, errors, disabled, personas }: S
                   invalid={Boolean(errorOf(errors, `personas.${p.id}.description`))}
                   onChange={(e) => set(p.id, { ...copy, description: e.target.value })}
                 />
+                {publicUrl && (
+                  <div className="flex min-w-0 items-center gap-2" data-testid={`persona-event-link-${p.id}`}>
+                    <span className="min-w-0 flex-1 truncate text-body-sm text-ink-2">{personaUrl(publicUrl, p)}</span>
+                    <CopyButton value={personaUrl(publicUrl, p)} size="sm" label={`Copy link for ${p.name}`} />
+                  </div>
+                )}
               </div>
             )}
           </fieldset>

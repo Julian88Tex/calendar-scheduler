@@ -26,8 +26,10 @@ import { appName } from "@/lib/brand";
 import { conferenceErrorMessage, conferenceProviderName } from "@/lib/conferencing";
 import {
   addToCalendarLinks,
+  applyEmailPersona,
   buildMeetingIcs,
   emailBrandForUser,
+  emailPersonaFor,
   icsUid,
   meetingSender,
   sendEmail,
@@ -191,11 +193,13 @@ async function overlapsFor(db: DB, b: MeetingBundle, host: MeetingHost): Promise
     .map((o) => ({ title: o.title?.trim() || null, time: formatTime(o.at, zone, "en", hour12) }));
 }
 
-type Prepared = { ctx: TemplateContext; locale: string };
+type Prepared = { ctx: TemplateContext; locale: string; brand: EmailBrand };
 
-async function inviteeContext(db: DB, scheduledEventId: string, inv: InviteeRow): Promise<Prepared> {
-  const ctx = await buildMeetingTemplateContext({ scheduledEventId, inviteeId: inv.id, recipient: "invitee", db });
-  return { ctx, locale: resolveLocale(inv.locale) };
+/** The invitee's context and email brand, in the persona the booking came through (src/lib/email/persona.ts). */
+async function inviteeContext(db: DB, b: MeetingBundle, inv: InviteeRow, brand: EmailBrand): Promise<Prepared> {
+  const ctx = await buildMeetingTemplateContext({ scheduledEventId: b.meeting.id, inviteeId: inv.id, recipient: "invitee", db });
+  const persona = await emailPersonaFor({ hostUserId: b.meeting.organizerUserId, eventTypeId: b.meeting.eventTypeId, inviteeMetadata: inv.metadata, db });
+  return { ...applyEmailPersona(brand, ctx, persona), locale: resolveLocale(inv.locale) };
 }
 
 async function hostContext(db: DB, scheduledEventId: string, inv: InviteeRow | null, host: MeetingHost): Promise<TemplateContext> {
@@ -225,11 +229,11 @@ async function sendBooked(db: DB, b: MeetingBundle, inv: InviteeRow, brand: Emai
   const snap = m.settingsSnapshot;
   const emailMode = snap.notificationMode === "email_confirmation";
   if (emailMode) {
-    const { ctx, locale } = await inviteeContext(db, m.id, inv);
+    const { ctx, locale, brand: inviteeBrand } = await inviteeContext(db, b, inv, brand);
     const ics = await inviteeIcs(db, b, inv, "REQUEST");
     const sender = await meetingSender({ hostUserId: m.organizerUserId, audience: "invitee", db });
     const common = {
-      brand,
+      brand: inviteeBrand,
       locale,
       location: m.location,
       includeAnswers: snap.includeAnswersInNotifications !== false,
@@ -302,7 +306,7 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
   const reason = old.rescheduleReason ?? old.cancelReason ?? null;
   const emailMode = snap.notificationMode === "email_confirmation";
   if (emailMode) {
-    const { ctx, locale } = await inviteeContext(db, m.id, inv);
+    const { ctx, locale, brand: inviteeBrand } = await inviteeContext(db, b, inv, brand);
     const formerCtx = await buildMeetingTemplateContext({ scheduledEventId: old.scheduledEventId, inviteeId: old.id, recipient: "invitee", db });
     const ics = await inviteeIcs(db, b, inv, "REQUEST");
     // Group variant (CR-10): the former seat had its own UID, which is canceled next to the new invite.
@@ -318,7 +322,7 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
       : null;
     const sender = await meetingSender({ hostUserId: m.organizerUserId, audience: "invitee", db });
     const common = {
-      brand,
+      brand: inviteeBrand,
       locale,
       location: m.location,
       includeAnswers: snap.includeAnswersInNotifications !== false,
@@ -371,7 +375,7 @@ async function sendRescheduled(db: DB, b: MeetingBundle, inv: InviteeRow, brand:
           to: g.email,
           email: bookingEmail("guest_canceled", {
             ctx: { ...formerCtx, invitee_first_name: "" },
-            brand,
+            brand: inviteeBrand,
             locale,
             cancellation: { canceledBy: old.canceledByName ?? (old.cancelerType === "invitee" ? old.name : null), reason },
             manageLinks: false,
@@ -493,13 +497,13 @@ export async function notifyCanceled(db: DB, p: { scheduledEventId: string; invi
   // poll invitees leaving a meeting that goes on: the next number of the meeting's sequence).
   const sequence = p.meetingCanceled && !m.isGroup ? m.icsSequence : m.icsSequence + 1;
   const ics = emailMode ? await inviteeIcs(db, b, inv, "CANCEL", sequence) : null;
-  const { ctx, locale } = await inviteeContext(db, m.id, inv);
+  const { ctx, locale, brand: inviteeBrand } = await inviteeContext(db, b, inv, brand);
   const sender = await meetingSender({ hostUserId: m.organizerUserId, audience: "invitee", db });
   const request = meta.cancelKind === "request_reschedule" ? meta.requestReschedule : null;
   if (request) {
     await deliver(db, b, {
       to: inv.email,
-      email: requestRescheduleEmail({ ctx, brand, locale, message: request.message, rebookUrl: inviteeUrls(inv.id).reschedule }),
+      email: requestRescheduleEmail({ ctx, brand: inviteeBrand, locale, message: request.message, rebookUrl: inviteeUrls(inv.id).reschedule }),
       sender,
       ics,
       key: `lc:request:${inv.id}`,
@@ -511,7 +515,7 @@ export async function notifyCanceled(db: DB, p: { scheduledEventId: string; invi
       to: inv.email,
       email: bookingEmail("invitee_canceled", {
         ctx,
-        brand,
+        brand: inviteeBrand,
         locale,
         cancellation,
         manageLinks: snap.includeCancelRescheduleLinks !== false,
@@ -528,7 +532,7 @@ export async function notifyCanceled(db: DB, p: { scheduledEventId: string; invi
   for (const g of guestsOf(b, inv.id, { includeCanceled: true })) {
     await deliver(db, b, {
       to: g.email,
-      email: bookingEmail("guest_canceled", { ctx: { ...ctx, invitee_first_name: "" }, brand, locale, cancellation, manageLinks: false }),
+      email: bookingEmail("guest_canceled", { ctx: { ...ctx, invitee_first_name: "" }, brand: inviteeBrand, locale, cancellation, manageLinks: false }),
       sender,
       ics,
       key: `lc:cancel:${inv.id}:guest:${g.emailNormalized}`,
@@ -593,11 +597,11 @@ export async function notifyMoved(db: DB, p: { scheduledEventId: string; fromSta
   const list = activeInvitees(b);
   if (snap.notificationMode === "email_confirmation") {
     for (const inv of list) {
-      const { ctx, locale } = await inviteeContext(db, m.id, inv);
+      const { ctx, locale, brand: inviteeBrand } = await inviteeContext(db, b, inv, brand);
       const formerCtx = formerOf(ctx, from, inv.timezone ?? organizerZone, locale, inv.timeFormat);
       const ics = await inviteeIcs(db, b, inv, "REQUEST");
       const sender = await meetingSender({ hostUserId: m.organizerUserId, audience: "invitee", db });
-      const common = { brand, locale, location: m.location, includeAnswers: snap.includeAnswersInNotifications !== false, addToCalendar: addToCalendar(b, inv, ctx, locale, ics?.allDayDate) };
+      const common = { brand: inviteeBrand, locale, location: m.location, includeAnswers: snap.includeAnswersInNotifications !== false, addToCalendar: addToCalendar(b, inv, ctx, locale, ics?.allDayDate) };
       await deliver(db, b, {
         to: inv.email,
         email: bookingEmail("invitee_rescheduled", { ...common, ctx, former: { ctx: formerCtx, reason: null }, questions: inv.questionsAndAnswers, manageLinks: snap.includeCancelRescheduleLinks !== false }),
@@ -673,8 +677,7 @@ export async function sendRequestRescheduleReminder(db: DB, inviteeId: string, d
   if (again.length) return "skipped";
   const b = await loadMeeting(db, inv.scheduledEventId);
   if (!b) return "skipped";
-  const brand = await emailBrandForUser(b.meeting.organizerUserId, db);
-  const { ctx, locale } = await inviteeContext(db, b.meeting.id, inv);
+  const { ctx, locale, brand } = await inviteeContext(db, b, inv, await emailBrandForUser(b.meeting.organizerUserId, db));
   await deliver(db, b, {
     to: inv.email,
     email: requestRescheduleEmail({ ctx, brand, locale, message: request.message, rebookUrl: inviteeUrls(inv.id).reschedule, reminder: true }),

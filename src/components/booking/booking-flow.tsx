@@ -566,6 +566,7 @@ export function BookingFlow(p: BookingPageProps) {
       timeFormat,
       locale: LOCALE,
       tracking: p.prefill.tracking,
+      persona: p.persona?.id,
       routingFormSubmissionId: p.prefill.routingFormSubmissionId ?? null,
       clientRequestId: requestRef.current.id,
       formToken: p.formToken,

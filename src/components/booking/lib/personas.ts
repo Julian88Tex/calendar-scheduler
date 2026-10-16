@@ -11,7 +11,7 @@
 // saved with personas is shown to both: under its real name to the default persona and under the legacy friendly name
 // to "friends". Server-side and the settings forms only; kept out of
 // lib/friends.ts so the public booking page's client JS does not carry it (GEN-07). Client and server safe.
-import { PERSONA_ID_RE, PERSONA_LIMITS } from "./persona-limits";
+import { PERSONA_ID_RE, PERSONA_LIMITS, PERSONA_PARAM } from "./persona-limits";
 import { interpolate } from "./t";
 
 /** Fixed lines of warm persona pages. {firstName} is the host's first name. The editable ones live on the Persona. */
@@ -24,6 +24,33 @@ export const FRIENDS_COPY = {
 /** utm_source stored on bookings made through a persona link (shown with the meeting's tracking details). */
 export function personaUtmSource(personaId: string): string {
   return `${personaId}-link`;
+}
+
+/** A public link opened as a persona (?for={id}); the default persona, or none, keeps the plain link. Non-URLs stay as they are. */
+export function personaUrl(url: string, persona: Pick<Persona, "id" | "isDefault"> | null | undefined): string {
+  if (!persona || persona.isDefault) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.set(PERSONA_PARAM, persona.id);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** The persona a booking came through (invitees.metadata.persona, set from ?for= when it was booked), or null. */
+export function inviteePersonaOf(metadata: unknown): string | null {
+  const v = rec(metadata).persona;
+  return typeof v === "string" && v.length <= PERSONA_LIMITS.id && PERSONA_ID_RE.test(v) ? v : null;
+}
+
+/** Invitee metadata with the persona key set (an unusable id leaves it off). */
+export function withInviteePersona(metadata: Record<string, unknown> | null | undefined, personaId: string | null | undefined): Record<string, unknown> {
+  const id = inviteePersonaOf({ persona: (personaId ?? "").trim().toLowerCase() });
+  const out: Record<string, unknown> = { ...(metadata ?? {}) };
+  delete out.persona;
+  if (id) out.persona = id;
+  return out;
 }
 
 export type PersonaStyle = "warm" | "classic";

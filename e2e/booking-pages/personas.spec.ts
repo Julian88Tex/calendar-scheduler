@@ -88,7 +88,20 @@ test.describe("personas", () => {
       await axe(page);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${scheme}-4-confirmed.png`, fullPage: true });
 
-      await expect.poll(async () => (await api.outbox({ to: email })).length, { timeout: 30_000 }).toBeGreaterThan(0);
+      // The confirmation email speaks as the friends persona: warm palette, friendly subject and greeting, the
+      // persona's event name, thank-you line and sign-off.
+      const sent = await api.waitForEmail((e) => e.template === "lifecycle.invitee_confirmation", { to: email, timeoutMs: 30_000 });
+      expect(sent.subject).toBe("It's a date! Quick video catch-up with Julian Joseph");
+      expect(sent.text).toMatch(/^Hey Friend!/);
+      expect(sent.text).toContain("Seriously, thanks for making the time.");
+      expect(sent.text).toContain("Can't wait to see you,\nJulian");
+      expect(sent.text).not.toContain("Powered by");
+      expect(sent.html).toContain("#FBF3E8");
+      expect(sent.html).toContain("#B5482A");
+      if (SHOTS && scheme === "light") {
+        await page.setContent(sent.html);
+        await page.screenshot({ path: `${SHOTS}/email-friends-confirmation.png`, fullPage: true });
+      }
     });
   }
 
@@ -122,6 +135,18 @@ test.describe("personas", () => {
     await page.getByLabel("Name", { exact: true }).fill("Work");
     await page.getByLabel("Link name").fill("work");
     await expect(page.getByTestId("persona-link")).toHaveText(/\/julianjoseph\?for=work$/);
+    // Look: two cards with a picture of each palette instead of a dropdown.
+    const look = page.getByTestId("persona-look");
+    await expect(look.getByRole("radio", { name: /Classic/ })).toBeChecked();
+    await expect(page.getByTestId("look-preview-classic")).toBeVisible();
+    await expect(page.getByTestId("look-preview-warm")).toBeVisible();
+    await expect(look.getByLabel("Warm colors")).toContainText("Terracotta");
+    await look.getByText("Warm", { exact: true }).click();
+    await expect(look.getByRole("radio", { name: /Warm/ })).toBeChecked();
+    await expect(page.getByLabel("Sign-off")).toBeVisible();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/settings-look-warm.png`, fullPage: true });
+    await look.getByText("Classic", { exact: true }).click();
+    await expect(page.getByLabel("Sign-off")).toHaveCount(0);
     await page.getByLabel("Greeting").fill("Hello, team");
     await page.getByLabel("Note").fill("Grab any slot for a project chat.");
     await axe(page);
@@ -140,6 +165,8 @@ test.describe("personas", () => {
     await expect(section.getByRole("checkbox", { name: "Work" })).toBeChecked();
     await expect(section.getByLabel("Name for Friends")).toHaveValue("Quick video catch-up");
     await section.getByLabel("Name for Work").fill("Project sync");
+    await expect(section.getByTestId("persona-event-link-work")).toContainText("/julianjoseph/30min?for=work");
+    await expect(section.getByTestId("persona-event-link-business")).toContainText(/\/julianjoseph\/30minCopy link/);
     await section.getByRole("checkbox", { name: "Friends" }).click();
     await axe(page);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/event-type-personas.png`, fullPage: true });
@@ -161,6 +188,23 @@ test.describe("personas", () => {
     await expect(page.getByRole("link", { name: /Quick video catch-up/ })).toHaveCount(0);
     await page.goto("/julianjoseph", SLOW);
     await expect(page.getByRole("link", { name: /30 Minute Virtual/ })).toBeVisible();
+
+    // Scheduling: "Links for" turns every public link on the page into the chosen persona's.
+    await openSettled(page, "/app/scheduling");
+    const picker = page.getByTestId("link-persona");
+    await expect(picker.getByRole("button", { name: "Business" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("link", { name: "View landing page" })).toHaveAttribute("href", /\/julianjoseph$/);
+    await picker.getByRole("button", { name: "Friends" }).click();
+    await expect(page.getByRole("link", { name: "View landing page" })).toHaveAttribute("href", /\/julianjoseph\?for=friends$/);
+    await expect(page.getByRole("link", { name: /julianjoseph\?for=friends$/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View booking page for 60 Minute Virtual" })).toHaveAttribute("href", /\/julianjoseph\/60min\?for=friends$/);
+    // The 30 minute type was hidden from Friends above.
+    await expect(page.locator('[data-event-type-id]', { hasText: "30 Minute Virtual" }).getByTestId("hidden-for-persona")).toContainText("Hidden from Friends");
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/scheduling-links-for-friends.png`, fullPage: true });
+    await page.reload();
+    await expect(page.getByTestId("link-persona").getByRole("button", { name: "Friends" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("link-persona").getByRole("button", { name: "Business" }).click();
 
     // The old settings page now opens Personas.
     await page.goto("/app/settings/friends", SLOW);
