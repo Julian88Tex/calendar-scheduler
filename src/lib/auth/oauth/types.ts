@@ -1,7 +1,8 @@
 // OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // OAuth types shared by the foundation callback routes and the intent handlers in other modules
-// (calendars.handleConnectCallback, polls.handleVoterFreeBusyCallback; ARCHITECTURE section 10.4).
+// (calendars.handleConnectCallback, polls.handleVoterFreeBusyCallback, compare.handleCompareCallback; ARCHITECTURE
+// section 10.4).
 
 export type OAuthProviderId = "google" | "microsoft";
 
@@ -10,6 +11,7 @@ export const OAUTH_INTENTS = [
   "signup",
   "connect_calendar",
   "poll_freebusy",
+  "compare_calendar",
   "link_login_method",
   "accept_invitation",
 ] as const;
@@ -44,7 +46,7 @@ export type OAuthState = {
   returnTo: string | null;
   /** accept_invitation: the plaintext invitation token. */
   invitationToken?: string | null;
-  /** poll_freebusy: the poll slug or id; connect_calendar: optional flags. */
+  /** poll_freebusy: the poll slug or id; connect_calendar: optional flags; compare_calendar: none. */
   data?: Record<string, string>;
 };
 

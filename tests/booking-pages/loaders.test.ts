@@ -169,7 +169,7 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
       ["utm_source", "news"],
       ["name", "Ben"],
     ]);
-    expect(p.viewer).toEqual({ signedIn: false, isHost: false, email: null, editUrl: null, mutual: false });
+    expect(p.viewer).toEqual({ signedIn: false, isHost: false, email: null, editUrl: null, mutual: false, compare: false });
     expect(p.troubleshootEventTypeId).toBeNull();
     expect(p.turnstileSiteKey).toBeNull();
     expect(p.preview).toBe(false);
@@ -231,7 +231,7 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
     const et = await eventType(owner);
     state.viewer = owner;
     const page = await ok(owner.slug!, "intro", "preview=1");
-    expect(page.props.viewer).toEqual({ signedIn: true, isHost: true, email: owner.email, editUrl: `/app/event-types/${et.id}`, mutual: false });
+    expect(page.props.viewer).toEqual({ signedIn: true, isHost: true, email: owner.email, editUrl: `/app/event-types/${et.id}`, mutual: false, compare: false });
     expect(page.props.troubleshootEventTypeId).toBe(et.id);
     expect(page.props.preview).toBe(true);
     expect(page.props.carry).toEqual([["preview", "1"]]);
@@ -242,7 +242,7 @@ describe("resolveEventPage (BK-03 to BK-08, BK-23, BK-25, BK-26)", () => {
     const visitor = await ok(owner.slug!, "intro", "preview=1");
     expect(visitor.props.preview).toBe(false);
     expect(visitor.props.carry).toEqual([]);
-    expect(visitor.props.viewer).toEqual({ signedIn: true, isHost: false, email: null, editUrl: null, mutual: true });
+    expect(visitor.props.viewer).toEqual({ signedIn: true, isHost: false, email: null, editUrl: null, mutual: true, compare: false });
     expect(visitor.props.troubleshootEventTypeId).toBeNull();
     const embedded = await ok(owner.slug!, "intro", "embed_domain=example.com&embed_type=Inline");
     expect(embedded.props.viewer.mutual).toBe(false);

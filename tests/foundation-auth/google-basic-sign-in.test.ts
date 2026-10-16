@@ -131,6 +131,7 @@ describe("scopes per intent", () => {
       signup: "full",
       connect_calendar: "full",
       poll_freebusy: "freebusy",
+      compare_calendar: "compare",
       link_login_method: "sign_in",
       accept_invitation: "sign_in",
     });

@@ -19,7 +19,8 @@ working with the permission you gave when you connected.
 You still see the warning, until Google approves the app, when you go through the full consent screen on purpose:
 **+ Connect calendar account**, any **Reconnect** (Calendar settings, the dashboard banner, the Google Calendar
 integration page that the email outbox's **Reconnect Google** link opens) and **Allow Gmail sending**. Meeting poll
-voters who click **Check my calendar** > **Google Calendar** may see it too. Verification removes it everywhere.
+voters who click **Check my calendar** > **Google Calendar**, and booking page visitors who click **Compare with my
+calendar** > **Connect Google Calendar**, may see it too. Verification removes it everywhere.
 
 What each Google flow asks for (`src/lib/auth/oauth/google.ts`, `googleAccessFor`):
 
@@ -28,6 +29,7 @@ What each Google flow asks for (`src/lib/auth/oauth/google.ts`, `googleAccessFor
 | Log in, add Google as a login method, accept an invitation | `openid email profile` | `select_account`, no offline access |
 | Sign up with Google, connect a calendar, every Reconnect, Allow Gmail sending | the 6 scopes below | `consent`, offline access, `include_granted_scopes` |
 | Meeting poll voter: Check my calendar | `openid email calendar.freebusy` | `select_account`, no offline access |
+| Booking page visitor: Compare with my calendar | `openid email calendar.freebusy calendar.calendarlist.readonly` | `select_account`, no offline access |
 
 ## Before you submit
 
@@ -52,8 +54,10 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
    - `https://www.googleapis.com/auth/calendar.events`
    - `https://www.googleapis.com/auth/calendar.readonly`
    - `https://www.googleapis.com/auth/gmail.send`
-   - `https://www.googleapis.com/auth/calendar.freebusy` (used by meeting poll voters; add it with **Manually add
-     scopes** if it is missing)
+   - `https://www.googleapis.com/auth/calendar.freebusy` (used by meeting poll voters and booking page visitors; add it
+     with **Manually add scopes** if it is missing)
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (used by booking page visitors who compare their
+     calendar; add it with **Manually add scopes**)
 4. **Audience**: External, In production (already the case).
 5. Check the home page signed out (a private window): https://julendly.vercel.app/ shows the Julendly
    logo and name, what the app is, a Sign in button, the "How it uses Google" paragraph and the Privacy Policy and
@@ -76,7 +80,10 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
 > Calendar; (3) send the booking emails (confirmations, reminders, reschedule and cancellation notices) from the
 > owner's own Gmail address. Separately, a meeting poll voter may choose "Check my calendar" to compare their own
 > Google Calendar's free/busy times with the proposed times once; that token is used for a single request, revoked and
-> never stored.
+> never stored. Likewise, a visitor on a booking page may choose "Compare with my calendar" to see which of the owner's open
+> times clash with their own Google Calendar: they pick which of their calendars to compare (calendar list) and the
+> app reads only their free/busy times; their access token stays encrypted in their own browser for at most an hour
+> and is never stored on the server.
 >
 > Signing in to the site only asks for openid, email and profile. The calendar and Gmail permissions are requested
 > only when the owner connects or reconnects their calendar.
@@ -198,15 +205,43 @@ Code paths:
   "primary" }]`), `appendCheckCookie`.
 - `src/components/polls/voter/calendar-check.tsx`: the "Check my calendar" popover.
 
+The same scope also serves the booking page's "Compare with my calendar" (next section): freebusy.query for the
+calendars the visitor picks, over the month on screen.
+
+### https://www.googleapis.com/auth/calendar.calendarlist.readonly
+
+> Used only on a public booking page, when a visitor chooses "Compare with my calendar" > "Connect Google Calendar". The
+> app reads the visitor's calendar list (calendarList.list with minAccessRole=freeBusyReader: each calendar's id, name
+> and color, and whether it is primary or shown in their Google Calendar) so the visitor can pick which of their
+> calendars to compare. It then calls freebusy.query (calendar.freebusy) for the picked calendars over the month on
+> screen and marks the owner's open times that overlap as "Conflict". No refresh token is requested (no offline
+> access). The visitor's access token is encrypted (AES-256-GCM) into an httpOnly cookie in the visitor's own browser,
+> sent only to the compare endpoints, and expires with the token (at most one hour); "Disconnect" deletes it. Nothing
+> about the visitor's calendars is stored on the server: the list and the busy times (start and end only, merged
+> across calendars) are passed straight back to the visitor's browser.
+>
+> Why not a narrower scope: this is the narrowest scope that lists a user's calendars; calendar.readonly and
+> calendar.events would also expose events. Without it the visitor could only compare their primary calendar.
+
+Code paths:
+- `src/lib/auth/oauth/google.ts`: `GOOGLE_COMPARE_SCOPES`, `googleAccessFor("compare_calendar")`.
+- `src/lib/compare/oauth.ts`: `handleCompareCallback` (seals the token into the visitor's cookie, writes nothing).
+- `src/lib/compare/session.ts`: the sealed cookie (`kairos_compare`, path `/api/public/compare`, at most 1 hour).
+- `src/lib/compare/google.ts`: `listCompareCalendars` (GET `users/me/calendarList`), `compareBusy` (POST `freeBusy`).
+- `src/app/api/public/compare/route.ts`, `src/app/api/public/compare/busy/route.ts`: the endpoints the page calls.
+- `src/components/booking/compare-bar.tsx`: the "Compare with my calendar" panel.
+
 ## Paste: data handling and retention
 
 > Who: the site has one account holder, the owner. Google user data comes from the owner's own Google account, plus a
-> one-time free/busy read for poll voters who choose it.
+> one-time free/busy read for poll voters who choose it, and a free/busy and calendar list read for booking page
+> visitors who choose "Compare with my calendar".
 >
 > Storage and protection: the owner's Google OAuth access and refresh tokens are stored encrypted (AES-256-GCM) in the
 > app's Postgres database (Neon) and are decrypted only on the server (Vercel) to call Google; they are never sent to
 > a browser. Sign-in stores only the Google account id and email address to recognize the owner, and the name and
-> profile picture on the owner's profile. Poll voter tokens are used for one request, revoked and never stored.
+> profile picture on the owner's profile. Poll voter tokens are used for one request, revoked and never stored. A booking page visitor's compare token is
+> kept only in that visitor's browser, encrypted, for at most an hour, and never stored on the server.
 >
 > What is kept and for how long: the owner's calendar list (names, colors, time zones, access levels) until the owner
 > disconnects the calendar; a cache of the owner's events on the calendars checked for conflicts (start, end, title,
@@ -272,7 +307,14 @@ to Google, and use a private window only for the poll voter shot.
    show the address bar (`client_id`, `scope=openid email https://www.googleapis.com/auth/calendar.freebusy`) and the
    consent screen, allow it, and show the proposed times marked **Free** or **Conflict**. Say: "The voter's free/busy
    is read once; nothing is stored."
-10. **Ending.** Do not click **Disconnect** on the live account: it deletes the calendar choices, stops Gmail sending
+10. **calendar.calendarlist.readonly in use: the booking page compare.** In the same private window, open your
+    booking page (`/julianjoseph/30min`) and click **Compare with my calendar** > **Connect Google Calendar**. Sign in
+    with the same test account, show the address bar (`scope=openid email ...calendar.freebusy
+    ...calendar.calendarlist.readonly`) and the consent screen, allow it, and show "Comparing with {account}", the list
+    of that account's calendars with checkboxes, and a day whose times read **Conflict**. Untick a calendar to show the
+    conflicts change, then click **Disconnect**. Say: "Only the calendar names and busy times are read, to mark the
+    clashing times; the access stays in the visitor's browser for at most an hour and nothing is stored."
+11. **Ending.** Do not click **Disconnect** on the live account: it deletes the calendar choices, stops Gmail sending
     and detaches existing bookings from their Google events, and Reconnect does not restore them.
 
 ## Verify the domain in Search Console (URL prefix, HTML tag)

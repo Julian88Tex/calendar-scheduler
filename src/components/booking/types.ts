@@ -43,6 +43,8 @@ export type ViewerView = {
   editUrl: string | null;
   /** BK-33: signed-in viewers who are not hosts see "Show times you're free". */
   mutual: boolean;
+  /** "Compare with my calendar": anyone can compare with their own Google Calendar (not in embeds or previews). */
+  compare: boolean;
 };
 
 export type BookingPrefillView = {

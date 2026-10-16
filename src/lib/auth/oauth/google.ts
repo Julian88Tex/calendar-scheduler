@@ -15,6 +15,8 @@
 //   include_granted_scopes keeps earlier grants, and a grant without gmail.send (the box unchecked on Google's consent
 //   screen) still connects the calendar.
 // - "freebusy" (poll_freebusy, MP-13 "Check my calendar"): the free/busy scope only, no offline access.
+// - "compare" (compare_calendar, the booking page's "Compare with my calendar"): free/busy plus the read-only calendar
+//   list (names and colors of the visitor's calendars, so they pick which ones to compare), no offline access.
 import "server-only";
 import { AppError } from "@/lib/errors";
 import { GMAIL_SEND_SCOPE } from "@/lib/integrations/google/scopes";
@@ -36,6 +38,14 @@ export const GOOGLE_SCOPES = [
 /** MP-13 "Check my calendar": free/busy only, tokens kept in memory. */
 export const GOOGLE_FREEBUSY_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.freebusy"] as const;
 
+/** Booking page "Compare with my calendar": free/busy and the calendar list (no events), no refresh token. */
+export const GOOGLE_COMPARE_SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/calendar.freebusy",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+] as const;
+
 /** Extra authorize parameters of the full flows (refresh token on every consent, incremental auth). */
 export const GOOGLE_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = {
   access_type: "offline",
@@ -47,7 +57,7 @@ export const GOOGLE_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = {
 export const GOOGLE_SIGN_IN_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = { prompt: "select_account" };
 
 /** What a Google flow asks for (see the file header). */
-export type GoogleAccess = "sign_in" | "full" | "freebusy";
+export type GoogleAccess = "sign_in" | "full" | "freebusy" | "compare";
 
 /** The access an intent asks for: only signup and connect_calendar ask for the calendar and Gmail. */
 export function googleAccessFor(intent: OAuthIntent): GoogleAccess {
@@ -57,6 +67,8 @@ export function googleAccessFor(intent: OAuthIntent): GoogleAccess {
       return "full";
     case "poll_freebusy":
       return "freebusy";
+    case "compare_calendar":
+      return "compare";
     case "login":
     case "link_login_method":
     case "accept_invitation":
@@ -68,7 +80,10 @@ export function googleAccessFor(intent: OAuthIntent): GoogleAccess {
 /** The scopes an intent asks for. */
 export function googleScopesFor(intent: OAuthIntent): readonly string[] {
   const access = googleAccessFor(intent);
-  return access === "full" ? GOOGLE_SCOPES : access === "freebusy" ? GOOGLE_FREEBUSY_SCOPES : GOOGLE_SIGN_IN_SCOPES;
+  if (access === "full") return GOOGLE_SCOPES;
+  if (access === "freebusy") return GOOGLE_FREEBUSY_SCOPES;
+  if (access === "compare") return GOOGLE_COMPARE_SCOPES;
+  return GOOGLE_SIGN_IN_SCOPES;
 }
 
 /** The extra authorize parameters of an intent. */

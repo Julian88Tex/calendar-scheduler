@@ -4,7 +4,8 @@
 // same-site paths, and where each intent sends its errors:
 //   login -> /login?error={code}&provider=..., signup -> /signup?error=..., accept_invitation -> /invite/{token}?error=...,
 //   connect_calendar -> returnTo or /app/availability/calendar-settings with ?oauth_error=...,
-//   link_login_method -> returnTo or /app/settings/login with ?oauth_error=..., poll_freebusy -> returnTo with ?oauth_error=...
+//   link_login_method -> returnTo or /app/settings/login with ?oauth_error=..., poll_freebusy and
+//   compare_calendar -> returnTo with ?oauth_error=...
 import "server-only";
 import { absoluteUrl, safeNextPath } from "@/lib/url";
 import type { OAuthErrorCode } from "./errors";
@@ -27,6 +28,7 @@ const RETURN_DEFAULTS: Partial<Record<OAuthIntent, string>> = {
   connect_calendar: "/app/availability/calendar-settings",
   link_login_method: "/app/settings/login",
   poll_freebusy: "/",
+  compare_calendar: "/",
 };
 
 /** Where an intent sends a failure (see the file header). */
@@ -45,7 +47,8 @@ export function oauthErrorRedirect(
         : appendQuery("/login", { error: code, provider });
     case "connect_calendar":
     case "link_login_method":
-    case "poll_freebusy": {
+    case "poll_freebusy":
+    case "compare_calendar": {
       const base = safeNextPath(state?.returnTo, RETURN_DEFAULTS[intent] ?? "/");
       return appendQuery(base, { oauth_error: code, provider });
     }
