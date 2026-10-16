@@ -229,7 +229,7 @@ export function MonthCalendar({
       <table
         aria-label={aria["aria-label"] ?? "Select a Day"}
         data-mode={mode}
-        className={cn("w-full table-fixed border-collapse transition-opacity duration-150", loading && "opacity-40")}
+        className="w-full table-fixed border-collapse"
       >
         <caption className="sr-only">{title}</caption>
         <thead>
@@ -246,7 +246,8 @@ export function MonthCalendar({
             ))}
           </tr>
         </thead>
-        <tbody>
+        {/* Only the days dim while loading: they are disabled then, the weekday names stay readable. */}
+        <tbody className={cn("transition-opacity duration-150", loading && "opacity-40")}>
           {rows.map((row, r) => (
             <tr key={r}>
               {row.map((date, c) => {
