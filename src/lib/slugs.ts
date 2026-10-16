@@ -28,7 +28,7 @@ export const RESERVED_SLUGS: readonly string[] = [
   "sitemap.xml", "manifest.json", "apple-touch-icon.png", "verify-email", "reset-password", "forgot-password", "me",
   "new", "null", "undefined", "www", "mail", "root", "system",
   // Real routes that are not in the GEN-02 list (a handle would be shadowed by them).
-  "confirm-email",
+  "confirm-email", "friends",
 ];
 
 const RESERVED = new Set(RESERVED_SLUGS);

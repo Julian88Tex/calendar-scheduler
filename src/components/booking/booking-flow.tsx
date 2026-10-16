@@ -58,7 +58,8 @@ import {
 } from "./lib/form";
 import { longDate, weekdayTitle } from "./lib/display";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
-import { bt } from "./lib/t";
+import { FRIENDS_COPY, toneText } from "./lib/friends";
+import { bt as baseText, type Vars } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
 import { calendarHref, detailsHref, landingForwardParams, parseDate, parseMonth, startFromPath, withCarried } from "./lib/url-state";
 import { OwnerBanner, PreviewBanner } from "./owner-banner";
@@ -169,6 +170,8 @@ function busyWindow(month: string): { start: string; end: string } {
 }
 
 export function BookingFlow(p: BookingPageProps) {
+  // Every string of the flow reads through the page's tone (the friends link swaps some, lib/friends.ts).
+  const bt = (key: string, vars?: Vars) => (p.tone ? toneText(p.tone, key, vars) : baseText(key, vars));
   const router = useRouter();
   const draft = usePreviewDraft(p.preview);
   const event = useMemo(() => applyDraft(p.event, draft), [p.event, draft]);
@@ -640,7 +643,7 @@ export function BookingFlow(p: BookingPageProps) {
 
   if (step === "details" && start) {
     return (
-      <div data-booking-flow="details" className={PUBLIC_TEXT_TRACKING}>
+      <div data-booking-flow="details" data-tone={p.tone} className={PUBLIC_TEXT_TRACKING}>
         {banners}
         <BookingCard side={side} wide ribbon={p.ribbon} embed={embed} hideSide={hideSide} phoneFooter={phoneFooter("start")}>
           {/* 25px below the form: the button ends 26px above the card's bottom border, as Calendly's does. */}
@@ -656,6 +659,11 @@ export function BookingFlow(p: BookingPageProps) {
                 {bt("details.title")}
               </span>
             </BookingPanelHeading>
+            {p.tone === "friends" && (
+              <p className="mt-2 mb-4 text-[15px] leading-[22px] text-ink-2" data-testid="friends-details-intro">
+                {FRIENDS_COPY.detailsIntro}
+              </p>
+            )}
             {hideSide && whenText && (
               <p className="mt-2 text-[14px] font-semibold text-ink-2" data-testid="details-when">
                 {whenText}, {friendlyZoneName(dataZone)}
@@ -715,6 +723,7 @@ export function BookingFlow(p: BookingPageProps) {
                     setValues((v) => ({ ...v, name: "", firstName: "", lastName: "", email: "" }));
                   }}
                   disabledNote={p.preview ? bt("page.previewDisabled") : null}
+                  submitLabel={bt("details.schedule")}
                 />
               )}
             </div>
@@ -811,7 +820,7 @@ export function BookingFlow(p: BookingPageProps) {
   ) : null;
 
   return (
-    <div data-booking-flow="calendar" className={PUBLIC_TEXT_TRACKING}>
+    <div data-booking-flow="calendar" data-tone={p.tone} className={PUBLIC_TEXT_TRACKING}>
       {banners}
       <BookingCard
         side={side}

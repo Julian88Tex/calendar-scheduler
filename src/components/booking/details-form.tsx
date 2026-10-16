@@ -52,6 +52,8 @@ export type DetailsFormProps = {
   onNotYou: () => void;
   /** Preview mode (ET-29): the button is disabled with this note. */
   disabledNote?: string | null;
+  /** Submit button text (default "Schedule Event"; the friends link says "Lock it in"). */
+  submitLabel?: string;
 };
 
 function TextField({
@@ -311,7 +313,7 @@ export function DetailsForm({ honeypotRef, turnstileRef, ...p }: DetailsFormProp
             }}
             className={cn(BRAND_BUTTON, "max-[599px]:w-full")}
           >
-            {bt("details.schedule")}
+            {p.submitLabel ?? bt("details.schedule")}
           </Button>
           {p.disabledNote && <p className="mt-2 text-[13px] text-ink-2">{p.disabledNote}</p>}
         </div>

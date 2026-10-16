@@ -25,14 +25,14 @@ export function BookingPageView({ result }: { result: BookingPageResult }) {
   if (result.state !== "ok") {
     const s = result.shell;
     return (
-      <PublicPageShell branding={s.branding} embed={s.embed.embed} showFooterLinks={false} hideGdprBanner={s.embed.hideGdprBanner}>
+      <PublicPageShell branding={s.branding} embed={s.embed.embed} showFooterLinks={false} hideGdprBanner={s.embed.hideGdprBanner} tone={s.tone}>
         <StateCard kind={result.state} hostName={s.hostName} ribbon={s.ribbon} embed={s.embed.embed} privacyUrl={s.privacyUrl} />
       </PublicPageShell>
     );
   }
   const p = result.props;
   return (
-    <PublicPageShell branding={p.branding} embed={p.embed.embed} showFooterLinks={false} hideGdprBanner={p.embed.hideGdprBanner} operatorEmail={p.operatorEmail} privacyUrl={p.privacyUrl}>
+    <PublicPageShell branding={p.branding} embed={p.embed.embed} showFooterLinks={false} hideGdprBanner={p.embed.hideGdprBanner} operatorEmail={p.operatorEmail} privacyUrl={p.privacyUrl} tone={p.tone}>
       <BookingFlow {...p} />
     </PublicPageShell>
   );

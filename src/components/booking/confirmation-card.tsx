@@ -14,7 +14,8 @@ import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonClassName } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { bt } from "./lib/t";
+import { FRIENDS_COPY, toneText, type Tone } from "./lib/friends";
+import type { Vars } from "./lib/t";
 import { LocationGlyph } from "./location-icon";
 import type { ConfirmationView } from "./server/confirmation";
 
@@ -31,10 +32,11 @@ function Row({ icon, children, strike }: { icon: React.ReactNode; children: Reac
 
 const PILL = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-full border border-line px-4 text-[14px] font-semibold text-brand-strong transition-colors hover:bg-brand-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
-export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: boolean }) {
+export function ConfirmationCard({ v, embed, tone }: { v: ConfirmationView; embed?: boolean; tone?: Tone }) {
+  const t = (key: string, vars?: Vars) => toneText(tone, key, vars);
   const canceled = v.status === "canceled";
   const sentence =
-    v.mode === "calendar_invitation" ? bt("confirmation.sentTo") : bt("confirmation.sentEmail");
+    v.mode === "calendar_invitation" ? t("confirmation.sentTo") : t("confirmation.sentEmail");
   return (
     <PublicCard width="narrow" ribbon={v.ribbon} embed={embed} className={PUBLIC_TEXT_TRACKING}>
       <div className="flex flex-col items-center px-6 pt-10 pb-2 text-center min-[600px]:px-10" data-testid="confirmation">
@@ -47,37 +49,42 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
               <Check className="size-4.5" strokeWidth={3} />
             </span>
           )}
-          {canceled ? bt("confirmation.canceledTitle") : v.rescheduled ? bt("confirmation.titleRescheduled") : bt("confirmation.title")}
+          {canceled ? t("confirmation.canceledTitle") : v.rescheduled ? t("confirmation.titleRescheduled") : t("confirmation.title")}
         </h1>
         {!canceled && v.scheduledWith && (
           <p className="mt-3 text-[16px] leading-6 text-public-text">
-            {v.rescheduled ? bt("confirmation.withHostRescheduled", { name: v.scheduledWith }) : bt("confirmation.withHost", { name: v.scheduledWith })}
+            {v.rescheduled ? t("confirmation.withHostRescheduled", { name: v.scheduledWith }) : t("confirmation.withHost", { name: v.scheduledWith })}
           </p>
         )}
-        <p className="mt-2 max-w-[460px] text-[14px] leading-[22px] text-ink-2">{canceled ? bt("confirmation.canceledBody") : sentence}</p>
+        <p className="mt-2 max-w-[460px] text-[14px] leading-[22px] text-ink-2">{canceled ? t("confirmation.canceledBody") : sentence}</p>
+        {!canceled && tone === "friends" && (
+          <p className="mt-4 max-w-[460px] text-[15px] leading-[22px] font-semibold text-brand-strong" data-testid="friends-thanks">
+            {FRIENDS_COPY.confirmationNote}
+          </p>
+        )}
         {!canceled && v.invitationUrl && (
           <a href={v.invitationUrl} target="_blank" rel="noopener noreferrer" className={cn(PILL, "mt-5")} data-testid="open-invitation">
-            {bt("confirmation.openInvitation")}
+            {t("confirmation.openInvitation")}
             <ExternalLink aria-hidden="true" className="size-4" />
           </a>
         )}
       </div>
 
-      <section aria-label={bt("confirmation.summary")} className="mx-6 mt-6 flex flex-col gap-3 rounded-[var(--radius-card)] border border-line p-6 min-[600px]:mx-10">
+      <section aria-label={t("confirmation.summary")} className="mx-6 mt-6 flex flex-col gap-3 rounded-[var(--radius-card)] border border-line p-6 min-[600px]:mx-10">
         <h2 className={cn("text-[18px] leading-6 font-bold text-public-text", canceled && "line-through")}>{v.eventName}</h2>
         {v.hostNames.length > 0 && (
           <Row icon={<User />} strike={canceled}>
-            <span className="sr-only">{bt("confirmation.host")}: </span>
+            <span className="sr-only">{t("confirmation.host")}: </span>
             {v.hostNames.join(", ")}
           </Row>
         )}
         <Row icon={<CalendarDays />} strike={canceled}>
-          <span className="sr-only">{bt("confirmation.when")}: </span>
+          <span className="sr-only">{t("confirmation.when")}: </span>
           <span data-testid="confirmation-when">{v.whenText}</span>
         </Row>
         {!canceled && v.formerWhenText && (
           <div className="flex flex-col gap-1" data-testid="confirmation-former">
-            <span className="text-[11px] leading-4 font-bold text-ink-2">{bt("confirmation.formerTime")}</span>
+            <span className="text-[11px] leading-4 font-bold text-ink-2">{t("confirmation.formerTime")}</span>
             <Row icon={<CalendarDays />}>
               <s className="decoration-ink-2" data-testid="confirmation-former-when">
                 {v.formerWhenText}
@@ -86,7 +93,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
           </div>
         )}
         <Row icon={<Globe />} strike={canceled}>
-          <span className="sr-only">{bt("confirmation.zone")}: </span>
+          <span className="sr-only">{t("confirmation.zone")}: </span>
           <span data-testid="confirmation-zone">{v.zoneName}</span>
         </Row>
         {v.location && (
@@ -103,17 +110,17 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
         )}
         {v.guests.length > 0 && (
           <p className={cn("text-[13px] text-ink-2", canceled && "line-through")}>
-            {bt("confirmation.guests")}: {v.guests.join(", ")}
+            {t("confirmation.guests")}: {v.guests.join(", ")}
           </p>
         )}
-        {canceled && v.canceled?.by && <p className="text-[14px] text-ink">{bt("confirmation.canceledBy", { name: v.canceled.by })}</p>}
-        {canceled && v.canceled?.reason && <p className="text-[14px] text-ink">{bt("confirmation.reason", { reason: v.canceled.reason })}</p>}
+        {canceled && v.canceled?.by && <p className="text-[14px] text-ink">{t("confirmation.canceledBy", { name: v.canceled.by })}</p>}
+        {canceled && v.canceled?.reason && <p className="text-[14px] text-ink">{t("confirmation.reason", { reason: v.canceled.reason })}</p>}
       </section>
 
       <div className="flex flex-col items-center gap-6 px-6 pt-8 pb-8 text-center min-[600px]:px-10">
         {!canceled && (
           <div className="flex flex-col items-center gap-3">
-            <h2 className="text-[14px] font-bold text-public-text">{bt("confirmation.addToCalendar")}</h2>
+            <h2 className="text-[14px] font-bold text-public-text">{t("confirmation.addToCalendar")}</h2>
             <ul className="flex flex-wrap justify-center gap-2" data-testid="add-to-calendar">
               {v.calendarLinks.map((l) => (
                 <li key={l.id}>
@@ -131,16 +138,16 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
         )}
         {v.manage && (v.manage.cancel || v.manage.reschedule) && (
           <div className="flex flex-col items-center gap-1.5 text-[14px]" data-testid="manage-links">
-            <p className="text-ink-2">{bt("confirmation.needChanges")}</p>
+            <p className="text-ink-2">{t("confirmation.needChanges")}</p>
             <p className="flex items-center gap-4">
               {v.manage.reschedule && (
                 <Link href={v.manage.reschedule as Route} className="font-semibold text-brand-strong hover:underline">
-                  {bt("confirmation.reschedule")}
+                  {t("confirmation.reschedule")}
                 </Link>
               )}
               {v.manage.cancel && (
                 <Link href={v.manage.cancel as Route} className="font-semibold text-brand-strong hover:underline">
-                  {bt("confirmation.cancel")}
+                  {t("confirmation.cancel")}
                 </Link>
               )}
             </p>
@@ -167,7 +174,7 @@ export function ConfirmationCard({ v, embed }: { v: ConfirmationView; embed?: bo
       </div>
       <div className="flex flex-col items-center gap-3 border-t border-line px-6 py-5">
         <PublicFooterLinks showPrivacyPolicy privacyUrl={v.privacyUrl} />
-        {v.ribbon && <p className="text-[12px] text-ink-2">{bt("confirmation.poweredBy", { appName: v.appName })}</p>}
+        {v.ribbon && <p className="text-[12px] text-ink-2">{t("confirmation.poweredBy", { appName: v.appName })}</p>}
       </div>
     </PublicCard>
   );

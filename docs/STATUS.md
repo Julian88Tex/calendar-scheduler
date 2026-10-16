@@ -18,6 +18,9 @@ Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free p
   (Vercel's free plan only allows a daily cron).
 - On the booking calendar, available days show a stronger blue circle and bold numbers (release ddf650b, October 15)
   so they stand out on phones and under a browser's automatic dark mode.
+- The booking calendar shows its days at once on refresh instead of an empty grid with a spinner, and public pages
+  have their own dark mode that follows the visitor's device setting, which Dark Reader leaves alone (release 4a302ae,
+  October 16).
 - Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
   from the invitee link deleted the event and sent both cancellation emails.
 

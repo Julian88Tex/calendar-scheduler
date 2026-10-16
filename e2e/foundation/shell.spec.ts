@@ -47,6 +47,8 @@ test.describe("dashboard shell", () => {
     for (const s of sections) {
       await page.goto(s.start);
       const tabs = page.getByRole("navigation", { name: s.nav, exact: true });
+      // evaluateAll does not wait: let the streamed section layout render its tabs first (a slow runner read 0 links).
+      await expect(tabs.getByRole("link").first(), s.nav).toBeVisible();
       const hrefs = await tabs.getByRole("link").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
       expect(hrefs.length, s.nav).toBeGreaterThan(0);
       for (const href of hrefs) {

@@ -7,6 +7,7 @@
 // the BK-03 spacing (66px top, 30px bottom, 5% sides; none on phones), embed mode (transparent canvas, no padding),
 // the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
 import type * as React from "react";
+import type { Tone } from "@/components/booking/lib/friends";
 import { cn } from "@/lib/cn";
 import { CookieBanner } from "./cookie-banner";
 import { DarkReaderLock } from "./dark-reader-lock";
@@ -34,6 +35,8 @@ export type PublicPageShellProps = {
   className?: string;
   /** Privacy policy URL for the footer links (default /privacy). */
   privacyUrl?: string | null;
+  /** "friends": the warm friends link theme (data-tone="friends", globals.css), light or dark like the classic one. */
+  tone?: Tone;
 };
 
 const HEX = /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/;
@@ -70,6 +73,7 @@ export function PublicPageShell({
   hideGdprBanner,
   className,
   privacyUrl,
+  tone,
 }: PublicPageShellProps) {
   const autoTheme = !embed && !normalizeBrandColor(branding?.backgroundColor) && !normalizeBrandColor(branding?.textColor);
   return (
@@ -77,6 +81,7 @@ export function PublicPageShell({
       data-force-light={autoTheme ? undefined : ""}
       data-public-auto={autoTheme ? "" : undefined}
       data-public-shell=""
+      data-tone={tone === "friends" ? "friends" : undefined}
       style={brandingStyle(branding)}
       className={cn("min-h-dvh overflow-x-clip text-ink", embed ? "bg-transparent" : "bg-canvas", className)}
     >
