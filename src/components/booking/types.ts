@@ -3,6 +3,7 @@
 import type { PublicBranding } from "@/components/public/public-page-shell";
 import type { EmbedDisplayParams } from "@/lib/embed-events";
 import type { BookingTargetBody, PublicQuestion } from "./lib/form";
+import type { Tone } from "./lib/friends";
 import type { HostHeader } from "./lib/hosts";
 import type { PublicLocation } from "./lib/locations";
 
@@ -110,4 +111,6 @@ export type BookingPageProps = {
   appName: string;
   /** Path of the confirmation page for an invitee id ("/booking/{id}"). */
   confirmationBase: string;
+  /** Voice and look of the page: the classic public page, or the friends link (/friends, lib/friends.ts). */
+  tone?: Tone;
 };

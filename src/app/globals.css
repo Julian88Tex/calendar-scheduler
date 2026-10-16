@@ -119,6 +119,57 @@
   }
 }
 
+/* The friends link (/friends, src/components/booking/lib/friends.ts): the same public tokens in a warm palette
+   (cream canvas, espresso text, terracotta accents), rounder cards and pill time buttons. Light or dark by the device
+   setting like the classic public pages; Dark Reader stays locked out through the shell's data-public-auto. */
+[data-public-auto][data-tone="friends"] {
+  --ink: #3d2a1e; --ink-2: #7a5a45; --ink-3: #b89a84; --navy: #5a3d2b;
+  --line: #ecdccb; --line-medium: #d9c0a8; --canvas: #fbf3e8; --cloud: #fdf7ef; --pebble: #f6ead9; --mist: #f8e7d4; --white: #fffaf3;
+  --primary: #b5482a; --primary-hover: #9c3d22; --primary-active: #85331c; --primary-text: #9c3d22;
+  --primary-soft: #fbeee6; --primary-soft-2: #f7dccd;
+  --focus: #b5482a; --row-hover: #f6ead9;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --radius-card: 20px; --radius-slot: 9999px;
+  --shadow-card: 0 10px 40px -12px rgb(122 72 40 / 0.25), 0 2px 8px 0 rgb(122 72 40 / 0.08);
+  --slot-selected: rgba(61, 42, 30, 0.7);
+  background-image: radial-gradient(1200px 500px at 15% -10%, #f9dcc4 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #fde9cf 0%, transparent 55%);
+}
+@media (prefers-color-scheme: dark) {
+  [data-public-auto][data-tone="friends"] {
+    --ink: #f5e9dc; --ink-2: #d2b9a5; --ink-3: #8f7563; --navy: #f5e9dc;
+    --line: #3d3029; --line-medium: #5a4639; --canvas: #1a1411; --cloud: #201915; --pebble: #2a211c; --mist: #33281f; --white: #231b16;
+    --primary: #b5482a; --primary-hover: #c4553a; --primary-active: #d0613a; --primary-text: #f2a07b;
+    --primary-soft: #3a2219; --primary-soft-2: #4a2a1e;
+    --focus: #f2a07b; --row-hover: #2a211c;
+    --primary-color: var(--primary);
+    --public-bg: var(--white); --public-text: var(--ink);
+    --shadow-card: 0 10px 40px -12px rgb(0 0 0 / 0.6), 0 2px 8px 0 rgb(0 0 0 / 0.3);
+    --slot-selected: rgba(245, 233, 220, 0.25);
+    background-image: radial-gradient(1200px 500px at 15% -10%, #3a2219 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #2e2116 0%, transparent 55%);
+  }
+  :root:has([data-tone="friends"]),
+  body:has([data-tone="friends"]) {
+    background-color: #1a1411;
+  }
+}
+[data-tone="friends"] .friends-avatar {
+  box-shadow: 0 0 0 4px var(--public-bg), 0 0 0 7px color-mix(in srgb, var(--primary-color) 35%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-tone="friends"] .friends-wave {
+    animation: friends-wave 2.4s ease-in-out 0.4s 2;
+    transform-origin: 70% 70%;
+  }
+}
+@keyframes friends-wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30% { transform: rotate(14deg); }
+  20% { transform: rotate(-8deg); }
+  40% { transform: rotate(-4deg); }
+  50% { transform: rotate(10deg); }
+}
+
 @theme inline {
   --font-sans: "Figtree Variable", "Proxima Nova", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --color-ink: var(--ink); --color-ink-2: var(--ink-2); --color-ink-3: var(--ink-3); --color-navy: var(--navy);

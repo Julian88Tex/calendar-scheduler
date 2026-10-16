@@ -75,6 +75,7 @@ export const NON_EMBEDDABLE_SEGMENTS: readonly string[] = [
   "reset-password",
   "forgot-password",
   "confirm-email",
+  "friends",
   "me",
   "new",
   "null",

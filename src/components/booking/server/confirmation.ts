@@ -30,6 +30,8 @@ export type ConfirmationView = {
   rescheduled: boolean;
   past: boolean;
   eventName: string;
+  /** Slug of the meeting's event type (friendly names on the friends link), null when it is gone. */
+  eventTypeSlug: string | null;
   hostNames: string[];
   hostAvatar: { src: string | null; name: string } | null;
   /** "You are scheduled with {name}." (one-on-one meetings only). */
@@ -112,7 +114,7 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
 
   const [orgUser] = await db.select().from(users).where(eq(users.id, event.organizerUserId)).limit(1);
   const [et] = await db
-    .select({ teamId: eventTypes.teamId, scope: eventTypes.scope, ownerUserId: eventTypes.ownerUserId })
+    .select({ teamId: eventTypes.teamId, scope: eventTypes.scope, ownerUserId: eventTypes.ownerUserId, slug: eventTypes.slug })
     .from(eventTypes)
     .where(eq(eventTypes.id, event.eventTypeId))
     .limit(1);
@@ -154,6 +156,7 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
     rescheduled: Boolean(current.oldInviteeId),
     past,
     eventName: event.name,
+    eventTypeSlug: et?.slug ?? null,
     hostNames,
     hostAvatar: organizer && !event.isGroup ? { src: avatarOf(organizer), name: organizer.name?.trim() || organizer.email || "" } : null,
     scheduledWith: !event.isGroup && hostLabel ? hostLabel : null,

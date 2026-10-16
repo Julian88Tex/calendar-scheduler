@@ -25,6 +25,7 @@ import { log } from "@/lib/logger";
 import { now } from "@/lib/time/now";
 import { isValidTimeZone } from "@/lib/time/zones";
 import { absoluteUrl } from "@/lib/url";
+import { FRIENDS_BOOKED_PATH, FRIENDS_UTM_SOURCE, firstNameOf, friendlyEventOf, friendlyQuestionLabel, friendsLine, type Tone } from "../lib/friends";
 import type { PublicQuestion } from "../lib/form";
 import { hostHeader, headerName, type HostHeader, type HostPerson } from "../lib/hosts";
 import { toPublicLocations } from "../lib/locations";
@@ -42,6 +43,7 @@ export type PageShellInfo = {
   privacyUrl: string | null;
   operatorEmail: string | null;
   embed: ReturnType<typeof embedDisplayParams>;
+  tone?: Tone;
 };
 
 export type BookingPageResult =
@@ -208,10 +210,50 @@ export type LoadBookingPageInput = {
   searchParams: SearchParamsInput;
   mode: "calendar" | "details";
   start?: Date | null;
+  /** "friends": the friends link (/friends, lib/friends.ts). Default "public". */
+  tone?: Tone;
 };
+
+/**
+ * The friends link version of a page (lib/friends.ts): friendly event name, blurb and question wording, the warm theme
+ * instead of the host's branding colors and no "Powered by" ribbon, confirmations under /friends/booked, never indexed, and bookings tagged with
+ * utm_source=friends-link unless the link carries its own.
+ */
+function asFriendsPage(r: BookingPageResult, slug: string): BookingPageResult {
+  const noBranding: PublicBranding = { primaryColor: null, backgroundColor: null, textColor: null };
+  if (r.state !== "ok") return { ...r, shell: { ...r.shell, branding: noBranding, ribbon: false, tone: "friends" }, meta: { ...r.meta, noindex: true } };
+  const p = r.props;
+  const friendly = friendlyEventOf(slug);
+  const event: EventView = {
+    ...p.event,
+    name: friendly?.name ?? p.event.name,
+    descriptionHtml: friendly ? null : p.event.descriptionHtml,
+    descriptionText: friendly ? friendly.blurb : p.event.descriptionText,
+    questions: p.event.questions.map((q) => ({ ...q, label: friendlyQuestionLabel(q.label) })),
+  };
+  const firstName = firstNameOf(p.hostName);
+  return {
+    state: "ok",
+    props: {
+      ...p,
+      tone: "friends",
+      event,
+      branding: noBranding,
+      ribbon: false,
+      confirmationBase: FRIENDS_BOOKED_PATH,
+      prefill: { ...p.prefill, tracking: { utmSource: FRIENDS_UTM_SOURCE, ...p.prefill.tracking } },
+    },
+    meta: { ...r.meta, title: friendsLine("pageTitle", firstName), ogTitle: `${friendsLine("pageTitle", firstName)}: ${event.name}`, noindex: true },
+  };
+}
 
 /** The booking page of a target (see the file header). */
 export async function loadBookingPage(input: LoadBookingPageInput): Promise<BookingPageResult> {
+  const r = await loadPage(input);
+  return input.tone === "friends" ? asFriendsPage(r, input.target.eventType.slug) : r;
+}
+
+async function loadPage(input: LoadBookingPageInput): Promise<BookingPageResult> {
   const { target, searchParams: sp } = input;
   const et = target.eventType;
   const embed = embedDisplayParams(sp);
