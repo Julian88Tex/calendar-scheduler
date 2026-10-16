@@ -192,6 +192,8 @@ export type BuildBodyInput = {
   timeFormat: "12h" | "24h";
   locale: string;
   tracking: Record<string, string>;
+  /** The page's persona (?for=), stored on the booking so its emails match. */
+  persona?: string | null;
   routingFormSubmissionId?: string | null;
   clientRequestId: string;
   formToken: string;
@@ -227,6 +229,7 @@ export function buildBookingBody(p: BuildBodyInput) {
       : null,
     answers: answersOf(p.values, p.ctx.questions),
     tracking: p.tracking,
+    persona: p.persona ?? null,
     routingFormSubmissionId: p.routingFormSubmissionId ?? null,
     clientRequestId: p.clientRequestId,
     website: p.honeypot,

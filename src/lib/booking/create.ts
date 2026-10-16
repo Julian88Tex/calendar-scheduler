@@ -13,6 +13,7 @@
 //   6. after the commit: runJobsAfterResponse for the event's subscriber jobs (provisioning and emails start at once)
 import "server-only";
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { inviteePersonaOf, withInviteePersona } from "@/components/booking/lib/personas";
 import { getDb, type DbOrTx } from "@/db";
 import { isUniqueViolation } from "@/db/helpers";
 import {
@@ -537,6 +538,8 @@ async function insertBookingInTx(tx: DbOrTx, plan: Plan, check: Recheck, old: In
       emailVerifiedAt: main && (plan.reservation?.verifiedEmail || plan.emailVerified) ? at : null,
       clientRequestId: main ? (input.clientRequestId ?? null) : null,
       reservationId: main ? (plan.reservation?.id ?? null) : null,
+      // A reschedule keeps the persona of the booking it replaces (its link carries none).
+      metadata: withInviteePersona({}, input.persona ?? inviteePersonaOf(old?.metadata)),
     });
     if (main && v.guests.length > 0) {
       await tx.insert(inviteeGuests).values(

@@ -65,6 +65,8 @@ export const bookingRequestSchema = z.object({
   locationAnswer: z.object({ configId: z.string().max(64), value: optText(1000) }).optional().nullable(),
   answers: z.array(answerSchema).max(50).optional(),
   tracking: trackingSchema,
+  /** The persona of the page (?for=), see CreateBookingInput.persona. */
+  persona: z.string().trim().max(40).optional().nullable(),
   routingFormSubmissionId: z.uuid().optional().nullable(),
   clientRequestId: z.string().trim().min(8).max(100).optional(),
   verification: z.object({ reservationId: z.uuid(), code: z.string().trim().max(12) }).optional().nullable(),

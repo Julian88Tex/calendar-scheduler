@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Illustration } from "@/components/ui/illustration";
 import { SearchInput } from "@/components/ui/search-input";
 import { toast } from "@/components/ui/toast";
+import { personaUrl } from "@/components/booking/lib/personas";
 // Direct imports (not the @/components/event-types barrel) keep the location editor out of this page's bundle.
 import { DeleteEventTypeDialog } from "@/components/event-types/delete-event-type-dialog";
 import { InternalNoteDialog } from "@/components/event-types/internal-note-dialog";
@@ -32,6 +33,7 @@ import { EventTypeCard } from "./event-type-card";
 import { FilterMenu } from "./filter-menu";
 import { DEFAULT_FILTERS, filterEventTypes, filtersQuery, hasActiveFilters, kindOptions, SEARCH_DEBOUNCE_MS, type ListFilters } from "./list-filters";
 import { bulkDeletedToast, bulkDeleteTitle, bulkToggledToast, bulkToggleTurnsOn } from "./list-text";
+import { useLinkPersona, type LinkPersona } from "./persona-link-picker";
 import { applyOrder, focusAfterRemoval, REORDER_HINT, reorderAnnouncements } from "./reorder";
 import { SectionHeader, type SchedulingProfile } from "./section-header";
 import { ShareDialog } from "./share-dialog";
@@ -41,6 +43,8 @@ export type EventTypesViewProps = {
   profile: SchedulingProfile;
   items: EventTypeListItem[];
   initialFilters: ListFilters;
+  /** The host's personas for "Links for" (none or one hides it). */
+  personas?: LinkPersona[];
 };
 
 const NEW_EVENT_TYPE_HREF = "/app/event-types/new?kind=one_on_one" as const;
@@ -80,7 +84,17 @@ function focusWhenSettled(id: string | null): () => void {
   };
 }
 
-export function EventTypesView({ profile, items: serverItems, initialFilters }: EventTypesViewProps) {
+export function EventTypesView({ profile: plainProfile, items: serverItems, initialFilters, personas = [] }: EventTypesViewProps) {
+  // "Links for": every public link on the page opens as the chosen persona (persona-link-picker.tsx).
+  const [linkPersona, setLinkPersona] = useLinkPersona(personas);
+  const linkOf = (url: string | null) => (url ? personaUrl(url, linkPersona) : null);
+  const forPersona = <T extends { publicUrl: string | null }>(item: T): T => ({ ...item, publicUrl: linkOf(item.publicUrl) });
+  const profile: SchedulingProfile = {
+    ...plainProfile,
+    publicUrl: linkOf(plainProfile.publicUrl),
+    linkLabel: plainProfile.linkLabel && linkPersona && !linkPersona.isDefault ? `${plainProfile.linkLabel}?for=${linkPersona.id}` : plainProfile.linkLabel,
+    personas: { list: personas, value: linkPersona, onChange: setLinkPersona },
+  };
   const router = useRouter();
   // Local copy of the server list for optimistic updates; replaced whenever the server sends a fresh list.
   const [items, setItems] = useState(serverItems);
@@ -349,7 +363,7 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
           shareTarget?.publicUrl
             ? {
                 name: shareTarget.name,
-                publicUrl: shareTarget.publicUrl,
+                publicUrl: linkOf(shareTarget.publicUrl) ?? shareTarget.publicUrl,
                 secret: shareTarget.secret,
                 active: shareTarget.active,
               }
@@ -439,7 +453,8 @@ export function EventTypesView({ profile, items: serverItems, initialFilters }: 
                   {ordered.map((item) => (
                     <EventTypeCard
                       key={item.id}
-                      item={item}
+                      item={forPersona(item)}
+                      hiddenFor={linkPersona && item.personaIds && !item.personaIds.includes(linkPersona.id) ? linkPersona.name : null}
                       selected={selected.has(item.id)}
                       onSelectedChange={(v) => toggleSelected(item.id, v)}
                       busy={pending.has(item.id) || bulkBusy}

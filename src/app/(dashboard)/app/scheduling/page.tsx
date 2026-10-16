@@ -7,6 +7,7 @@
 // a skeleton while it loads.
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { loadPersonas } from "@/components/booking/server/personas";
 import { getActorCtx } from "@/lib/authz";
 import { listEventTypes } from "@/lib/event-types";
 import { fileUrl } from "@/lib/files";
@@ -31,12 +32,19 @@ export default async function EventTypesPage({ searchParams }: Props) {
 async function EventTypesList({ filters }: { filters: ListFilters }) {
   const actor = await getActorCtx();
   const { user } = actor;
-  const items = await listEventTypes(actor);
+  const [items, personas] = await Promise.all([listEventTypes(actor), loadPersonas(user.id)]);
   const profile = {
     name: user.name,
     avatarUrl: user.avatarFileId ? fileUrl(user.avatarFileId) : (user.avatarUrl ?? null),
     publicUrl: user.slug ? absoluteUrl(`/${user.slug}`) : null,
     linkLabel: user.slug ? `${appHost()}/${user.slug}` : null,
   };
-  return <EventTypesView profile={profile} items={items} initialFilters={filters} />;
+  return (
+    <EventTypesView
+      profile={profile}
+      items={items}
+      initialFilters={filters}
+      personas={personas.map((p) => ({ id: p.id, name: p.name, isDefault: p.isDefault }))}
+    />
+  );
 }

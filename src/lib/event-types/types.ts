@@ -146,6 +146,8 @@ export type EventTypeListItem = {
   availabilitySummary: string;
   publicPath: string | null;
   publicUrl: string | null;
+  /** The personas this event type is shown to (Event types > Personas), by id. */
+  personaIds?: string[];
   access: "owner" | "edit" | "view";
   updatedAt: string;
 };

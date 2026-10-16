@@ -30,13 +30,39 @@ export const EMAIL_COLORS = {
   destructiveText: "#B03200",
 } as const;
 
+export type EmailPalette = { [K in keyof typeof EMAIL_COLORS]: string } & { radius: number };
+
+/** The warm persona palette: the light tokens of the warm public pages (globals.css [data-tone="friends"]). */
+export const WARM_EMAIL_COLORS = {
+  canvas: "#FBF3E8",
+  card: "#FFFAF3",
+  border: "#ECDCCB",
+  divider: "#ECDCCB",
+  text: "#3D2A1E",
+  secondary: "#7A5A45",
+  primary: "#B5482A",
+  link: "#9C3D22",
+  infoBg: "#FBEEE6",
+  warningBg: "#FFE7BA",
+  warningText: "#894800",
+  successBg: "#E3F3E1",
+  successText: "#2F5F2A",
+  destructiveText: "#9C3D22",
+} as const;
+
+/** The colors (and card corner radius) of an email: the warm palette for warm personas, else the classic one. */
+export function emailPalette(brand?: Pick<EmailBrand, "persona"> | null): EmailPalette {
+  return brand?.persona?.look === "warm" ? { ...WARM_EMAIL_COLORS, radius: 20 } : { ...EMAIL_COLORS, radius: 8 };
+}
+
 export const EMAIL_FONT_STACK =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif";
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-/** The button color: a valid brand hex color, else Calendly blue. */
-export function emailPrimaryColor(brand?: Pick<EmailBrand, "primaryColor"> | null): string {
+/** The button color: terracotta for warm personas, else a valid brand hex color, else Calendly blue. */
+export function emailPrimaryColor(brand?: Pick<EmailBrand, "primaryColor" | "persona"> | null): string {
+  if (brand?.persona?.look === "warm") return WARM_EMAIL_COLORS.primary;
   const c = brand?.primaryColor?.trim();
   return c && HEX.test(c) ? c : EMAIL_COLORS.primary;
 }
@@ -105,37 +131,38 @@ export function emailFooterLines(p: { brand: EmailBrand; locale?: string; reason
 export function renderEmailLayout(p: EmailLayoutInput): { html: string } {
   const locale = resolveLocale(p.locale);
   const primary = emailPrimaryColor(p.brand);
+  const c = emailPalette(p.brand);
   const footer = emailFooterLines({ brand: p.brand, locale, reason: p.reason });
   const preheader = p.preheader?.trim()
     ? `<div data-preheader style="display:none;max-height:0;max-width:0;overflow:hidden;mso-hide:all;font-size:1px;` +
-      `line-height:1px;color:${EMAIL_COLORS.canvas};opacity:0">${escapeHtml(p.preheader.trim())}` +
+      `line-height:1px;color:${c.canvas};opacity:0">${escapeHtml(p.preheader.trim())}` +
       `${"&#847;&zwnj;&nbsp;".repeat(40)}</div>`
     : "";
   const heading = p.heading?.trim()
     ? `<tr><td style="padding:0 0 16px 0"><h1 style="margin:0;font-family:${EMAIL_FONT_STACK};font-size:22px;` +
-      `line-height:30px;font-weight:700;color:${EMAIL_COLORS.text}">${escapeHtml(p.heading.trim())}</h1></td></tr>`
+      `line-height:30px;font-weight:700;color:${c.text}">${escapeHtml(p.heading.trim())}</h1></td></tr>`
     : "";
   const footerParts: string[] = [];
   if (footer.poweredBy) {
     footerParts.push(
-      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${EMAIL_COLORS.secondary}">` +
-        `<a href="${escapeHtml(appUrl())}" target="_blank" rel="noopener" style="color:${EMAIL_COLORS.secondary};` +
+      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${c.secondary}">` +
+        `<a href="${escapeHtml(appUrl())}" target="_blank" rel="noopener" style="color:${c.secondary};` +
         `text-decoration:none;font-weight:600">${escapeHtml(footer.poweredBy)}</a></p>`,
     );
   }
   if (footer.reason) {
     footerParts.push(
-      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${EMAIL_COLORS.secondary}">${escapeHtml(footer.reason)}</p>`,
+      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${c.secondary}">${escapeHtml(footer.reason)}</p>`,
     );
   }
   const links = (p.footerLinks ?? []).filter((l) => safeHref(l.url));
   if (links.length) {
     footerParts.push(
-      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${EMAIL_COLORS.secondary}">` +
+      `<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${c.secondary}">` +
         links
           .map(
             (l) =>
-              `<a href="${escapeHtml(safeHref(l.url))}" target="_blank" rel="noopener" style="color:${EMAIL_COLORS.secondary};` +
+              `<a href="${escapeHtml(safeHref(l.url))}" target="_blank" rel="noopener" style="color:${c.secondary};` +
               `text-decoration:underline">${escapeHtml(l.label)}</a>`,
           )
           .join(" &nbsp;&middot;&nbsp; ") +
@@ -144,7 +171,7 @@ export function renderEmailLayout(p: EmailLayoutInput): { html: string } {
   }
   if (p.footerHtml) {
     footerParts.push(
-      `<div style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${EMAIL_COLORS.secondary}">${p.footerHtml}</div>`,
+      `<div style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:${c.secondary}">${p.footerHtml}</div>`,
     );
   }
 
@@ -161,21 +188,21 @@ export function renderEmailLayout(p: EmailLayoutInput): { html: string } {
     `.k-body p{margin:0 0 16px 0}` +
     `@media only screen and (max-width:620px){.k-outer{padding:16px 8px!important}.k-card{padding:28px 20px!important}}` +
     `</style></head>` +
-    `<body style="margin:0;padding:0;background-color:${EMAIL_COLORS.canvas}">` +
+    `<body style="margin:0;padding:0;background-color:${c.canvas}">` +
     preheader +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${EMAIL_COLORS.canvas}" ` +
-    `style="background-color:${EMAIL_COLORS.canvas};border-collapse:collapse">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${c.canvas}" ` +
+    `style="background-color:${c.canvas};border-collapse:collapse">` +
     `<tr><td class="k-outer" align="center" style="padding:32px 16px">` +
     `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" ` +
     `style="width:100%;max-width:600px;border-collapse:separate">` +
-    `<tr><td class="k-card" bgcolor="${EMAIL_COLORS.card}" style="background-color:${EMAIL_COLORS.card};` +
-    `border:1px solid ${EMAIL_COLORS.border};border-radius:8px;padding:40px 40px 32px 40px;font-family:${EMAIL_FONT_STACK};` +
-    `font-size:16px;line-height:24px;color:${EMAIL_COLORS.text}">` +
+    `<tr><td class="k-card" bgcolor="${c.card}" style="background-color:${c.card};` +
+    `border:1px solid ${c.border};border-radius:${c.radius}px;padding:40px 40px 32px 40px;font-family:${EMAIL_FONT_STACK};` +
+    `font-size:16px;line-height:24px;color:${c.text}">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">` +
     headerImage(p.brand) +
     heading +
     `<tr><td class="k-body" style="font-family:${EMAIL_FONT_STACK};font-size:16px;line-height:24px;` +
-    `color:${EMAIL_COLORS.text};word-break:break-word">${p.bodyHtml}</td></tr>` +
+    `color:${c.text};word-break:break-word">${p.bodyHtml}</td></tr>` +
     `</table></td></tr>` +
     (footerParts.length
       ? `<tr><td align="center" style="padding:24px 16px 0 16px;font-family:${EMAIL_FONT_STACK};text-align:center">` +
