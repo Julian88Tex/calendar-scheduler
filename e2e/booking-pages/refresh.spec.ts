@@ -46,9 +46,14 @@ test.describe("booking calendar refresh", () => {
     await expect.poll(slots.count, { timeout: 60_000 }).toBeGreaterThan(0);
 
     const grid = page.getByRole("table", { name: "Select a Day" });
-    await expect(page.getByRole("status").filter({ hasText: "Loading" })).toBeVisible();
+    const spinner = page.getByRole("status").filter({ hasText: "Loading" });
+    await expect(spinner).toBeVisible();
     await expect(grid).toHaveCSS("opacity", "0.4");
     await expect(grid.getByRole("button", { name: /Times available$/ })).toHaveCount(0);
+    // The spinner sits beside the month name, above the grid: a ring over a date read as a marked day (owner report).
+    const [ring, table] = [await spinner.boundingBox(), await grid.boundingBox()];
+    expect(ring!.y + ring!.height).toBeLessThanOrEqual(table!.y);
+    if (process.env.PERSONA_SHOTS) await page.screenshot({ path: `${process.env.PERSONA_SHOTS}/calendar-loading.png` });
 
     await slots.release();
     await expect(page.getByRole("button", { name: OPEN_DAY })).toBeEnabled();

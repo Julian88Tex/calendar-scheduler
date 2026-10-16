@@ -203,8 +203,12 @@ export function MonthCalendar({
         >
           <ChevronLeft aria-hidden="true" className={size === "md" ? "size-6" : "size-5"} strokeWidth={2.25} />
         </button>
-        <span className={cn("text-center text-ink", size === "md" ? "text-[14px] leading-5 font-[640]" : "text-[14px] font-bold")} aria-hidden="true">
-          {title}
+        <span className={cn("text-center text-ink", size === "md" ? "text-[14px] leading-5 font-[640]" : "text-[14px] font-bold")}>
+          <span className="relative inline-block">
+            <span aria-hidden="true">{title}</span>
+            {/* Beside the month name, not over the grid, where a ring on top of a date read as a marked day. */}
+            {loading && <Spinner size="sm" label={labels.loading} className="absolute top-1/2 left-full ml-2 -translate-y-1/2" />}
+          </span>
         </span>
         <button
           type="button"
@@ -310,11 +314,6 @@ export function MonthCalendar({
           ))}
         </tbody>
       </table>
-      {loading && (
-        <div className="pointer-events-none absolute inset-x-0 top-12 bottom-0 flex items-center justify-center">
-          <Spinner size="lg" label={labels.loading} />
-        </div>
-      )}
     </div>
   );
 }
