@@ -159,13 +159,13 @@ export function TimeSlotList({
                     onSelect(slot.value);
                   }}
                   className={cn(
-                    "flex h-[52px] w-full min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg px-2 pb-0.5 text-center text-brand-strong",
+                    "flex min-h-[52px] w-full min-w-0 flex-col items-center justify-center rounded-[var(--radius-slot)] border border-brand bg-public-bg px-2 py-1.5 text-center text-brand-strong",
                     "transition-[box-shadow] duration-100 hover:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:shadow-[inset_0_0_0_1px_var(--primary-color)] focus-visible:outline-none",
                     "disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3 disabled:hover:shadow-none",
                   )}
                 >
                   <span className="text-[16px] leading-5 font-bold">{slot.label}</span>
-                  {slot.detail && <span className="max-w-full truncate text-[12px] leading-4 font-semibold text-ink-2">{slot.detail}</span>}
+                  {slot.detail && <span className="line-clamp-2 max-w-full text-[12px] break-words leading-4 font-semibold text-ink-2">{slot.detail}</span>}
                 </button>
               </li>
             );

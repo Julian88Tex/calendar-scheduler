@@ -162,6 +162,45 @@ describe("compare API", () => {
     });
   });
 
+  it("marks the calendars Google won't share busy times of, unchecked, so the panel grays them out", async () => {
+    const cookie = await sessionCookie();
+    const fm = mockFetch(
+      {
+        method: "GET",
+        url: "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+        handler: () => ({
+          items: [
+            { id: "alex@example.com", summary: "Alex", primary: true },
+            { id: "en.usa#holiday@group.v.calendar.google.com", summary: "Holidays in United States", selected: true },
+            { id: "family@x", summary: "Family", selected: true },
+          ],
+        }),
+      },
+      {
+        method: "POST",
+        url: "https://www.googleapis.com/calendar/v3/freeBusy",
+        handler: (r) => {
+          expect((r.body as { items: { id: string }[] }).items).toHaveLength(3);
+          return {
+            calendars: {
+              "alex@example.com": { busy: [] },
+              "en.usa#holiday@group.v.calendar.google.com": { errors: [{ reason: "notFound" }] },
+              "family@x": { errors: [{ reason: "backendError" }] },
+            },
+          };
+        },
+      },
+    );
+    const res = await compareRoute.GET(req("GET", COMPARE_API_PATH, cookie), undefined);
+    fm.restore();
+    // A temporary error is left to the busy lookup to report; only notFound means it can't be compared.
+    expect((await res.json()).calendars).toEqual([
+      { id: "alex@example.com", name: "Alex", color: null, primary: true, selected: true },
+      { id: "family@x", name: "Family", color: null, primary: false, selected: true },
+      { id: "en.usa#holiday@group.v.calendar.google.com", name: "Holidays in United States", color: null, primary: false, selected: false, unreadable: true },
+    ]);
+  });
+
   it("falls back to the primary calendar without the calendar list permission", async () => {
     const cookie = await sessionCookie();
     const fm = mockFetch({ method: "GET", url: "https://www.googleapis.com/calendar/v3/users/me/calendarList", handler: () => mockResponse({ error: {} }, { status: 403 }) });

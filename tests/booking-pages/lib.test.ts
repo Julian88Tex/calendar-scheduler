@@ -278,8 +278,17 @@ describe("slots and copy", () => {
     expect(slotsKey({ target: "et", month: "2026-10", zone: "UTC", duration: 30, first: true })).toBe(slotsKey({ target: "et", month: "2026-10", zone: "UTC", duration: 30 }));
     expect(availableDatesOf({ timeZone: "UTC", durationMinutes: 30, windowEnd: null, days: { "2026-10-14": [{ start: "x", remaining: 1 }], "2026-10-15": [], "2026-11-01": [{ start: "y", remaining: 1 }] } }, "2026-10")).toEqual(["2026-10-14"]);
     const busy = [{ start: Date.parse("2026-10-14T18:00:00Z"), end: Date.parse("2026-10-14T18:30:00Z") }];
-    expect(conflictOf("2026-10-14T17:45:00Z", 30, busy)).toBe(busy[0]);
+    expect(conflictOf("2026-10-14T17:45:00Z", 30, busy)).toEqual([]);
     expect(conflictOf("2026-10-14T18:30:00Z", 30, busy)).toBeUndefined();
+    // Every named event the time overlaps, in start order and once each; unnamed busy adds no name.
+    const named = [
+      { start: Date.parse("2026-10-14T18:15:00Z"), end: Date.parse("2026-10-14T18:45:00Z"), title: "Gym" },
+      { start: Date.parse("2026-10-14T18:00:00Z"), end: Date.parse("2026-10-14T18:20:00Z"), title: "Dentist" },
+      { start: Date.parse("2026-10-14T18:25:00Z"), end: Date.parse("2026-10-14T18:30:00Z"), title: "Gym" },
+      ...busy,
+    ];
+    expect(conflictOf("2026-10-14T18:00:00Z", 30, named)).toEqual(["Dentist", "Gym"]);
+    expect(conflictOf("2026-10-14T18:30:00Z", 30, named)).toEqual(["Gym"]);
     expect(nextMonthOf("2026-12")).toBe("2027-01");
     expect(monthsBetween("2026-10", "2027-01")).toBe(3);
     expect(interpolate("{a} and {b}", { a: 1 })).toBe("1 and {b}");

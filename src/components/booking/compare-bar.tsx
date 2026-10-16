@@ -3,7 +3,8 @@
 // and the host's open times that clash with them read "Conflict". Their token stays sealed in their own browser for
 // an hour at most (src/lib/compare/session.ts); busy times come back as bare ranges and nothing is stored. "Show event
 // names" connects again asking Google to read events too (start parameter events=1); then a clash with one of their
-// own events reads "Conflict: {title}", shown to them alone and never stored.
+// own events reads "Conflict: {title}" (every one it overlaps), shown to them alone and never stored. Calendars Google
+// won't share busy times of (holidays and other subscribed calendars) stay listed, grayed out with the reason.
 // Loaded on demand (next/dynamic) so the booking page keeps its GEN-07 JavaScript budget; its copy lives here for the
 // same reason.
 "use client";
@@ -23,7 +24,7 @@ import {
 } from "@/lib/compare/constants";
 import type { BusyRange } from "./lib/slots";
 
-type Calendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean };
+type Calendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean; unreadable?: boolean };
 type Connection =
   | { status: "loading" }
   | { status: "disconnected"; expired?: boolean }
@@ -52,6 +53,7 @@ const COPY = {
   failedAfter: "Times that clash with events on it aren't marked Conflict.",
   failedAfterMany: "Times that clash with events on them aren't marked Conflict.",
   failedTag: "Couldn't read",
+  unreadable: "Can't be compared. Google doesn't share busy times for this calendar.",
   retry: "Try again",
 };
 
@@ -114,6 +116,8 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
   const [chosen, setChosen] = useState<string[] | null>(null);
   const [done, setDone] = useState<{ key: string; state: "ok" | "error" | "partial"; failed?: CompareFailure[] } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // Calendars a lookup found Google won't read, beyond the ones the panel was told about up front.
+  const [blocked, setBlocked] = useState<string[]>([]);
   const [oauthError] = useState(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).has("oauth_error") : false));
 
   useEffect(() => {
@@ -126,9 +130,9 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
         if (!data.connected || !data.email) return setConn({ status: "disconnected", expired: data.expired });
         const calendars = data.calendars ?? [];
         setConn({ status: "connected", email: data.email, events: Boolean(data.events), calendars });
-        const known = new Set(calendars.map((c) => c.id));
-        const stored = storedChoice(data.email)?.filter((id) => known.has(id));
-        setChosen(stored && stored.length ? stored : calendars.filter((c) => c.selected).map((c) => c.id));
+        const readable = new Set(calendars.filter((c) => !c.unreadable).map((c) => c.id));
+        const stored = storedChoice(data.email)?.filter((id) => readable.has(id));
+        setChosen(stored && stored.length ? stored : calendars.filter((c) => c.selected && readable.has(c.id)).map((c) => c.id));
       })
       .catch(() => {
         if (!cancelled) setConn({ status: "error" });
@@ -138,11 +142,12 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
     };
   }, []);
 
-  const ids = useMemo(() => (chosen ?? []).slice(0, COMPARE_MAX_CALENDARS), [chosen]);
+  const ids = useMemo(() => (chosen ?? []).filter((id) => !blocked.includes(id)).slice(0, COMPARE_MAX_CALENDARS), [chosen, blocked]);
   const key = `${month}|${attempt}|${ids.join("\n")}`;
   // The lookup of the month and calendars on screen: loading until its answer arrives.
   const busyState = done?.key === key ? done.state : "loading";
-  const failed = busyState === "partial" ? (done?.failed ?? []) : [];
+  // Unreadable calendars show grayed out in the list instead of in the warning.
+  const failed = busyState === "partial" ? (done?.failed ?? []).filter((f) => f.reason !== "no_access") : [];
   const failedIds = new Set(failed.map((f) => f.id));
   useEffect(() => {
     if (conn.status !== "connected") return;
@@ -169,9 +174,10 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
           setDone({ key, state: "error" });
           return;
         }
-        // Named events first: the time list labels a clash with the first range it overlaps.
         onBusy(month, [...(data.titles ?? []), ...data.busy]);
         setDone(data.failed?.length ? { key, state: "partial", failed: data.failed } : { key, state: "ok" });
+        const unreadable = (data.failed ?? []).filter((f) => f.reason === "no_access").map((f) => f.id);
+        if (unreadable.length) setBlocked((b) => [...b, ...unreadable]);
       })
       .catch(() => {
         if (!cancelled) setDone({ key, state: "error" });
@@ -235,25 +241,29 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
           {conn.calendars.length > 1 && (
             <fieldset className="flex flex-col gap-1.5">
               <legend className="mb-1 text-[13px] text-ink-2">{COPY.pick}</legend>
-              {conn.calendars.map((c) => (
-                <Checkbox
-                  key={c.id}
-                  checked={ids.includes(c.id)}
-                  disabled={!ids.includes(c.id) && ids.length >= COMPARE_MAX_CALENDARS}
-                  onCheckedChange={(on) => toggle(c.id, on)}
-                  label={
-                    <span className="inline-flex min-w-0 items-center gap-2">
-                      <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full bg-ink-2" style={c.color ? { backgroundColor: c.color } : undefined} />
-                      <span className="truncate">{c.name}</span>
-                      {failedIds.has(c.id) && (
-                        <span className="shrink-0 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-text" data-testid="compare-calendar-failed">
-                          {COPY.failedTag}
-                        </span>
-                      )}
-                    </span>
-                  }
-                />
-              ))}
+              {[...conn.calendars]
+                .map((c) => ({ ...c, unreadable: c.unreadable || blocked.includes(c.id) }))
+                .sort((a, b) => Number(a.unreadable) - Number(b.unreadable))
+                .map((c) => (
+                  <Checkbox
+                    key={c.id}
+                    checked={ids.includes(c.id)}
+                    disabled={c.unreadable || (!ids.includes(c.id) && ids.length >= COMPARE_MAX_CALENDARS)}
+                    onCheckedChange={(on) => toggle(c.id, on)}
+                    description={c.unreadable ? <span data-testid="compare-calendar-unreadable">{COPY.unreadable}</span> : undefined}
+                    label={
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full bg-ink-2${c.unreadable ? " opacity-40" : ""}`} style={c.color ? { backgroundColor: c.color } : undefined} />
+                        <span className="truncate">{c.name}</span>
+                        {failedIds.has(c.id) && (
+                          <span className="shrink-0 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-text" data-testid="compare-calendar-failed">
+                            {COPY.failedTag}
+                          </span>
+                        )}
+                      </span>
+                    }
+                  />
+                ))}
             </fieldset>
           )}
           {failed.length > 0 && (

@@ -12,7 +12,8 @@ const API = "https://www.googleapis.com/calendar/v3";
 const TIMEOUT_MS = 10_000;
 const MAX_CALENDARS_LISTED = 50;
 
-export type CompareCalendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean };
+/** unreadable: Google won't share busy times of it (holiday and other subscribed calendars), so it can't be compared. */
+export type CompareCalendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean; unreadable?: true };
 export type BusyRange = { start: number; end: number };
 
 /** Google no longer accepts the token (expired or revoked): the caller ends the connection. */
@@ -71,6 +72,25 @@ export async function listCompareCalendars(session: CompareSession): Promise<Com
     });
   }
   return out.length ? sortCalendars(out).slice(0, MAX_CALENDARS_LISTED) : primaryOnly;
+}
+
+/**
+ * Marks the calendars Google won't share busy times of (free/busy notFound), with one free/busy call over the next day,
+ * so the panel can show them grayed out with the reason before anyone picks them. Anything else Google says (a
+ * temporary error, too many calendars) leaves the list as is: the busy lookup reports those itself.
+ */
+export async function markUnreadable(session: CompareSession, calendars: CompareCalendar[]): Promise<CompareCalendar[]> {
+  if (calendars.length < 2) return calendars;
+  const now = Date.now();
+  let failed: CompareFailure[];
+  try {
+    ({ failed } = await compareBusy(session, calendars.map((c) => c.id), { start: new Date(now), end: new Date(now + 86_400_000) }));
+  } catch (e) {
+    if (e instanceof CompareTokenError) throw e;
+    return calendars;
+  }
+  const unreadable = new Set(failed.filter((f) => f.reason === "no_access").map((f) => f.id));
+  return calendars.map((c) => (unreadable.has(c.id) ? { ...c, selected: false, unreadable: true } : c));
 }
 
 /** Sorted, merged ranges (overlapping or touching ranges become one). */

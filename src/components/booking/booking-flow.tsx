@@ -747,12 +747,12 @@ export function BookingFlow(p: BookingPageProps) {
 
   // Calendar step.
   const fmt = (ms: number | string) => formatTime(ms, dataZone, LOCALE, hour12);
-  // The compare's named events come first, so a clash with one of them reads "Conflict: {title}".
+  // A clash with the visitor's own named events reads "Conflict: {title}, {title}".
   const busyRanges = [...(compareBusy?.month === month ? compareBusy.busy : []), ...(Array.isArray(busy) ? busy : [])];
   const timeSlots: TimeSlot[] = daySlots.map((s) => {
     const conflict = conflictOf(s.start, duration, busyRanges);
     const spots = event.showRemainingSpots ? (s.remaining === 1 ? bt("page.spotLeft") : bt("page.spotsLeft", { count: s.remaining })) : null;
-    return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") + (conflict.title ? `: ${conflict.title}` : "") : spots };
+    return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") + (conflict.length ? `: ${conflict.join(", ")}` : "") : spots };
   });
   const candidates = effectiveDate && troubleshootDays ? (troubleshootDays[effectiveDate] ?? []) : [];
   const nextAllowed = !data?.windowEnd || Date.parse(data.windowEnd) > Date.parse(`${nextMonthOf(month)}-01T00:00:00Z`) - 14 * 3_600_000;
