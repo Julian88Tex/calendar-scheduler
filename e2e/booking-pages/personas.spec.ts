@@ -105,6 +105,43 @@ test.describe("personas", () => {
     });
   }
 
+  test("shared links preview as the persona's card, and the friends page lines up evenly on a phone", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await openSettled(page, "/julianjoseph?for=friends");
+    const ogImage = page.locator('meta[property="og:image"]');
+    await expect(ogImage).toHaveAttribute("content", /\/api\/public\/og\?handle=julianjoseph&for=friends$/);
+    await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "1200");
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
+    const friendsCard = await page.request.get(new URL((await ogImage.getAttribute("content"))!).pathname + "?handle=julianjoseph&for=friends");
+    expect(friendsCard.status()).toBe(200);
+    expect(friendsCard.headers()["content-type"]).toBe("image/png");
+
+    // Four favorites sit two and two, and the note wraps in balanced lines.
+    const chips = page.locator(".friends-chip");
+    await expect(chips).toHaveCount(4);
+    const tops = await chips.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(2);
+    expect(tops.filter((t) => t === tops[0])).toHaveLength(2);
+    await expect(page.getByTestId("persona-hello").locator("p").first()).toHaveCSS("text-wrap", /balance/);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/friends-landing-phone.png`, fullPage: true });
+
+    await openSettled(page, "/julianjoseph/30min?for=friends");
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/api\/public\/og\?handle=julianjoseph&event=30min&for=friends$/);
+    await openSettled(page, "/julianjoseph");
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/api\/public\/og\?handle=julianjoseph$/);
+    const businessCard = await page.request.get("/api/public/og?handle=julianjoseph");
+    expect(businessCard.headers()["content-type"]).toBe("image/png");
+    expect((await page.request.get("/api/public/og?handle=nobody-here")).status()).toBe(404);
+    if (SHOTS) {
+      const fs = await import("node:fs");
+      fs.writeFileSync(`${SHOTS}/share-card-friends.png`, await friendsCard.body());
+      fs.writeFileSync(`${SHOTS}/share-card-business.png`, await businessCard.body());
+      const event = await page.request.get("/api/public/og?handle=julianjoseph&event=meal&for=friends");
+      fs.writeFileSync(`${SHOTS}/share-card-friends-event.png`, await event.body());
+    }
+  });
+
   test("the plain link is the default (business) persona: classic, indexable, no switch", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/julianjoseph", SLOW);

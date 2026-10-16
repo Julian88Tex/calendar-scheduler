@@ -31,8 +31,9 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // Load PGlite (wasm plus data files) with native require instead of bundling it.
   serverExternalPackages: ["@electric-sql/pglite"],
-  // Ship the SQL migrations with every function (runtime migrations, section 5.1). Keep this here, not in vercel.json.
-  outputFileTracingIncludes: { "/*": ["./drizzle/**/*"], "/**": ["./drizzle/**/*"] },
+  // Ship the SQL migrations with every function (runtime migrations, section 5.1), and the link preview card's fonts
+  // with its route. Keep this here, not in vercel.json.
+  outputFileTracingIncludes: { "/*": ["./drizzle/**/*"], "/**": ["./drizzle/**/*"], "/api/public/og": ["./assets/og/*.woff"] },
   // getDb() never loads PGlite on Vercel (SetupRequiredError instead), so keep its wasm and data files out of every
   // function bundle there.
   outputFileTracingExcludes: process.env.VERCEL ? { "/**": ["node_modules/@electric-sql/pglite/**"] } : undefined,
