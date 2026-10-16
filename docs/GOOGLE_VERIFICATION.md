@@ -1,14 +1,14 @@
 # Google OAuth app verification
 
 This is the submission kit for Google's OAuth app verification of this deployment
-(https://calendar-scheduler-smoky.vercel.app, app name **Kairos**). It holds the text to paste into Google's forms, the
+(https://julendly.vercel.app, app name **Julendly**). It holds the text to paste into Google's forms, the
 scope justifications with the code that uses each scope, the data handling statement, the demo video shot list and
 the Search Console steps. Sections marked **Paste** are written for Google's reviewer; everything else is for you.
 
 ## Why Google shows "Google hasn't verified this app"
 
 The warning is not about certificates: the site already uses HTTPS with Vercel's certificate. Google shows it whenever
-an app that Google has not verified asks for a "sensitive" permission. Kairos asks for three of them (the two calendar
+an app that Google has not verified asks for a "sensitive" permission. Julendly asks for three of them (the two calendar
 permissions and Gmail send).
 
 Since this change, an everyday **Continue with Google** on the login page asks only for your name, email address and
@@ -34,16 +34,16 @@ What each Google flow asks for (`src/lib/auth/oauth/google.ts`, `googleAccessFor
 Open https://console.cloud.google.com/auth and select the project of the OAuth client.
 
 1. **Branding**
-   - App name: `Kairos` (it must match the name on the home page; the home page uses `NEXT_PUBLIC_APP_NAME`, default
-     Kairos).
+   - App name: `Julendly` (it must match the name on the home page; the home page uses `NEXT_PUBLIC_APP_NAME`, default
+     Julendly).
    - User support email and developer contact email: your email.
-   - Application home page: `https://calendar-scheduler-smoky.vercel.app/`
-   - Application privacy policy link: `https://calendar-scheduler-smoky.vercel.app/privacy`
-   - Application terms of service link: `https://calendar-scheduler-smoky.vercel.app/terms`
-   - Authorized domains: `calendar-scheduler-smoky.vercel.app`
+   - Application home page: `https://julendly.vercel.app/`
+   - Application privacy policy link: `https://julendly.vercel.app/privacy`
+   - Application terms of service link: `https://julendly.vercel.app/terms`
+   - Authorized domains: `julendly.vercel.app`
    - An app logo is optional. Uploading one adds a brand review step; leave it empty unless you want the logo on the
      consent screen.
-2. **Domain ownership**: verify `https://calendar-scheduler-smoky.vercel.app/` in Search Console (see the last
+2. **Domain ownership**: verify `https://julendly.vercel.app/` in Search Console (see the last
    section) with a Google account that is an Owner or Editor of this Cloud project.
 3. **Data access**: the list must contain exactly these, and nothing else:
    - `openid`
@@ -55,7 +55,7 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
    - `https://www.googleapis.com/auth/calendar.freebusy` (used by meeting poll voters; add it with **Manually add
      scopes** if it is missing)
 4. **Audience**: External, In production (already the case).
-5. Check the home page signed out (a private window): https://calendar-scheduler-smoky.vercel.app/ shows your name and
+5. Check the home page signed out (a private window): https://julendly.vercel.app/ shows your name and
    photo, what the site is, the "How it uses Google" paragraph, the Privacy Policy and Terms links and a Sign in link.
 6. Record and upload the demo video (below) to YouTube as **Unlisted**.
 7. Open **Verification Center** and click **Prepare for verification** (or **Submit for verification**), then paste the
@@ -63,7 +63,7 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
 
 ## Paste: app purpose
 
-> Kairos is a personal scheduling site run by one person, its owner, for their own meetings (a self-hosted
+> Julendly is a personal scheduling site run by one person, its owner, for their own meetings (a self-hosted
 > alternative to Calendly). People open the owner's public booking page, pick a free time and book a meeting; the
 > owner also sends meeting polls where people vote on proposed times. Only the owner signs in; invitees and poll voters
 > never need an account.
@@ -222,7 +222,7 @@ Code paths:
 > Deletion: disconnecting the calendar in the app deletes the stored tokens, the calendar list and the cached events,
 > and revokes the token at Google. The owner can also revoke access at https://myaccount.google.com/permissions.
 > Invitees can ask the owner to delete their data by replying to any booking email (privacy policy:
-> https://calendar-scheduler-smoky.vercel.app/privacy).
+> https://julendly.vercel.app/privacy).
 
 Code paths behind these statements: `src/lib/calendars/credentials.ts` (encryption, `encryptedTokenColumns`),
 `src/lib/crypto.ts`, `src/lib/jobs/cleanup.ts` (`RETENTION.externalCacheDays` 7, `outboxBodyDays` 30, `outboxRowDays`
@@ -236,7 +236,7 @@ in use. Record at 1080p in a desktop browser, keep the address bar visible the w
 and upload it to YouTube as Unlisted. About 4 to 6 minutes. Do it in a normal browser window where you are signed in
 to Google, and use a private window only for the poll voter shot.
 
-1. **Home page.** Open `https://calendar-scheduler-smoky.vercel.app/` signed out. Show the app name (Kairos), your
+1. **Home page.** Open `https://julendly.vercel.app/` signed out. Show the app name (Julendly), your
    name and photo, the sentence about the personal scheduling site, the "How it uses Google" paragraph, and the Sign in
    link. Say: "This is the app's home page on the app's domain."
 2. **Privacy policy.** Click **Privacy Policy** in that paragraph. Scroll to "Google data" (what is read, the Limited
@@ -247,7 +247,7 @@ to Google, and use a private window only for the poll voter shot.
 4. **Consent screen with every scope.** Open **Availability > Calendar settings**, open the options menu (three dots)
    of your Google account and click **Reconnect** (or **+ Connect calendar account** > **Google Calendar**). On Google's page, show the address bar
    again (`client_id`, the scopes `calendar.events`, `calendar.readonly`, `gmail.send`). If the "Google hasn't verified
-   this app" screen appears, click **Advanced** > **Go to Kairos (unsafe)**. On the consent screen, read out each
+   this app" screen appears, click **Advanced** > **Go to Julendly (unsafe)**. On the consent screen, read out each
    permission (see, edit, share and delete events; see your calendars; send email on your behalf), leave them checked
    and click **Continue**. You return to Calendar settings with the account connected.
 5. **calendar.readonly in use: the calendar list.** On Calendar settings, click **Edit** on "Calendars to check for
@@ -279,7 +279,7 @@ to Google, and use a private window only for the poll voter shot.
 
 1. Open https://search.google.com/search-console with a Google account that is an Owner or Editor of the Google Cloud
    project (your own account).
-2. Click the property picker > **Add property** > **URL prefix**, enter `https://calendar-scheduler-smoky.vercel.app/`
+2. Click the property picker > **Add property** > **URL prefix**, enter `https://julendly.vercel.app/`
    and click **Continue**.
 3. Under **Other verification methods**, open **HTML tag**. Search Console shows
    `<meta name="google-site-verification" content="..." />`. Copy only the `content` value.
@@ -288,14 +288,14 @@ to Google, and use a private window only for the poll voter shot.
    The root layout then renders that meta tag on every page, the home page included.
 5. Deploy it: commit the change on the `production` branch with `[deploy]` in the commit message (docs/STATUS.md, "How
    releases work") and wait for the Vercel deployment to finish.
-6. Check that the tag is live: open `view-source:https://calendar-scheduler-smoky.vercel.app/` and search for
+6. Check that the tag is live: open `view-source:https://julendly.vercel.app/` and search for
    `google-site-verification`, or run
-   `curl -s https://calendar-scheduler-smoky.vercel.app/ | grep google-site-verification`.
+   `curl -s https://julendly.vercel.app/ | grep google-site-verification`.
 7. Back in Search Console, click **Verify**. Leave the tag in place afterwards: Search Console checks it again from time
    to time, and removing it unverifies the property.
 
 The repository also contains `public/google7cae62986c9a7502.html`, which serves Search Console's **HTML file** method
-at `https://calendar-scheduler-smoky.vercel.app/google7cae62986c9a7502.html`. If that file came from this property's
+at `https://julendly.vercel.app/google7cae62986c9a7502.html`. If that file came from this property's
 verification page, choosing **HTML file** > **Verify** works as well; the meta tag is a second method that does not
 depend on that file.
 

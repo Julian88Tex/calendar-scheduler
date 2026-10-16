@@ -5,10 +5,10 @@ Updated after every finished module. Scope was reduced to the features the owner
 
 ## Live now
 
-Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free plan, Neon Postgres database).
+Your site is live at https://julendly.vercel.app (Vercel, free plan, Neon Postgres database).
 - Sign in with Google as julian88tex@gmail.com (sign in asks only for your name and email; calendar and Gmail access
   are granted once under Calendar settings). Sign-ups are invite only, so nobody else can create an account.
-- Your public page is https://calendar-scheduler-smoky.vercel.app/julianjoseph with your 3 event types copied from
+- Your public page is https://julendly.vercel.app/julianjoseph with your 3 event types copied from
   Calendly.
 - Google Calendar is connected: bookings land on your calendar with a Google Meet link, and busy times on Julian -
   Personal and Julian - Church Clarity block booking times. Julian - Copado (free/busy only) is listed in Availability >
@@ -21,6 +21,10 @@ Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free p
 - The booking calendar shows its days at once on refresh instead of an empty grid with a spinner, and public pages
   have their own dark mode that follows the visitor's device setting, which Dark Reader leaves alone (release 4a302ae,
   October 16).
+- The app is called Julendly and lives at https://julendly.vercel.app (October 16). The old address,
+  calendar-scheduler-smoky.vercel.app, forwards every page to the same page here (release f353499); its /api paths
+  still answer directly, so the Apps Script cron trigger and Google's calendar-change notifications registered there
+  keep working. Google's consent screen, sign-in callback and Search Console property were moved to the new address.
 - Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
   from the invitee link deleted the event and sent both cancellation emails.
 

@@ -38,3 +38,27 @@ export function clearThemeAttribute(): void {
   if (typeof document === "undefined") return;
   document.documentElement.removeAttribute("data-theme");
 }
+
+/** Public pages: the visitor's own light/dark choice from PublicThemeToggle (absent = follow the device setting). */
+export const PUBLIC_THEME_COOKIE = "kairos_public_theme";
+export type PublicThemeChoice = "light" | "dark";
+
+export function parsePublicTheme(value: unknown): PublicThemeChoice | undefined {
+  return value === "light" || value === "dark" ? value : undefined;
+}
+
+/** Client: applies a public page choice to <html data-public-theme> and remembers it in the cookie (one year). */
+export function applyPublicTheme(choice: PublicThemeChoice): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-public-theme", choice);
+  const secure = window.location.protocol === "https:" ? "; secure" : "";
+  document.cookie = `${PUBLIC_THEME_COOKIE}=${choice}; path=/; max-age=31536000; samesite=lax${secure}`;
+}
+
+/** Client: true when public pages currently render dark (the visitor's choice, else the device setting). */
+export function publicThemeIsDark(): boolean {
+  if (typeof document === "undefined") return false;
+  const choice = parsePublicTheme(document.documentElement.getAttribute("data-public-theme"));
+  if (choice) return choice === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}

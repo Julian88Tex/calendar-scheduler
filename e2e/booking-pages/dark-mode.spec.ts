@@ -69,4 +69,41 @@ test.describe("public pages dark mode", () => {
     await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(14, 18, 23)");
     await expect(page.locator('meta[name="darkreader-lock"]')).toHaveCount(1);
   });
+
+  test("theme toggle: the visitor's choice overrides the device setting and is remembered", async ({ page, axe }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/julianjoseph", { timeout: 60_000 });
+    const shell = page.locator("[data-public-shell]");
+    await expect(shell).toHaveCSS("background-color", "rgb(14, 18, 23)");
+
+    await page.getByRole("button", { name: "Switch to light mode" }).click();
+    await expect(shell).toHaveCSS("background-color", "rgb(250, 250, 250)");
+    await expect(page.locator('meta[name="darkreader-lock"]')).toHaveCount(0);
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/toggle-1-light-on-dark-device.png` });
+
+    // The choice survives a reload (cookie, set on <html> by the server) and a device setting change.
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-public-theme", "light");
+    await expect(shell).toHaveCSS("background-color", "rgb(250, 250, 250)");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("button", { name: "Switch to dark mode" }).click();
+    await expect(shell).toHaveCSS("background-color", "rgb(14, 18, 23)");
+    await expect(page.locator('meta[name="darkreader-lock"]')).toHaveCount(1);
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/toggle-2-dark-on-light-device.png` });
+
+    // The friends link has the toggle too, in its warm palette.
+    await page.goto("/friends", { timeout: 60_000 });
+    await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(26, 20, 17)");
+    await page.getByRole("button", { name: "Switch to light mode" }).click();
+    await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(251, 243, 232)");
+    if (SHOTS) {
+      await page.screenshot({ path: `${SHOTS}/toggle-3-friends-light.png` });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto("/julianjoseph/30min", { timeout: 60_000 });
+      await expect(page.getByRole("button", { name: OPEN_DAY })).toBeEnabled({ timeout: 60_000 });
+      await page.screenshot({ path: `${SHOTS}/toggle-4-phone.png` });
+    }
+  });
 });
