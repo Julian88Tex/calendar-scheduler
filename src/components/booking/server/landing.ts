@@ -10,13 +10,24 @@ import { getDb } from "@/db";
 import { eventTypes, handles, users } from "@/db/schema";
 import { richTextToPlain } from "@/lib/html";
 import { getTeamPublicProfile } from "@/lib/teams";
+import { type EventPersonas, eventPersonasOf } from "../lib/personas";
 import { getLegalLinks, profileOf } from "./host";
 
-export type LandingItem = { id: string; name: string; color: string; slug: string; description: string | null };
+export type LandingItem = {
+  id: string;
+  name: string;
+  color: string;
+  slug: string;
+  description: string | null;
+  /** The personas the type is shown to and its wording for each (user pages; null for teams, lib/personas.ts). */
+  personas: EventPersonas | null;
+};
 
 export type LandingData = {
   kind: "user" | "team";
   handle: string;
+  /** The user of a user landing page (personas), null for teams. */
+  userId: string | null;
   name: string;
   avatarUrl: string | null;
   logoUrl: string | null;
@@ -51,6 +62,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
     const legal = await getLegalLinks();
     return {
       kind: "team",
+      userId: null,
       handle,
       name: team.team.name,
       avatarUrl: team.team.avatarUrl,
@@ -59,7 +71,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
       branding: { primaryColor: null, backgroundColor: null, textColor: null },
       ribbon: true,
       privacyUrl: legal.privacyUrl,
-      items: team.eventTypes.map((e) => ({ id: e.id, name: e.name, color: e.color, slug: e.slug, description: excerpt(e.descriptionPlain, null) })),
+      items: team.eventTypes.map((e) => ({ id: e.id, name: e.name, color: e.color, slug: e.slug, description: excerpt(e.descriptionPlain, null), personas: null })),
     };
   }
 
@@ -80,6 +92,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
       color: eventTypes.color,
       descriptionPlain: eventTypes.descriptionPlain,
       descriptionHtml: eventTypes.descriptionHtml,
+      metadata: eventTypes.metadata,
     })
     .from(eventTypes)
     .where(
@@ -97,6 +110,7 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
   return {
     kind: "user",
     handle,
+    userId: owner.userId,
     name: profile.name,
     avatarUrl: profile.avatarUrl,
     logoUrl: profile.logoUrl,
@@ -104,6 +118,8 @@ export const loadLanding = cache(async (rawHandle: string): Promise<LandingData 
     branding: { primaryColor: profile.brandColors.primary, backgroundColor: profile.brandColors.background, textColor: profile.brandColors.text },
     ribbon: profile.showBranding,
     privacyUrl: profile.privacyUrl,
-    items: types.map((t) => ({ id: t.id, name: t.name, color: t.color, slug: t.slug, description: excerpt(t.descriptionPlain, t.descriptionHtml) })),
+    items: types.map((t) => ({ id: t.id, name: t.name, color: t.color, slug: t.slug, description: excerpt(t.descriptionPlain, t.descriptionHtml),
+      personas: eventPersonasOf(t.metadata, t.slug, u.preferences),
+    })),
   };
 });

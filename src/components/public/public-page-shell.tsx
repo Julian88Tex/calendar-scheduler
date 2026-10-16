@@ -37,7 +37,7 @@ export type PublicPageShellProps = {
   className?: string;
   /** Privacy policy URL for the footer links (default /privacy). */
   privacyUrl?: string | null;
-  /** "friends": the warm friends link theme (data-tone="friends", globals.css), light or dark like the classic one. */
+  /** "friends": the warm theme of a warm persona (data-tone="friends", globals.css), light or dark like the classic one. */
   tone?: Tone;
 };
 

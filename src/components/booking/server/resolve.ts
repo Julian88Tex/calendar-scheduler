@@ -1,7 +1,8 @@
 // Page resolvers of the public booking routes (SPEC BK-03, BK-08, BK-23, BK-27). Server only. Cached per request with
 // primitive arguments, so generateMetadata and the page share one resolution.
 //
-//   resolveEventPage(handle, eventSlug, mode, start, query)   /{handle}/{eventSlug}[/{start}]
+//   resolveEventPage(handle, eventSlug, mode, start, query)   /{handle}/{eventSlug}[/{start}]; ?for= picks the persona
+//                                                              (lib/personas.ts; the default one without it)
 //   resolveCodePage(code, slug, mode, start, query)           /d/{code}/{slug}[/{start}]: a non-current slug answers a
 //                                                              301 to the current one, keeping the start and the query
 import "server-only";
@@ -9,6 +10,7 @@ import { cache } from "react";
 import { resolveTargetByCode, resolveTargetBySlugs } from "@/lib/booking";
 import { resolveBookingCode } from "@/lib/links";
 import { parseStartParam } from "@/lib/url";
+import { PERSONA_PARAM } from "../lib/friends";
 import { loadBookingPage, loadNewTypePreview, PREVIEW_SLUG, type BookingPageResult } from "./booking-page";
 
 export type ResolvedPage = BookingPageResult | { state: "redirect"; location: string } | null;
@@ -53,6 +55,7 @@ export const resolveEventPage = cache(
       searchParams: sp,
       mode,
       start,
+      persona: sp.get(PERSONA_PARAM),
     });
   },
 );

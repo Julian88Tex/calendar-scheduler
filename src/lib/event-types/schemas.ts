@@ -5,6 +5,7 @@
 // Field error keys are dotted draft paths ("name", "durations.1", "locations.0.location", "questions.2.answerChoices",
 // "dateRange.end", "confirmationLinks.1.url"); sectionOfField() maps them to the editor section that shows them.
 import { z } from "zod";
+import { PERSONA_ID_RE, PERSONA_LIMITS } from "@/components/booking/lib/persona-limits";
 import type { ConfirmationLink, LocationConfig, NotificationTemplates } from "@/db/types";
 import { dayProblem, isIsoDate, weeklyProblem } from "@/lib/availability/intervals";
 import { isValidTimeZone, zLocationKind } from "@/lib/validation";
@@ -306,6 +307,13 @@ export const zEventTypeDraft: z.ZodType<EventTypeDraft> = z
     confirmationLinks: z.array(zConfirmationLink).max(MAX_CONFIRMATION_LINKS, MESSAGES.linksTooMany),
     secret: z.boolean(),
     internalNote: zText(INTERNAL_NOTE_MAX, MESSAGES.internalNoteTooLong),
+    personas: z
+      .record(
+        z.string().max(PERSONA_LIMITS.id).regex(PERSONA_ID_RE),
+        z.object({ name: z.string().trim().max(PERSONA_LIMITS.short, MESSAGES.personaTooLong), description: z.string().trim().max(PERSONA_LIMITS.medium, MESSAGES.personaTooLong) }),
+      )
+      .nullable()
+      .default(null),
   })
   .superRefine((d, ctx) => {
     const seen = new Set<number>();
@@ -388,10 +396,12 @@ export type EditorSectionId =
   | "bookingPage"
   | "inviteeForm"
   | "notifications"
-  | "confirmation";
+  | "confirmation"
+  | "personas";
 
 export const PRIMARY_SECTIONS: readonly EditorSectionId[] = ["details", "duration", "location", "availability"];
 export const MORE_SECTIONS: readonly EditorSectionId[] = [
+  "personas",
   "description",
   "limits",
   "bookingPage",
@@ -435,6 +445,7 @@ const FIELD_SECTIONS: Record<string, EditorSectionId> = {
   scheduleAnotherEnabled: "confirmation",
   scheduleAnotherLabel: "confirmation",
   confirmationLinks: "confirmation",
+  personas: "personas",
 };
 
 /** A ?section= query value as a section id, or null. */

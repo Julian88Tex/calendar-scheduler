@@ -14,7 +14,7 @@ import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonClassName } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { FRIENDS_COPY, toneText, type Tone } from "./lib/friends";
+import { toneText, type Tone } from "./lib/friends";
 import type { Vars } from "./lib/t";
 import { LocationGlyph } from "./location-icon";
 import type { ConfirmationView } from "./server/confirmation";
@@ -32,7 +32,7 @@ function Row({ icon, children, strike }: { icon: React.ReactNode; children: Reac
 
 const PILL = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-full border border-line px-4 text-[14px] font-semibold text-brand-strong transition-colors hover:bg-brand-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
-export function ConfirmationCard({ v, embed, tone }: { v: ConfirmationView; embed?: boolean; tone?: Tone }) {
+export function ConfirmationCard({ v, embed, tone, note }: { v: ConfirmationView; embed?: boolean; tone?: Tone; note?: string }) {
   const t = (key: string, vars?: Vars) => toneText(tone, key, vars);
   const canceled = v.status === "canceled";
   const sentence =
@@ -57,9 +57,9 @@ export function ConfirmationCard({ v, embed, tone }: { v: ConfirmationView; embe
           </p>
         )}
         <p className="mt-2 max-w-[460px] text-[14px] leading-[22px] text-ink-2">{canceled ? t("confirmation.canceledBody") : sentence}</p>
-        {!canceled && tone === "friends" && (
-          <p className="mt-4 max-w-[460px] text-[15px] leading-[22px] font-semibold text-brand-strong" data-testid="friends-thanks">
-            {FRIENDS_COPY.confirmationNote}
+        {!canceled && note && (
+          <p className="mt-4 max-w-[460px] text-[15px] leading-[22px] font-semibold text-brand-strong" data-testid="persona-thanks">
+            {note}
           </p>
         )}
         {!canceled && v.invitationUrl && (

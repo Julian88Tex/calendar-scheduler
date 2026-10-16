@@ -30,8 +30,13 @@ export type ConfirmationView = {
   rescheduled: boolean;
   past: boolean;
   eventName: string;
-  /** Slug of the meeting's event type (friendly names on the friends link), null when it is gone. */
+  /** The meeting's event type (its wording for a persona), null when it is gone. */
+  eventTypeId: string | null;
   eventTypeSlug: string | null;
+  /** Owner of a personal event type (their personas), else null. */
+  eventTypeOwnerUserId: string | null;
+  /** "/{handle}" of that owner (a persona's "Book another time"), else null. */
+  ownerLandingPath: string | null;
   hostNames: string[];
   hostAvatar: { src: string | null; name: string } | null;
   /** "You are scheduled with {name}." (one-on-one meetings only). */
@@ -78,6 +83,14 @@ async function bookingPagePath(eventTypeId: string): Promise<string | null> {
   if (!ownerCondition) return null;
   const [h] = await db.select({ slug: handles.slug }).from(handles).where(ownerCondition).limit(1);
   return h ? `/${encodeURIComponent(h.slug)}/${encodeURIComponent(et.slug)}` : null;
+}
+
+/** "/{handle}" of the user who owns a personal event type, else null. */
+async function ownerLandingPath(ownerUserId: string | null | undefined, teamId: string | null | undefined): Promise<string | null> {
+  if (!ownerUserId || teamId) return null;
+  const db = await getDb();
+  const [h] = await db.select({ slug: handles.slug }).from(handles).where(eq(handles.userId, ownerUserId)).limit(1);
+  return h ? `/${encodeURIComponent(h.slug)}` : null;
 }
 
 /** Start and end of the meeting an invitee of a reschedule chain belonged to (the time the reschedule replaced). */
@@ -156,7 +169,10 @@ export async function loadConfirmation(inviteeIdRaw: string): Promise<Confirmati
     rescheduled: Boolean(current.oldInviteeId),
     past,
     eventName: event.name,
+    eventTypeId: et ? event.eventTypeId : null,
     eventTypeSlug: et?.slug ?? null,
+    eventTypeOwnerUserId: et && !et.teamId ? (et.ownerUserId ?? null) : null,
+    ownerLandingPath: await ownerLandingPath(et?.ownerUserId, et?.teamId),
     hostNames,
     hostAvatar: organizer && !event.isGroup ? { src: avatarOf(organizer), name: organizer.name?.trim() || organizer.email || "" } : null,
     scheduledWith: !event.isGroup && hostLabel ? hostLabel : null,

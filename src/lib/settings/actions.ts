@@ -13,6 +13,8 @@ import { getSession } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
 import { assertRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { absoluteUrl } from "@/lib/url";
+import { PersonasSettingsInput, savePersonasSettings } from "./personas";
+import type { Persona } from "@/components/booking/lib/personas";
 import {
   changeHandle,
   checkHandle,
@@ -66,6 +68,16 @@ export async function setShowBrandingAction(raw: unknown): Promise<ActionResult<
     const saved = await setShowBranding(db, actor.user.id, showBranding);
     revalidatePath("/app/settings/branding");
     return { showBranding: saved };
+  });
+}
+
+/** Personas: who the public pages speak to (?for=), their look and their words. */
+export async function savePersonasSettingsAction(raw: unknown): Promise<ActionResult<Persona[]>> {
+  return runAction(PersonasSettingsInput, raw, async (input, { actor, db }) => {
+    const saved = await savePersonasSettings(db, actor.user.id, input);
+    revalidatePath("/app/settings/personas");
+    revalidatePath("/app/scheduling", "layout");
+    return saved;
   });
 }
 

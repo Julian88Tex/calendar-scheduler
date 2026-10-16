@@ -1,28 +1,25 @@
-// The friends booking link (/friends): the same booking flow as the public page in a warm, personal voice. This file
-// holds every friends-only word, so the copy can be tuned in one place. Client and server safe (plain data).
-//
-// Tone "public" is the classic page; "friends" swaps the strings below in and keeps every other string of the booking
-// catalog (lib/t.ts). Event types keep their real names in the dashboard, emails and calendar events; the friends
-// pages show the friendly name and blurb of FRIENDLY_EVENTS when the slug is listed there.
+// The warm look of persona pages (lib/personas.ts): personas with the "warm" style swap the booking strings below in
+// (tone "friends", with the friends theme in globals.css); tone "public" is the classic page and every other string
+// comes from the booking catalog (lib/t.ts). Also the ?for= link parameter that picks a persona and the old /friends
+// paths, which redirect to the built-in friends persona. Kept small: the public booking page's client components
+// import it (JS budget, GEN-07). Client and server safe (plain data).
 import { bt, interpolate, type Vars } from "./t";
 
 export type Tone = "public" | "friends";
 
-/** Path prefix of the friends pages. */
+export { PERSONA_PARAM } from "./persona-limits";
+/** The old friends link paths (redirects to ?for=friends). */
 export const FRIENDS_PATH = "/friends";
-/** Confirmation pages of bookings made through the friends link. */
 export const FRIENDS_BOOKED_PATH = "/friends/booked";
-/** utm_source stored on bookings made through the friends link (shown with the meeting's tracking details). */
-export const FRIENDS_UTM_SOURCE = "friends-link";
 
 /** Friends overrides of booking catalog keys ("page.selectDateTime"); anything not listed reads the normal string. */
-const FRIENDS_TEXT: Record<string, string> = {
+export const FRIENDS_TEXT: Record<string, string> = {
   "page.selectDateTime": "When works for you?",
   "page.selectDay": "Pick a day",
   "page.selectTimeHeading": "Pick a time",
-  "page.noTimes": "Nothing open that day. Try another one? (Pizza tastes the same any day.)",
+  "page.noTimes": "Nothing open that day. Try another one?",
   "page.noTimesInMonth": "I'm all booked up in {month}",
-  "page.backToLanding": "Back to all the ways to hang",
+  "page.backToLanding": "Back to all the options",
   "details.title": "Almost there!",
   "details.schedule": "Lock it in",
   "confirmation.title": "It's a date!",
@@ -33,67 +30,11 @@ const FRIENDS_TEXT: Record<string, string> = {
   "confirmation.sentEmail": "A confirmation is on its way to your inbox. See you soon!",
   "confirmation.needChanges": "Plans changed? No worries at all.",
   "confirmation.reschedule": "Pick a new time",
-  "confirmation.scheduleAnother": "Plan another hang",
-};
-
-/** Lines that only the friends pages have. {firstName} is the host's first name. */
-export const FRIENDS_COPY = {
-  landingTitle: "Hang out with {firstName}",
-  greeting: "Hey, friend!",
-  note: "I'm really glad you're here. Life gets busy, but time with you is the kind I always want to make room for. Pick whatever works for you and it goes straight on my calendar. Bonus points if pizza is involved.",
-  signOff: "Can't wait to see you,",
-  chooseHeading: "How do you want to hang?",
-  detailsIntro: "Just tell me who's coming and I'll save the date.",
-  confirmationNote: "Seriously, thanks for making the time. It means a lot. If food is involved, you already know my vote: pizza.",
-  pageTitle: "Pick a time with {firstName}",
-  empty: "{firstName} doesn't have any open times right now. Text me and we'll figure something out, probably over pizza!",
-  alwaysYesHeading: "Always a yes",
-  timeZoneNote: "I'm on Pacific time, but every time here shows in yours.",
-} as const;
-
-/** The "Always a yes" chips on the landing page: the host's favorite ways to hang. */
-export const FRIENDS_ALWAYS_YES: { emoji: string; label: string }[] = [
-  { emoji: "🍕", label: "Pizza, any style" },
-  { emoji: "☕", label: "Coffee" },
-  { emoji: "🚶", label: "A long walk and talk" },
-  { emoji: "📞", label: "A catch-up call" },
-];
-
-export type FriendlyEvent = { name: string; blurb: string };
-
-/** Friendly names of the owner's event types, by slug. Types not listed keep their own name and description. */
-export const FRIENDLY_EVENTS: Record<string, FriendlyEvent> = {
-  "30min": { name: "Quick video catch-up", blurb: "Thirty minutes to hear what's new with you." },
-  "60min": { name: "Long video hang", blurb: "A whole hour, no rush. Bring the stories." },
-  meal: { name: "Grab pizza (or coffee)", blurb: "You pick the spot, I bring the appetite. Pizza is always a yes." },
-};
-
-/** Friendly wording of custom questions, by their exact label. Answers and required rules stay the same. */
-export const FRIENDLY_QUESTIONS: Record<string, string> = {
-  "What would you like to discuss?": "What's new with you? (Anything goes, even just \"hi\")",
+  "confirmation.scheduleAnother": "Book another time",
 };
 
 /** The booking string for a key in the given tone (see bt). */
 export function toneText(tone: Tone | undefined, key: string, vars?: Vars): string {
   const own = tone === "friends" ? FRIENDS_TEXT[key] : undefined;
   return own === undefined ? bt(key, vars) : interpolate(own, vars);
-}
-
-/** A friends-only line with {firstName} filled in. */
-export function friendsLine(key: keyof typeof FRIENDS_COPY, firstName: string): string {
-  return interpolate(FRIENDS_COPY[key], { firstName });
-}
-
-/** "Julian" from "Julian Joseph" (the whole name when it has one word, "me" when empty). */
-export function firstNameOf(name: string | null | undefined): string {
-  const first = (name ?? "").trim().split(/\s+/)[0];
-  return first || "me";
-}
-
-export function friendlyEventOf(slug: string | null | undefined): FriendlyEvent | null {
-  return slug ? (FRIENDLY_EVENTS[slug.toLowerCase()] ?? null) : null;
-}
-
-export function friendlyQuestionLabel(label: string): string {
-  return FRIENDLY_QUESTIONS[label.trim()] ?? label;
 }

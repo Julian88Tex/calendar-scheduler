@@ -46,14 +46,19 @@ test.describe("booking calendar refresh", () => {
     await expect.poll(slots.count, { timeout: 60_000 }).toBeGreaterThan(0);
 
     const grid = page.getByRole("table", { name: "Select a Day" });
-    await expect(page.getByRole("status").filter({ hasText: "Loading" })).toBeVisible();
-    await expect(grid).toHaveCSS("opacity", "0.4");
+    const spinner = page.getByRole("status").filter({ hasText: "Loading" });
+    await expect(spinner).toBeVisible();
+    await expect(grid.locator("tbody")).toHaveCSS("opacity", "0.4");
     await expect(grid.getByRole("button", { name: /Times available$/ })).toHaveCount(0);
+    // The spinner sits beside the month name, above the grid: a ring over a date read as a marked day (owner report).
+    const [ring, table] = [await spinner.boundingBox(), await grid.boundingBox()];
+    expect(ring!.y + ring!.height).toBeLessThanOrEqual(table!.y);
+    if (process.env.PERSONA_SHOTS) await page.screenshot({ path: `${process.env.PERSONA_SHOTS}/calendar-loading.png` });
 
     await slots.release();
     await expect(page.getByRole("button", { name: OPEN_DAY })).toBeEnabled();
     await expect(page.getByRole("button", { name: CLOSED_DAY })).toBeDisabled();
-    await expect(grid).toHaveCSS("opacity", "1");
+    await expect(grid.locator("tbody")).toHaveCSS("opacity", "1");
     await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
   });
 
@@ -72,7 +77,7 @@ test.describe("booking calendar refresh", () => {
     await expect(page.getByRole("button", { name: OPEN_DAY })).toBeEnabled();
     await expect(page.getByRole("button", { name: CLOSED_DAY })).toBeDisabled();
     await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
-    await expect(page.getByRole("table", { name: "Select a Day" })).toHaveCSS("opacity", "1");
+    await expect(page.getByRole("table", { name: "Select a Day" }).locator("tbody")).toHaveCSS("opacity", "1");
 
     // The fresh answer still replaces the cached one: picking a day and a time works as before.
     await slots.release();

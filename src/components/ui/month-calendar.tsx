@@ -203,8 +203,12 @@ export function MonthCalendar({
         >
           <ChevronLeft aria-hidden="true" className={size === "md" ? "size-6" : "size-5"} strokeWidth={2.25} />
         </button>
-        <span className={cn("text-center text-ink", size === "md" ? "text-[14px] leading-5 font-[640]" : "text-[14px] font-bold")} aria-hidden="true">
-          {title}
+        <span className={cn("text-center text-ink", size === "md" ? "text-[14px] leading-5 font-[640]" : "text-[14px] font-bold")}>
+          <span className="relative inline-block">
+            <span aria-hidden="true">{title}</span>
+            {/* Beside the month name, not over the grid, where a ring on top of a date read as a marked day. */}
+            {loading && <Spinner size="sm" label={labels.loading} className="absolute top-1/2 left-full ml-2 -translate-y-1/2" />}
+          </span>
         </span>
         <button
           type="button"
@@ -225,7 +229,7 @@ export function MonthCalendar({
       <table
         aria-label={aria["aria-label"] ?? "Select a Day"}
         data-mode={mode}
-        className={cn("w-full table-fixed border-collapse transition-opacity duration-150", loading && "opacity-40")}
+        className="w-full table-fixed border-collapse"
       >
         <caption className="sr-only">{title}</caption>
         <thead>
@@ -242,7 +246,8 @@ export function MonthCalendar({
             ))}
           </tr>
         </thead>
-        <tbody>
+        {/* Only the days dim while loading: they are disabled then, the weekday names stay readable. */}
+        <tbody className={cn("transition-opacity duration-150", loading && "opacity-40")}>
           {rows.map((row, r) => (
             <tr key={r}>
               {row.map((date, c) => {
@@ -310,11 +315,6 @@ export function MonthCalendar({
           ))}
         </tbody>
       </table>
-      {loading && (
-        <div className="pointer-events-none absolute inset-x-0 top-12 bottom-0 flex items-center justify-center">
-          <Spinner size="lg" label={labels.loading} />
-        </div>
-      )}
     </div>
   );
 }

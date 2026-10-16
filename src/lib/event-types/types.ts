@@ -2,6 +2,7 @@
 import type { ConfirmationLink, LocationConfig, NotificationTemplates } from "@/db/types";
 import type { ScheduleContent } from "@/lib/availability/intervals";
 import type { UiKind } from "./constants";
+import type { EventPersonas, Persona } from "@/components/booking/lib/personas";
 
 export type QuestionType = "string" | "text" | "single_select" | "multi_select" | "dropdown" | "phone_number";
 
@@ -66,6 +67,11 @@ export type EventTypeDraft = {
   confirmationLinks: ConfirmationLink[];
   secret: boolean;
   internalNote: string;
+  /**
+   * The personas the type is shown to and its wording for each (event_types.metadata.personas, lib/personas.ts in the
+   * booking components); null for team types, and for new types made outside the editor (shown like never-saved ones).
+   */
+  personas: EventPersonas | null;
 };
 
 export type EditorScheduleOption = { id: string; name: string; isDefault: boolean; content: ScheduleContent };
@@ -115,6 +121,8 @@ export type EventTypeEditorData = {
   hostLimits: { day: number | null; week: number | null; month: number | null };
   /** Today in the owner's zone (date pickers). */
   today: string;
+  /** The owner's personas (Settings > Personas) for the Personas section; null for team types. */
+  personas: Persona[] | null;
 };
 
 /** A row of the Scheduling page list (event-types-list renders it). */
