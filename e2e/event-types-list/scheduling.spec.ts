@@ -353,8 +353,10 @@ test.describe("scheduling: event types", () => {
     const handle = page.getByRole("button", { name: "Reorder 30 Minute Virtual" });
     await handle.focus();
     await page.keyboard.press("Space");
+    await expect(handle).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Space");
+    await expect(handle).toHaveAttribute("aria-pressed", "false");
     expect(await cardNames(page)).toEqual(["60 Minute Virtual", "30 Minute Virtual", "In-Person Meal or Coffee"]);
 
     await thirty.getByRole("checkbox", { name: "Select 30 Minute Virtual" }).click();
