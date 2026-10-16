@@ -58,7 +58,7 @@ import {
 } from "./lib/form";
 import { longDate, weekdayTitle } from "./lib/display";
 import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
-import { toneText } from "./lib/friends";
+import { FRIENDS_PARAM, toneText } from "./lib/friends";
 import { bt as baseText, type Vars } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
 import { calendarHref, detailsHref, landingForwardParams, parseDate, parseMonth, startFromPath, withCarried } from "./lib/url-state";
@@ -476,7 +476,8 @@ export function BookingFlow(p: BookingPageProps) {
       }
       return;
     }
-    const carry = p.carry.filter(([k]) => EMBED_KEYS.includes(k));
+    // Embed keys, plus friends mode so the confirmation keeps the friends voice (lib/friends.ts).
+    const carry = p.carry.filter(([k]) => EMBED_KEYS.includes(k) || (k === FRIENDS_PARAM && p.tone === "friends"));
     router.push(withCarried(`${p.confirmationBase}/${encodeURIComponent(b.inviteeId)}`, carry) as Route);
   };
 

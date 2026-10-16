@@ -95,7 +95,7 @@ test.describe("public pages dark mode", () => {
 
     // The friends link has the toggle too, in its warm palette.
     await page.goto("/friends", { timeout: 60_000 });
-    await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(26, 20, 17)");
+    await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(20, 18, 17)");
     await page.getByRole("button", { name: "Switch to light mode" }).click();
     await expect(page.locator("[data-public-shell]")).toHaveCSS("background-color", "rgb(251, 243, 232)");
     if (SHOTS) {

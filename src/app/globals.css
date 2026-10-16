@@ -180,7 +180,7 @@
     /* Warm charcoal rather than brown: neutral surfaces with a hint of warmth, cream text, a brighter terracotta. */
     --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
     --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
-    --primary: #c95b37; --primary-hover: #d66a45; --primary-active: #e07a55; --primary-text: #f2a07e;
+    --primary: #b4502f; --primary-hover: #c25c39; --primary-active: #cc6741; --primary-text: #f2a07e;
     --primary-soft: #2f201a; --primary-soft-2: #3c271e;
     --focus: #f2a07e; --row-hover: #262220;
     --primary-color: var(--primary);
@@ -197,7 +197,7 @@
 :root[data-public-theme="dark"] [data-public-auto][data-tone="friends"] {
   --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
   --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
-  --primary: #c95b37; --primary-hover: #d66a45; --primary-active: #e07a55; --primary-text: #f2a07e;
+  --primary: #b4502f; --primary-hover: #c25c39; --primary-active: #cc6741; --primary-text: #f2a07e;
   --primary-soft: #2f201a; --primary-soft-2: #3c271e;
   --focus: #f2a07e; --row-hover: #262220;
   --primary-color: var(--primary);
