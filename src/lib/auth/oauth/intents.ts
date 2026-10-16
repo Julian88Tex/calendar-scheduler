@@ -17,11 +17,14 @@
 //   teams.acceptInvitationInTx and a session (identity only, no calendar link).
 // - connect_calendar: calendars.handleConnectCallback (signed-in users only; first connect and every Reconnect).
 // - poll_freebusy: polls.handleVoterFreeBusyCallback (tokens are never persisted).
+// - compare_calendar: compare.handleCompareCallback (booking page "Compare with my calendar": the short-lived access
+//   token goes back to the visitor's browser sealed in a cookie, never to the database).
 // Failures redirect with an error code (src/lib/auth/oauth/errors.ts), never with free text.
 import "server-only";
 import { linkCalendarFromOAuth } from "@/lib/calendars";
 import { handleConnectCallback } from "@/lib/calendars/oauth-connect";
 import { log } from "@/lib/logger";
+import { handleCompareCallback } from "@/lib/compare/oauth";
 import { handleVoterFreeBusyCallback } from "@/lib/polls/voter-oauth";
 import { safeNextPath } from "@/lib/url";
 import { auditAuth } from "../flows/audit";
@@ -48,6 +51,7 @@ export function isOAuthIntent(value: unknown): value is OAuthIntent {
     value === "signup" ||
     value === "connect_calendar" ||
     value === "poll_freebusy" ||
+    value === "compare_calendar" ||
     value === "link_login_method" ||
     value === "accept_invitation"
   );
@@ -124,6 +128,8 @@ export async function dispatchOAuthIntent(ctx: OAuthCallbackContext): Promise<Re
       }
       case "poll_freebusy":
         return await handleVoterFreeBusyCallback(ctx);
+      case "compare_calendar":
+        return await handleCompareCallback(ctx);
       case "link_login_method": {
         const session = await getSession().catch(() => null);
         const userId = assertSameUser(ctx.userId, session && !session.session.twoFactorPending ? session.user.id : null);

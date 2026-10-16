@@ -115,6 +115,8 @@ export async function handleOAuthStart(request: Request, provider: OAuthProvider
   const errorTo = (code: OAuthErrorCode) => redirectResponse(oauthErrorRedirect(intent, { returnTo, invitationToken }, provider, code));
 
   if (!isProviderConfigured(provider)) return errorTo("not_configured");
+  // The booking page calendar compare is Google only for now.
+  if (intent === "compare_calendar" && provider !== "google") return errorTo("not_configured");
 
   let userId: string | null = null;
   if (intent === "connect_calendar" || intent === "link_login_method") {

@@ -33,7 +33,7 @@ export const MICROSOFT_CONSUMER_TENANT_ID = "9188040d-6c67-4c5b-b112-36a304b66da
 
 /** The scopes an intent asks for. */
 export function microsoftScopesFor(intent: OAuthIntent): readonly string[] {
-  return intent === "poll_freebusy" ? MICROSOFT_FREEBUSY_SCOPES : MICROSOFT_SCOPES;
+  return intent === "poll_freebusy" || intent === "compare_calendar" ? MICROSOFT_FREEBUSY_SCOPES : MICROSOFT_SCOPES;
 }
 
 function client() {

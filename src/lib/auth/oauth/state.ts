@@ -35,6 +35,7 @@ const INTENTS: readonly OAuthIntent[] = [
   "signup",
   "connect_calendar",
   "poll_freebusy",
+  "compare_calendar",
   "link_login_method",
   "accept_invitation",
 ];

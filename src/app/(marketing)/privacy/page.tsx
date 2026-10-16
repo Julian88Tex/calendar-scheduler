@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-const UPDATED = "October 15, 2026";
+const UPDATED = "October 16, 2026";
 
 export default async function PrivacyPolicyPage({ searchParams }: Props) {
   await searchParams;
@@ -53,7 +53,10 @@ export default async function PrivacyPolicyPage({ searchParams }: Props) {
             and is never shared with anyone else or used to train AI models. The use of information received from Google
             APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. If you check
             your own Google calendar while voting in a meeting poll, the site reads only your free and busy times for
-            that check and does not store your calendar access.
+            that check and does not store your calendar access. If you choose &quot;Compare with my calendar&quot; on a
+            booking page, the site reads the names of your calendars and your free and busy times (never what your events
+            are) to mark the times that clash with yours; your access stays sealed in your own browser for at most an hour,
+            and nothing about your calendar is saved.
           </p>
         </section>
         <section>

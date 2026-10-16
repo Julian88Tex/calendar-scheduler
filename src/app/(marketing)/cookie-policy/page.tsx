@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-const UPDATED = "October 15, 2026";
+const UPDATED = "October 16, 2026";
 
 type CookieRow = { names: string[]; purpose: string; lifetime: string };
 
@@ -51,6 +51,12 @@ const COOKIES: CookieRow[] = [
     purpose:
       'Holds the result of "Check my calendar" on a meeting poll while you vote: only whether each proposed time is free or busy for you, never the titles or details of your events.',
     lifetime: "30 minutes.",
+  },
+  {
+    names: ["kairos_compare"],
+    purpose:
+      'Set only when you choose "Compare with my calendar" on a booking page and connect Google: it holds your Google access, encrypted, so the page can show which times clash with your calendar. It is sent only to the compare service, and "Disconnect" deletes it.',
+    lifetime: "As long as Google allows the access, at most 1 hour.",
   },
   {
     names: ["kairos_theme"],

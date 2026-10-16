@@ -11,6 +11,7 @@ import { teams, users } from "@/db/schema";
 import type { PublicBranding } from "@/components/public/public-page-shell";
 import { getOperatorEmail } from "@/components/public/operator";
 import type { LocationConfig } from "@/db/types";
+import { getGoogleClient } from "@/lib/auth/oauth/clients";
 import { getCurrentUser } from "@/lib/auth/session";
 import { eventTypeAccess, loadActorCtx } from "@/lib/authz";
 import { getDestinationCalendar } from "@/lib/calendars";
@@ -18,7 +19,7 @@ import { allowedDurationsOf, defaultDurationOf, getAvailability, HONEYPOT_FIELD,
 import { parsePrefill } from "@/lib/booking/prefill";
 import { APP_NAME } from "@/lib/brand";
 import { embedDisplayParams } from "@/lib/embed-events";
-import { getEnv } from "@/lib/env";
+import { getEnv, isE2eMode } from "@/lib/env";
 import { fileUrl } from "@/lib/files";
 import { richTextToPlain, sanitizeRichText } from "@/lib/html";
 import { log } from "@/lib/logger";
@@ -316,6 +317,8 @@ async function loadPage(input: LoadBookingPageInput): Promise<BookingPageResult>
     email: viewer.isHost ? (viewer.user?.email ?? null) : null,
     editUrl: viewer.canEdit ? `/app/event-types/${et.id}` : null,
     mutual: Boolean(viewer.user) && !viewer.isHost && !embed.embed,
+    // Google refuses to show its consent screen inside frames, and previews never book. E2E runs use a fake Google.
+    compare: (Boolean(getGoogleClient()) || isE2eMode()) && !embed.embed && param(sp, "preview") !== "1",
   };
   const preview = param(sp, "preview") === "1" && viewer.canEdit;
 
@@ -424,7 +427,7 @@ export async function loadNewTypePreview(handle: string, sp: SearchParamsInput):
     formToken: "",
     honeypotName: HONEYPOT_FIELD,
     trustedDeviceCookie: TRUSTED_DEVICE_COOKIE,
-    viewer: { signedIn: true, isHost: false, email: null, editUrl: null, mutual: false },
+    viewer: { signedIn: true, isHost: false, email: null, editUrl: null, mutual: false, compare: false },
     preview: true,
     troubleshootEventTypeId: null,
     turnstileSiteKey: null,

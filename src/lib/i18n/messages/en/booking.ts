@@ -164,6 +164,9 @@ const messages = {
     legend: "Times marked Conflict overlap events on your calendar.",
     loadError: "We couldn't load your calendar.",
   },
+  compare: {
+    open: "Compare with my calendar",
+  },
   preview: {
     banner: "This is a preview. To book an event, share the link with your invitees.",
     viewPage: "View booking page",

@@ -91,6 +91,8 @@ function StepSpinner() {
 }
 const TroubleshootList = dynamic(() => import("./troubleshoot-list").then((m) => m.TroubleshootList), { ssr: false, loading: StepSpinner });
 const VerificationPanel = dynamic(() => import("./verification-panel").then((m) => m.VerificationPanel), { ssr: false, loading: StepSpinner });
+// "Compare with my calendar" (a visitor's own Google Calendar, compare-bar.tsx) loads when opened.
+const CompareBar = dynamic(() => import("./compare-bar").then((m) => m.CompareBar), { ssr: false });
 
 const LOCALE = "en-US";
 /**
@@ -278,6 +280,10 @@ export function BookingFlow(p: BookingPageProps) {
       cancelled = true;
     };
   }, [showFree, busyKey, month, busyByMonth]);
+
+  // "Compare with my calendar": reopened by ?compare=1 after the Google round trip.
+  const [compareOpen, setCompareOpen] = useState(() => p.viewer.compare && p.carry.some(([k]) => k === "compare"));
+  const [compareBusy, setCompareBusy] = useState<{ month: string; busy: BusyRange[] } | null>(null);
 
   // Form state (BK-09 to BK-16).
   const ctx: FormContext = useMemo(
@@ -740,9 +746,9 @@ export function BookingFlow(p: BookingPageProps) {
 
   // Calendar step.
   const fmt = (ms: number | string) => formatTime(ms, dataZone, LOCALE, hour12);
-  const busyRanges = Array.isArray(busy) ? busy : [];
+  const busyRanges = [...(Array.isArray(busy) ? busy : []), ...(compareBusy?.month === month ? compareBusy.busy : [])];
   const timeSlots: TimeSlot[] = daySlots.map((s) => {
-    const conflict = showFree && busyRanges.length > 0 && hasConflict(s.start, duration, busyRanges);
+    const conflict = busyRanges.length > 0 && hasConflict(s.start, duration, busyRanges);
     const spots = event.showRemainingSpots ? (s.remaining === 1 ? bt("page.spotLeft") : bt("page.spotsLeft", { count: s.remaining })) : null;
     return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") : spots };
   });
@@ -864,6 +870,15 @@ export function BookingFlow(p: BookingPageProps) {
                 </p>
               )}
             </div>
+          )}
+          {compareOpen ? (
+            <CompareBar month={month} onBusy={(m, b) => setCompareBusy(b ? { month: m, busy: b } : null)} onClose={() => setCompareOpen(false)} />
+          ) : (
+            p.viewer.compare && (
+              <button type="button" onClick={() => setCompareOpen(true)} className="mt-4 text-[14px] font-semibold text-brand-strong hover:underline" data-testid="compare-open">
+                {bt("compare.open")}
+              </button>
+            )
           )}
         </BookingMainSection>
         {/*
