@@ -1,13 +1,15 @@
 // OWNER: foundation-ui.
 //
 // PublicPageShell (ARCHITECTURE 20.2, SPEC section 8, BK-03, BK-25, BK-26, BR-07, GEN-22): the #FAFAFA canvas of public
-// pages, always in the light classic tokens (data-force-light, even when the dashboard theme is dark), with branding
+// pages in the classic tokens, light or dark by the visitor's device setting (data-public-auto; branding background or
+// text colors and embeds stay light with data-force-light, whatever the dashboard theme), with branding
 // colors as CSS variables (--primary-color for every blue, --public-bg for the card, --public-text for its text),
 // the BK-03 spacing (66px top, 30px bottom, 5% sides; none on phones), embed mode (transparent canvas, no padding),
 // the footer links and the cookie banner. Server and client safe: put it at the top of public pages.
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 import { CookieBanner } from "./cookie-banner";
+import { DarkReaderLock } from "./dark-reader-lock";
 import { PublicFooterLinks } from "./public-footer-links";
 
 export type PublicBranding = {
@@ -69,9 +71,11 @@ export function PublicPageShell({
   className,
   privacyUrl,
 }: PublicPageShellProps) {
+  const autoTheme = !embed && !normalizeBrandColor(branding?.backgroundColor) && !normalizeBrandColor(branding?.textColor);
   return (
     <div
-      data-force-light=""
+      data-force-light={autoTheme ? undefined : ""}
+      data-public-auto={autoTheme ? "" : undefined}
       data-public-shell=""
       style={brandingStyle(branding)}
       className={cn("min-h-dvh overflow-x-clip text-ink", embed ? "bg-transparent" : "bg-canvas", className)}
@@ -83,6 +87,7 @@ export function PublicPageShell({
         <PublicFooterLinks operatorEmail={operatorEmail} pageUrl={pageUrl} privacyUrl={privacyUrl} className="mx-auto max-w-[1060px] justify-center px-4 pt-2 pb-8" />
       )}
       {!hideGdprBanner && <CookieBanner trackersConfigured={trackersConfigured} />}
+      {autoTheme && <DarkReaderLock />}
     </div>
   );
 }

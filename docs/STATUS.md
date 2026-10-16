@@ -16,6 +16,8 @@ Your site is live at https://calendar-scheduler-smoky.vercel.app (Vercel, free p
 - Emails (confirmations, reminders, reschedules, cancellations, host notifications) are sent from your Gmail.
 - Reminders and other background jobs run every 5 minutes, triggered by a Google Apps Script in your Google account
   (Vercel's free plan only allows a daily cron).
+- On the booking calendar, available days show a stronger blue circle and bold numbers (release ddf650b, October 15)
+  so they stand out on phones and under a browser's automatic dark mode.
 - Checked live end to end: a booking created the calendar event with a Meet link and sent the emails, and cancelling it
   from the invitee link deleted the event and sent both cancellation emails.
 

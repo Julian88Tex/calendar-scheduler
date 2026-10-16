@@ -7,7 +7,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root,
-[data-force-light] {
+[data-force-light],
+[data-public-auto] {
   --ink: #0a2540; --ink-2: #476788; --ink-3: #a6bbd1; --navy: #0b3558;
   --line: #d4e0ed; --line-medium: #a6bbd1; --canvas: #fafafa; --cloud: #f8f9fb; --pebble: #f0f3f8; --mist: #e7edf6; --white: #ffffff;
   --primary: #006bff; --primary-hover: #004eba; --primary-active: #004796; --primary-text: #004eba;
@@ -69,6 +70,51 @@
     --row-hover: #1b222b;
     --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
   --day-fill: 26%; --day-fill-hover: 38%;
+    color-scheme: dark;
+  }
+}
+
+/* Public pages (booking, confirmation, cancel and reschedule pages) follow the visitor's device setting, so browser
+   extensions such as Dark Reader find a real dark theme instead of guessing one. The shell sets data-public-auto unless
+   the host chose branding background or text colors or the page is embedded; those stay light ([data-force-light]).
+   Branding --primary-color is set inline on the shell, so it still wins here. */
+@media (prefers-color-scheme: dark) {
+  [data-public-auto] {
+    --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+    --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+    --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+    --primary-soft: #102640; --primary-soft-2: #163257;
+    --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+    --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+    --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+    --overlay: rgba(0, 0, 0, 0.6); --ribbon: #3a4148; --ribbon-hover: #4a525a;
+    --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+    --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+    --shadow-embed: 0 16px 48px 0 rgb(0 0 0 / 30%), 0 0 24px 0 rgb(0 0 0 / 30%);
+    --focus: #7ab4ff;
+    --slot-selected: rgba(228, 233, 240, 0.25);
+    --row-hover: #1b222b;
+    --primary-color: var(--primary);
+    --public-bg: var(--white); --public-text: var(--ink);
+    --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+    --day-fill: 26%; --day-fill-hover: 38%;
+    color-scheme: dark;
+  }
+  /* Brand colored text (links, labels) is lightened so any branding color reads on the dark card. */
+  [data-public-auto] .text-brand,
+  [data-public-auto] .hover\:text-brand:hover {
+    color: color-mix(in srgb, var(--primary-color) 55%, #ffffff);
+  }
+  [data-public-auto] .bg-white {
+    background-color: var(--white);
+  }
+  [data-public-auto] .ring-white {
+    --tw-ring-color: var(--white);
+  }
+  /* Overscroll and the area outside the shell match the dark canvas. */
+  :root:has([data-public-auto]),
+  body:has([data-public-auto]) {
+    background-color: #0e1217;
     color-scheme: dark;
   }
 }

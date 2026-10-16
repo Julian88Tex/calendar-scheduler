@@ -225,7 +225,7 @@ export function MonthCalendar({
       <table
         aria-label={aria["aria-label"] ?? "Select a Day"}
         data-mode={mode}
-        className="w-full table-fixed border-collapse"
+        className={cn("w-full table-fixed border-collapse transition-opacity duration-150", loading && "opacity-40")}
       >
         <caption className="sr-only">{title}</caption>
         <thead>
