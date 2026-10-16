@@ -16,7 +16,7 @@ import {
 } from "@/components/booking/lib/form";
 import { headerName, hostHeader, hostNames, stackParts, type HostPerson } from "@/components/booking/lib/hosts";
 import { locationInput, locationOption, locationRows, meetingLocation, toPublicLocations } from "@/components/booking/lib/locations";
-import { availableDatesOf, hasConflict, monthRange, monthsBetween, nextMonthOf, slotsKey, slotsUrl } from "@/components/booking/lib/slots";
+import { availableDatesOf, conflictOf, monthRange, monthsBetween, nextMonthOf, slotsKey, slotsUrl } from "@/components/booking/lib/slots";
 import { bt, interpolate } from "@/components/booking/lib/t";
 import { calendarHref, carriedParams, detailsHref, landingForwardParams, parseDuration, startFromPath, startSegment, withCarried } from "@/components/booking/lib/url-state";
 import { applyDraft, draftText } from "@/components/booking/use-preview-draft";
@@ -278,8 +278,8 @@ describe("slots and copy", () => {
     expect(slotsKey({ target: "et", month: "2026-10", zone: "UTC", duration: 30, first: true })).toBe(slotsKey({ target: "et", month: "2026-10", zone: "UTC", duration: 30 }));
     expect(availableDatesOf({ timeZone: "UTC", durationMinutes: 30, windowEnd: null, days: { "2026-10-14": [{ start: "x", remaining: 1 }], "2026-10-15": [], "2026-11-01": [{ start: "y", remaining: 1 }] } }, "2026-10")).toEqual(["2026-10-14"]);
     const busy = [{ start: Date.parse("2026-10-14T18:00:00Z"), end: Date.parse("2026-10-14T18:30:00Z") }];
-    expect(hasConflict("2026-10-14T17:45:00Z", 30, busy)).toBe(true);
-    expect(hasConflict("2026-10-14T18:30:00Z", 30, busy)).toBe(false);
+    expect(conflictOf("2026-10-14T17:45:00Z", 30, busy)).toBe(busy[0]);
+    expect(conflictOf("2026-10-14T18:30:00Z", 30, busy)).toBeUndefined();
     expect(nextMonthOf("2026-12")).toBe("2027-01");
     expect(monthsBetween("2026-10", "2027-01")).toBe(3);
     expect(interpolate("{a} and {b}", { a: 1 })).toBe("1 and {b}");

@@ -30,6 +30,7 @@ What each Google flow asks for (`src/lib/auth/oauth/google.ts`, `googleAccessFor
 | Sign up with Google, connect a calendar, every Reconnect, Allow Gmail sending | the 6 scopes below | `consent`, offline access, `include_granted_scopes` |
 | Meeting poll voter: Check my calendar | `openid email calendar.freebusy` | `select_account`, no offline access |
 | Booking page visitor: Compare with my calendar | `openid email calendar.freebusy calendar.calendarlist.readonly` | `select_account`, no offline access |
+| Booking page visitor: Show event names (opt-in, after comparing) | the compare scopes plus `calendar.readonly` | `select_account`, no offline access |
 
 ## Before you submit
 
@@ -82,8 +83,10 @@ Open https://console.cloud.google.com/auth and select the project of the OAuth c
 > Google Calendar's free/busy times with the proposed times once; that token is used for a single request, revoked and
 > never stored. Likewise, a visitor on a booking page may choose "Compare with my calendar" to see which of the owner's open
 > times clash with their own Google Calendar: they pick which of their calendars to compare (calendar list) and the
-> app reads only their free/busy times; their access token stays encrypted in their own browser for at most an hour
-> and is never stored on the server.
+> app reads only their free/busy times. Only if they then click "Show event names" does it also ask for calendar.readonly,
+> to read the titles of their own events in the month on screen so a clash can say what it is; those titles go only to
+> that visitor's browser. Their access token stays encrypted in their own browser for at most an hour and nothing is
+> stored on the server.
 >
 > Signing in to the site only asks for openid, email and profile. The calendar and Gmail permissions are requested
 > only when the owner connects or reconnects their calendar.
@@ -148,7 +151,10 @@ Code paths:
 > list in the background so removed calendars stop being used). (2) Free/busy (freebusy.query) for calendars that
 > other people shared with the owner as "See only free/busy" (for example a work calendar shared into the owner's
 > personal account): their event details cannot be read, so their busy blocks come from the free/busy API, and those
-> times must still be unavailable to invitees.
+> times must still be unavailable to invitees. (3) Separately, a booking page visitor who compares their own calendar
+> may click "Show event names": only then is this scope requested from the visitor, and the app reads the titles of
+> their own events in the month on screen (events.list) so each clash with the owner's open times can say what it is.
+> The titles go only to that visitor's browser, are never stored or logged, and the token expires within the hour.
 >
 > Why this scope: it is read only. Together with calendar.events, which already allows reading the events of every
 > calendar the owner can see, it only adds read access to the calendar list, calendar properties and free/busy; it
@@ -160,12 +166,14 @@ Code paths:
 - `src/lib/calendars/connections.ts`: `connectGoogleAccount`, `syncCalendarList`, `applyCalendarList`.
 - `src/lib/calendars/access.ts` (free/busy only calendars), `src/lib/calendars/busy.ts` (reads them with `listBusy`).
 - `src/lib/calendars/connections.ts`: `GOOGLE_CALENDAR_SCOPES` (required together with calendar.events).
+- `src/lib/compare/google.ts`: `compareEventTitles` (the visitor's opt-in event names, GET `calendars/{id}/events`).
 
 For you, not for pasting: Google also accepts narrower scopes for these two calls (`calendar.calendarlist.readonly`
 for the calendar list, `calendar.events.freebusy` for free/busy). A reviewer may ask why the app does not use them. If
 that happens, the code change is to replace `calendar.readonly` in `GOOGLE_SCOPES` (`src/lib/auth/oauth/google.ts`)
 and `GOOGLE_CALENDAR_SCOPES` (`src/lib/calendars/connections.ts`) with those two, update the Data access list, deploy,
-and reconnect your calendar once; ask for it as a separate task.
+and reconnect your calendar once; ask for it as a separate task. The visitor's "Show event names" would then move to
+`calendar.events.readonly` (`GOOGLE_COMPARE_EVENTS_SCOPE`), a new scope to add on the Data access page.
 
 ### https://www.googleapis.com/auth/gmail.send
 

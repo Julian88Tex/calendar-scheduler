@@ -165,7 +165,7 @@ export function TimeSlotList({
                   )}
                 >
                   <span className="text-[16px] leading-5 font-bold">{slot.label}</span>
-                  {slot.detail && <span className="text-[12px] leading-4 font-semibold text-ink-2">{slot.detail}</span>}
+                  {slot.detail && <span className="max-w-full truncate text-[12px] leading-4 font-semibold text-ink-2">{slot.detail}</span>}
                 </button>
               </li>
             );

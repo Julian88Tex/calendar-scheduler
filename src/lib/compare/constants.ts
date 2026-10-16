@@ -25,3 +25,10 @@ export const COMPARE_BUSY_PER_HOUR = 60;
  */
 export type CompareFailureReason = "no_access" | "temporary" | "too_many" | "unknown";
 export type CompareFailure = { id: string; reason: CompareFailureReason };
+
+/** One of the visitor's own timed events (epoch ms), named so a Conflict can say what it is. */
+export type CompareEventTitle = { start: number; end: number; title: string };
+
+/** At most this many named events per lookup, each title at most COMPARE_TITLE_MAX characters. */
+export const COMPARE_MAX_TITLES = 500;
+export const COMPARE_TITLE_MAX = 80;

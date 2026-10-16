@@ -1,5 +1,5 @@
 // Booking page "Compare with my calendar": the compare_calendar OAuth intent asks Google for free/busy and the calendar
-// list only (no offline access, no events), keeps the visitor's token sealed in their own browser (a cookie scoped to
+// list only (no offline access, no events unless the visitor asks for event names), keeps the visitor's token sealed in their own browser (a cookie scoped to
 // the compare API, an hour at most) and writes nothing to the database. Runs the real start and callback and the real
 // compare routes against mocked Google endpoints.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,7 @@ const { calendarConnections, oauthAccounts, sessions, users } = await import("@/
 const { handleOAuthCallback, handleOAuthStart } = await import("@/lib/auth/oauth/flow");
 const google = await import("@/lib/auth/oauth/google");
 const { COMPARE_API_PATH, COMPARE_COOKIE } = await import("@/lib/compare/constants");
-const { failureReason, mergeRanges } = await import("@/lib/compare/google");
+const { eventTitle, failureReason, mergeRanges } = await import("@/lib/compare/google");
 const { newCompareSession, appendCompareCookie } = await import("@/lib/compare/session");
 const compareRoute = await import("@/app/api/public/compare/route");
 const busyRoute = await import("@/app/api/public/compare/busy/route");
@@ -25,6 +25,7 @@ const env = process.env as Record<string, string | undefined>;
 const ORIGIN = "http://localhost:3000";
 const FREEBUSY = "https://www.googleapis.com/auth/calendar.freebusy";
 const CAL_LIST = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+const READONLY = "https://www.googleapis.com/auth/calendar.readonly";
 
 beforeAll(() => {
   env.GOOGLE_CLIENT_ID = "google-client";
@@ -44,11 +45,12 @@ function setCookie(res: Response, name: string): string | null {
 const cookieValue = (header: string) => decodeURIComponent(header.split(";")[0]!.slice(header.indexOf("=") + 1));
 
 /** Start, Google consent (mocked), callback: returns the authorize URL and the callback response. */
-async function connect(next: string) {
-  const start = await handleOAuthStart(new Request(`${ORIGIN}/api/auth/google/start?intent=compare_calendar&next=${encodeURIComponent(next)}`), "google");
+async function connect(next: string, opts: { extra?: string; scope?: string } = {}) {
+  const start = await handleOAuthStart(new Request(`${ORIGIN}/api/auth/google/start?intent=compare_calendar&next=${encodeURIComponent(next)}${opts.extra ?? ""}`), "google");
   expect(start.status).toBe(302);
   const authorize = new URL(start.headers.get("location")!);
-  const fm = mockFetch(...googleRoutes({}, { accessToken: "visitor-access", refreshToken: null, scope: `openid email ${FREEBUSY} ${CAL_LIST}`, idToken: fakeIdToken({ sub: "visitor-sub", email: "alex@example.com", email_verified: true }) }));
+  const scope = opts.scope ?? `openid email ${FREEBUSY} ${CAL_LIST}`;
+  const fm = mockFetch(...googleRoutes({}, { accessToken: "visitor-access", refreshToken: null, scope, idToken: fakeIdToken({ sub: "visitor-sub", email: "alex@example.com", email_verified: true }) }));
   try {
     const callback = await handleOAuthCallback(new Request(`${ORIGIN}/api/auth/google/callback?code=c1&state=${encodeURIComponent(authorize.searchParams.get("state")!)}`), "google");
     return { authorize, callback };
@@ -91,6 +93,23 @@ describe("compare_calendar OAuth", () => {
     expect(jar.size).toBe(0);
   });
 
+  it("asks to read events only when the visitor clicks Show event names, and remembers whether Google granted it", async () => {
+    expect(google.googleScopesFor("compare_calendar", { events: "1" })).toEqual(["openid", "email", FREEBUSY, CAL_LIST, READONLY]);
+    const asked = await connect("/julianjoseph/30min", { extra: "&events=1", scope: `openid email ${FREEBUSY} ${CAL_LIST} ${READONLY}` });
+    expect(asked.authorize.searchParams.get("scope")).toBe(`openid email ${FREEBUSY} ${CAL_LIST} ${READONLY}`);
+    expect(asked.authorize.searchParams.get("access_type")).toBeNull();
+    const granted = cookieValue(setCookie(asked.callback, COMPARE_COOKIE)!);
+    const listRoute = { method: "GET", url: "https://www.googleapis.com/calendar/v3/users/me/calendarList", handler: () => ({ items: [] }) };
+    let fm = mockFetch(listRoute);
+    expect((await (await compareRoute.GET(req("GET", COMPARE_API_PATH, granted), undefined)).json()).events).toBe(true);
+    fm.restore();
+    // The box left unchecked on Google's screen: a plain compare.
+    const declined = await connect("/julianjoseph/30min", { extra: "&events=1" });
+    fm = mockFetch(listRoute);
+    expect((await (await compareRoute.GET(req("GET", COMPARE_API_PATH, cookieValue(setCookie(declined.callback, COMPARE_COOKIE)!)), undefined)).json()).events).toBe(false);
+    fm.restore();
+  });
+
   it("is Google only", async () => {
     env.MICROSOFT_CLIENT_ID = "ms-client";
     env.MICROSOFT_CLIENT_SECRET = "ms-secret";
@@ -105,8 +124,8 @@ describe("compare_calendar OAuth", () => {
 });
 
 describe("compare API", () => {
-  async function sessionCookie(): Promise<string> {
-    const res = await appendCompareCookie(new Response(null), newCompareSession({ accessToken: "visitor-access", email: "alex@example.com", expiresAt: new Date(Date.now() + 3_600_000) }));
+  async function sessionCookie(events = false): Promise<string> {
+    const res = await appendCompareCookie(new Response(null), newCompareSession({ accessToken: "visitor-access", email: "alex@example.com", expiresAt: new Date(Date.now() + 3_600_000), events }));
     return cookieValue(setCookie(res, COMPARE_COOKIE)!);
   }
 
@@ -134,6 +153,7 @@ describe("compare API", () => {
       connected: true,
       email: "alex@example.com",
       expiresAt: expect.any(String),
+      events: false,
       calendars: [
         { id: "alex@example.com", name: "Alex", color: "#039be5", primary: true, selected: true },
         { id: "family@x", name: "Family", color: null, primary: false, selected: true },
@@ -174,7 +194,46 @@ describe("compare API", () => {
         { id: "flaky@x", reason: "temporary" },
         { id: "missing@x", reason: "no_access" },
       ],
+      titles: [],
     });
+    // Without the visitor's go-ahead no event is ever listed.
+    expect(fm.callsTo("/events")).toHaveLength(0);
+  });
+
+  it("names the visitor's own events only when they allowed it, skipping what free/busy skips", async () => {
+    const cookie = await sessionCookie(true);
+    const at = (h: string) => `2030-10-08T${h}:00Z`;
+    const fm = mockFetch(
+      { method: "POST", url: "https://www.googleapis.com/calendar/v3/freeBusy", handler: () => ({ calendars: { primary: { busy: [{ start: at("19:00"), end: at("19:30") }] }, "shared@x": { busy: [] } } }) },
+      {
+        method: "GET",
+        url: "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        handler: (r) => {
+          expect(r.url.searchParams.get("singleEvents")).toBe("true");
+          expect(r.url.searchParams.get("timeMin")).toBe("2030-10-01T00:00:00.000Z");
+          return {
+            items: [
+              { summary: "Dentist", start: { dateTime: at("19:00") }, end: { dateTime: at("19:30") } },
+              { summary: "Lunch (free)", transparency: "transparent", start: { dateTime: at("20:00") }, end: { dateTime: at("21:00") } },
+              { summary: "Moved", status: "cancelled", start: { dateTime: at("20:00") }, end: { dateTime: at("21:00") } },
+              { summary: "Declined", attendees: [{ self: true, responseStatus: "declined" }], start: { dateTime: at("20:00") }, end: { dateTime: at("21:00") } },
+              { summary: "Vacation", start: {}, end: {} },
+              { start: { dateTime: at("22:00") }, end: { dateTime: at("23:00") } },
+            ],
+          };
+        },
+      },
+      { method: "GET", url: "https://www.googleapis.com/calendar/v3/calendars/shared%40x/events", handler: () => mockResponse({ error: {} }, { status: 403 }) },
+    );
+    const res = await busyRoute.POST(req("POST", `${COMPARE_API_PATH}/busy`, cookie, { calendarIds: ["primary", "shared@x"], start: "2030-10-01T00:00:00Z", end: "2030-11-01T00:00:00Z" }), undefined);
+    fm.restore();
+    const out = await res.json();
+    expect(out.titles).toEqual([{ start: Date.parse(at("19:00")), end: Date.parse(at("19:30")), title: "Dentist" }]);
+    expect(out.busy).toEqual([{ start: Date.parse(at("19:00")), end: Date.parse(at("19:30")) }]);
+  });
+
+  it("keeps titles short", () => {
+    expect(eventTitle({ summary: `  ${"x".repeat(200)} `, start: { dateTime: "2030-10-08T19:00:00Z" }, end: { dateTime: "2030-10-08T19:30:00Z" } })?.title).toHaveLength(80);
   });
 
   it("explains each Google free/busy error in the visitor's terms", () => {

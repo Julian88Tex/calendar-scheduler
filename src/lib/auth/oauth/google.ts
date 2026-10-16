@@ -16,7 +16,9 @@
 //   screen) still connects the calendar.
 // - "freebusy" (poll_freebusy, MP-13 "Check my calendar"): the free/busy scope only, no offline access.
 // - "compare" (compare_calendar, the booking page's "Compare with my calendar"): free/busy plus the read-only calendar
-//   list (names and colors of the visitor's calendars, so they pick which ones to compare), no offline access.
+//   list (names and colors of the visitor's calendars, so they pick which ones to compare), no offline access. With the
+//   start parameter events=1 (the visitor's "Show event names" link) it also asks for calendar.readonly, already one
+//   of the app's scopes, so a Conflict can name the visitor's own event.
 import "server-only";
 import { AppError } from "@/lib/errors";
 import { GMAIL_SEND_SCOPE } from "@/lib/integrations/google/scopes";
@@ -45,6 +47,9 @@ export const GOOGLE_COMPARE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.freebusy",
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
 ] as const;
+
+/** Added to GOOGLE_COMPARE_SCOPES when the visitor asks to see the names of their clashing events. */
+export const GOOGLE_COMPARE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 /** Extra authorize parameters of the full flows (refresh token on every consent, incremental auth). */
 export const GOOGLE_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = {
@@ -77,12 +82,12 @@ export function googleAccessFor(intent: OAuthIntent): GoogleAccess {
   }
 }
 
-/** The scopes an intent asks for. */
-export function googleScopesFor(intent: OAuthIntent): readonly string[] {
+/** The scopes an intent asks for (data: the intent data of the start link). */
+export function googleScopesFor(intent: OAuthIntent, data?: Readonly<Record<string, string>>): readonly string[] {
   const access = googleAccessFor(intent);
   if (access === "full") return GOOGLE_SCOPES;
   if (access === "freebusy") return GOOGLE_FREEBUSY_SCOPES;
-  if (access === "compare") return GOOGLE_COMPARE_SCOPES;
+  if (access === "compare") return data?.events === "1" ? [...GOOGLE_COMPARE_SCOPES, GOOGLE_COMPARE_EVENTS_SCOPE] : GOOGLE_COMPARE_SCOPES;
   return GOOGLE_SIGN_IN_SCOPES;
 }
 
@@ -103,8 +108,9 @@ export function googleAuthorizationUrl(p: {
   codeVerifier: string;
   intent: OAuthIntent;
   loginHint?: string | null;
+  data?: Readonly<Record<string, string>>;
 }): URL {
-  const scopes = googleScopesFor(p.intent);
+  const scopes = googleScopesFor(p.intent, p.data);
   const url = client().createAuthorizationURL(p.state, p.codeVerifier, [...scopes]);
   for (const [k, v] of Object.entries(googleAuthorizeParamsFor(p.intent))) url.searchParams.set(k, v);
   if (p.loginHint) url.searchParams.set("login_hint", p.loginHint);

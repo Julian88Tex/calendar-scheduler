@@ -150,6 +150,56 @@ test.describe("compare with my calendar", () => {
     await expect(warning).toHaveCount(0);
   });
 
+  test("Conflict names the visitor's own event once they allow it, and only asks when they click", async ({ page, axe }) => {
+    // Busy-only connection: plain Conflict, and a link that asks Google for event access.
+    let res = await page.request.post("/api/test/compare", { headers: { [E2E_SECRET_HEADER]: e2eSecret() }, data: FAKE });
+    expect(res.ok()).toBe(true);
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    const bar = page.getByTestId("compare-bar");
+    await expect(bar.getByTestId("compare-email")).toBeVisible(SLOW);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    const list = page.getByRole("list", { name: "Select a time" });
+    await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict$/ })).toBeVisible(SLOW);
+    await expect(bar).toContainText("Want to see which event is in the way?");
+    const start = page.waitForRequest((r) => r.url().includes("/api/auth/google/start"));
+    await bar.getByTestId("compare-names").click();
+    const url = new URL((await start).url());
+    expect(url.searchParams.get("intent")).toBe("compare_calendar");
+    expect(url.searchParams.get("events")).toBe("1");
+
+    // Event access allowed: the clash names the event; a clash with an untitled event stays plain.
+    res = await page.request.post("/api/test/compare", {
+      headers: { [E2E_SECRET_HEADER]: e2eSecret() },
+      data: {
+        ...FAKE,
+        events: true,
+        titles: {
+          primary: [{ start: "2030-10-08T19:00:00Z", end: "2030-10-08T19:30:00Z", title: "Dentist appointment with Dr. Alvarez downtown" }],
+        },
+      },
+    });
+    expect(res.ok()).toBe(true);
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    await expect(bar.getByTestId("compare-status")).toHaveText("Times marked Conflict overlap events on your calendar. Event names show only to you and aren't saved.", SLOW);
+    await expect(bar.getByTestId("compare-names")).toHaveCount(0);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict: Dentist appointment/ })).toBeVisible(SLOW);
+    await expect(list.getByRole("button", { name: /^5:00pm\s*Conflict$/ })).toBeVisible();
+    await expect(list.getByRole("button", { name: /^3:30pm$/ })).toBeVisible();
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/8-named-conflict.png` });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/9-named-conflict-dark.png` });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    await expect(page.getByTestId("compare-email")).toBeVisible(SLOW);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    await expect(page.getByRole("list", { name: "Select a time" }).getByRole("button", { name: /^3:00pm\s*Conflict: Dentist/ })).toBeVisible(SLOW);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/10-named-conflict-phone.png` });
+  });
+
   test("the compare APIs refuse cross-site requests and are absent from embeds", async ({ page }) => {
     const res = await page.request.post("/api/public/compare/busy", {
       headers: { origin: "https://evil.example" },

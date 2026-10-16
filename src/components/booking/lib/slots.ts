@@ -76,13 +76,14 @@ export function availableDatesOf(data: MonthSlots | null | undefined, month: str
     .sort();
 }
 
-export type BusyRange = { start: number; end: number };
+/** A busy range of the viewer (epoch ms); title: the name of the visitor's own event, when they allowed reading it. */
+export type BusyRange = { start: number; end: number; title?: string };
 
-/** True when [start, start + duration) overlaps a busy range of the viewer (BK-33). */
-export function hasConflict(startIso: string, durationMinutes: number, busy: readonly BusyRange[]): boolean {
+/** The first busy range of the viewer that [start, start + duration) overlaps (BK-33), or undefined. */
+export function conflictOf(startIso: string, durationMinutes: number, busy: readonly BusyRange[]): BusyRange | undefined {
   const s = Date.parse(startIso);
   const e = s + durationMinutes * 60_000;
-  return busy.some((b) => b.start < e && b.end > s);
+  return busy.find((b) => b.start < e && b.end > s);
 }
 
 /** The month after `month` ("2026-12" -> "2027-01"). */

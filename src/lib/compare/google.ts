@@ -1,9 +1,11 @@
 // Google calls of the booking page compare (server only): the visitor's calendar list (calendar.calendarlist.readonly:
 // names and colors, no events) and their busy times (calendar.freebusy: start and end only, never titles or details).
-// Busy times go back to the browser merged across calendars and are never stored.
+// Busy times go back to the browser merged across calendars and are never stored. Only when the visitor asked to see
+// event names (calendar.readonly, session.events) are the titles of their own timed events read too, so a Conflict can
+// say what it is: they go back to that visitor's browser alone and are never stored or logged.
 import "server-only";
 import { log } from "@/lib/logger";
-import type { CompareFailure, CompareFailureReason } from "./constants";
+import { COMPARE_MAX_TITLES, COMPARE_TITLE_MAX, type CompareEventTitle, type CompareFailure, type CompareFailureReason } from "./constants";
 import type { CompareSession } from "./session";
 
 const API = "https://www.googleapis.com/calendar/v3";
@@ -133,4 +135,62 @@ export async function compareBusy(
     for (const b of cal.busy ?? []) all.push({ start: Date.parse(b.start), end: Date.parse(b.end) });
   }
   return { busy: mergeRanges(all), failed };
+}
+
+type GoogleEvent = {
+  summary?: string;
+  status?: string;
+  transparency?: string;
+  start?: { dateTime?: string };
+  end?: { dateTime?: string };
+  attendees?: { self?: boolean; responseStatus?: string }[];
+};
+
+/** A timed, busy, not declined event with a title, as Google's free/busy counts it; null otherwise. */
+export function eventTitle(e: GoogleEvent): CompareEventTitle | null {
+  const title = e.summary?.trim();
+  if (!title || e.status === "cancelled" || e.transparency === "transparent") return null;
+  if (e.attendees?.some((a) => a.self && a.responseStatus === "declined")) return null;
+  const start = Date.parse(e.start?.dateTime ?? "");
+  const end = Date.parse(e.end?.dateTime ?? "");
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return { start, end, title: title.slice(0, COMPARE_TITLE_MAX) };
+}
+
+/**
+ * The titles of the visitor's own timed events in [start, end) on the chosen calendars, when they allowed reading
+ * events; [] otherwise. A calendar Google won't list events of is skipped: its busy times still mark Conflict.
+ */
+export async function compareEventTitles(session: CompareSession, calendarIds: readonly string[], range: { start: Date; end: Date }): Promise<CompareEventTitle[]> {
+  if (!session.events) return [];
+  if (session.fake) {
+    return calendarIds
+      .flatMap((id) => session.fake?.titles?.[id] ?? [])
+      .map((t) => ({ start: Date.parse(t.start), end: Date.parse(t.end), title: t.title.slice(0, COMPARE_TITLE_MAX) }))
+      .filter((t) => t.start < range.end.getTime() && t.end > range.start.getTime())
+      .slice(0, COMPARE_MAX_TITLES);
+  }
+  const q = new URLSearchParams({
+    timeMin: range.start.toISOString(),
+    timeMax: range.end.toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "250",
+    fields: "items(summary,status,transparency,start/dateTime,end/dateTime,attendees(self,responseStatus))",
+  });
+  const lists = await Promise.all(
+    calendarIds.map(async (id) => {
+      try {
+        const res = await google(session, `/calendars/${encodeURIComponent(id)}/events?${q}`);
+        if (!res.ok) return [];
+        const data = (await res.json()) as { items?: GoogleEvent[] };
+        return (data.items ?? []).map(eventTitle).filter((t): t is CompareEventTitle => t !== null);
+      } catch (e) {
+        // Names are a nicety: a failed list leaves plain Conflict marks, but a rejected token ends the connection.
+        if (e instanceof CompareTokenError) throw e;
+        return [];
+      }
+    }),
+  );
+  return lists.flat().slice(0, COMPARE_MAX_TITLES);
 }

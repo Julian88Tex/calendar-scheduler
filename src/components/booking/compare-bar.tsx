@@ -1,7 +1,9 @@
 // "Compare with my calendar" on the public booking page: a visitor connects their own Google Calendar for a while
 // (OAuth intent compare_calendar: free/busy and the calendar list, no events), picks which of their calendars count,
 // and the host's open times that clash with them read "Conflict". Their token stays sealed in their own browser for
-// an hour at most (src/lib/compare/session.ts); busy times come back as bare ranges and nothing is stored.
+// an hour at most (src/lib/compare/session.ts); busy times come back as bare ranges and nothing is stored. "Show event
+// names" connects again asking Google to read events too (start parameter events=1); then a clash with one of their
+// own events reads "Conflict: {title}", shown to them alone and never stored.
 // Loaded on demand (next/dynamic) so the booking page keeps its GEN-07 JavaScript budget; its copy lives here for the
 // same reason.
 "use client";
@@ -11,14 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProviderLogo } from "@/components/ui/provider-logo";
 import { oauthStartPath } from "@/lib/auth/oauth/links";
-import { COMPARE_API_PATH, COMPARE_MAX_CALENDARS, COMPARE_PARAM, type CompareFailure, type CompareFailureReason } from "@/lib/compare/constants";
+import {
+  COMPARE_API_PATH,
+  COMPARE_MAX_CALENDARS,
+  COMPARE_PARAM,
+  type CompareEventTitle,
+  type CompareFailure,
+  type CompareFailureReason,
+} from "@/lib/compare/constants";
 import type { BusyRange } from "./lib/slots";
 
 type Calendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean };
 type Connection =
   | { status: "loading" }
   | { status: "disconnected"; expired?: boolean }
-  | { status: "connected"; email: string; calendars: Calendar[] }
+  | { status: "connected"; email: string; events: boolean; calendars: Calendar[] }
   | { status: "error" };
 
 const COPY = {
@@ -30,6 +39,9 @@ const COPY = {
   disconnect: "Disconnect",
   pick: "Calendars to compare",
   legend: "Times marked Conflict overlap events on your calendar.",
+  namesAsk: "Want to see which event is in the way?",
+  namesLink: "Show event names",
+  namesOn: "Event names show only to you and aren't saved.",
   loading: "Checking your calendar...",
   failed: "We couldn't connect to your Google Calendar. Try again.",
   expired: "Your calendar connection ended. Connect again to keep comparing.",
@@ -108,12 +120,12 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
     let cancelled = false;
     fetch(COMPARE_API_PATH, { credentials: "same-origin", headers: { accept: "application/json" } })
       .then(async (res) => {
-        const data = (await res.json().catch(() => null)) as { connected?: boolean; expired?: boolean; email?: string; calendars?: Calendar[] } | null;
+        const data = (await res.json().catch(() => null)) as { connected?: boolean; expired?: boolean; email?: string; events?: boolean; calendars?: Calendar[] } | null;
         if (cancelled) return;
         if (!res.ok || !data) return setConn({ status: "error" });
         if (!data.connected || !data.email) return setConn({ status: "disconnected", expired: data.expired });
         const calendars = data.calendars ?? [];
-        setConn({ status: "connected", email: data.email, calendars });
+        setConn({ status: "connected", email: data.email, events: Boolean(data.events), calendars });
         const known = new Set(calendars.map((c) => c.id));
         const stored = storedChoice(data.email)?.filter((id) => known.has(id));
         setChosen(stored && stored.length ? stored : calendars.filter((c) => c.selected).map((c) => c.id));
@@ -146,7 +158,7 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
       body: JSON.stringify({ calendarIds: ids, ...monthWindow(month) }),
     })
       .then(async (res) => {
-        const data = (await res.json().catch(() => null)) as { busy?: BusyRange[]; failed?: CompareFailure[]; connected?: boolean } | null;
+        const data = (await res.json().catch(() => null)) as { busy?: BusyRange[]; failed?: CompareFailure[]; titles?: CompareEventTitle[]; connected?: boolean } | null;
         if (cancelled) return;
         if (res.status === 401) {
           onBusy(month, null);
@@ -157,7 +169,8 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
           setDone({ key, state: "error" });
           return;
         }
-        onBusy(month, data.busy);
+        // Named events first: the time list labels a clash with the first range it overlaps.
+        onBusy(month, [...(data.titles ?? []), ...data.busy]);
         setDone(data.failed?.length ? { key, state: "partial", failed: data.failed } : { key, state: "ok" });
       })
       .catch(() => {
@@ -183,7 +196,8 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
     await fetch(COMPARE_API_PATH, { method: "DELETE", credentials: "same-origin" }).catch(() => undefined);
   };
 
-  const connect = () => window.location.assign(oauthStartPath("google", { intent: "compare_calendar", next: returnPath() }));
+  const connect = (events?: boolean) =>
+    window.location.assign(oauthStartPath("google", { intent: "compare_calendar", next: returnPath(), ...(events ? { data: { events: "1" } } : {}) }));
 
   return (
     <section aria-label="Compare with your calendar" data-testid="compare-bar" className="mt-4 rounded-[var(--radius-card)] border border-line px-4 py-3 text-[14px] leading-5 text-public-text">
@@ -199,7 +213,7 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
           <p>{COPY.intro}</p>
           <p className="text-[13px] text-ink-2">{COPY.privacy}</p>
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" variant="secondary" size="sm" leftIcon={<ProviderLogo provider="google" size={16} />} onClick={connect} data-testid="compare-connect">
+            <Button type="button" variant="secondary" size="sm" leftIcon={<ProviderLogo provider="google" size={16} />} onClick={() => connect()} data-testid="compare-connect">
               {COPY.connect}
             </Button>
             <button type="button" onClick={onClose} className="text-[14px] font-semibold text-brand-strong hover:underline">
@@ -261,8 +275,16 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
             </div>
           )}
           <p className="text-[12px] text-ink-2" aria-live="polite" data-testid="compare-status">
-            {!ids.length ? COPY.noneChosen : busyState === "loading" ? COPY.loading : busyState === "error" ? COPY.loadError : COPY.legend}
+            {!ids.length ? COPY.noneChosen : busyState === "loading" ? COPY.loading : busyState === "error" ? COPY.loadError : conn.events ? `${COPY.legend} ${COPY.namesOn}` : COPY.legend}
           </p>
+          {!conn.events && (
+            <p className="text-[12px] text-ink-2">
+              {COPY.namesAsk}{" "}
+              <button type="button" onClick={() => connect(true)} className="font-semibold text-brand-strong hover:underline" data-testid="compare-names">
+                {COPY.namesLink}
+              </button>
+            </p>
+          )}
         </div>
       )}
     </section>

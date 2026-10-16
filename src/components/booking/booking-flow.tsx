@@ -57,7 +57,7 @@ import {
   type SubmitOutcome,
 } from "./lib/form";
 import { longDate, weekdayTitle } from "./lib/display";
-import { availableDatesOf, hasConflict, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
+import { availableDatesOf, conflictOf, monthsBetween, nextMonthOf, type BusyRange, type MonthSlots, type SlotsRequest } from "./lib/slots";
 import { PERSONA_PARAM } from "./lib/persona-limits";
 import { bt as baseText, interpolate, type Vars } from "./lib/t";
 import { createTurnstileRunner } from "./lib/turnstile";
@@ -747,11 +747,12 @@ export function BookingFlow(p: BookingPageProps) {
 
   // Calendar step.
   const fmt = (ms: number | string) => formatTime(ms, dataZone, LOCALE, hour12);
-  const busyRanges = [...(Array.isArray(busy) ? busy : []), ...(compareBusy?.month === month ? compareBusy.busy : [])];
+  // The compare's named events come first, so a clash with one of them reads "Conflict: {title}".
+  const busyRanges = [...(compareBusy?.month === month ? compareBusy.busy : []), ...(Array.isArray(busy) ? busy : [])];
   const timeSlots: TimeSlot[] = daySlots.map((s) => {
-    const conflict = busyRanges.length > 0 && hasConflict(s.start, duration, busyRanges);
+    const conflict = conflictOf(s.start, duration, busyRanges);
     const spots = event.showRemainingSpots ? (s.remaining === 1 ? bt("page.spotLeft") : bt("page.spotsLeft", { count: s.remaining })) : null;
-    return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") : spots };
+    return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") + (conflict.title ? `: ${conflict.title}` : "") : spots };
   });
   const candidates = effectiveDate && troubleshootDays ? (troubleshootDays[effectiveDate] ?? []) : [];
   const nextAllowed = !data?.windowEnd || Date.parse(data.windowEnd) > Date.parse(`${nextMonthOf(month)}-01T00:00:00Z`) - 14 * 3_600_000;
