@@ -17,3 +17,11 @@ export const COMPARE_MAX_DAYS = 45;
 
 /** Busy lookups per visitor connection per hour (each month the visitor opens is one lookup). */
 export const COMPARE_BUSY_PER_HOUR = 60;
+
+/**
+ * Why Google could not read one of the visitor's calendars. no_access: Google's free/busy said notFound, which it does
+ * for calendars it won't share busy times of (holiday and other subscribed calendars, some shared ones). temporary:
+ * Google's own error, worth a retry. too_many: Google refused that many calendars in one lookup.
+ */
+export type CompareFailureReason = "no_access" | "temporary" | "too_many" | "unknown";
+export type CompareFailure = { id: string; reason: CompareFailureReason };

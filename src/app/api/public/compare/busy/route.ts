@@ -1,5 +1,5 @@
 // POST /api/public/compare/busy   { calendarIds, start, end } -> { busy: [{ start, end }] (epoch ms, merged across the
-//                                 chosen calendars), failed: [calendarId] }. Booking page "Compare with my calendar":
+//                                 chosen calendars), failed: [{ id, reason }] }. Booking page "Compare with my calendar":
 //                                 the visitor's own busy times from Google free/busy (no titles, nothing stored).
 //                                 Same origin only; COMPARE_BUSY_PER_HOUR lookups per connection.
 import { z } from "zod";

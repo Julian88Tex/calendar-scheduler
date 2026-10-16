@@ -3,6 +3,7 @@
 // Busy times go back to the browser merged across calendars and are never stored.
 import "server-only";
 import { log } from "@/lib/logger";
+import type { CompareFailure, CompareFailureReason } from "./constants";
 import type { CompareSession } from "./session";
 
 const API = "https://www.googleapis.com/calendar/v3";
@@ -82,22 +83,36 @@ export function mergeRanges(ranges: readonly BusyRange[]): BusyRange[] {
   return out;
 }
 
-/** Busy times of the chosen calendars in [start, end), merged, plus the calendars Google could not read. */
+/** Our reason for a Google free/busy calendar error (https://developers.google.com/calendar/api/v3/reference/freebusy/query). */
+export function failureReason(googleReasons: readonly (string | undefined)[]): CompareFailureReason {
+  if (!googleReasons.length || googleReasons.includes("notFound")) return "no_access";
+  if (googleReasons.some((r) => r === "groupTooBig" || r === "tooManyCalendarsRequested")) return "too_many";
+  if (googleReasons.some((r) => r === "internalError" || r === "backendError")) return "temporary";
+  return "unknown";
+}
+
+/** Busy times of the chosen calendars in [start, end), merged, plus the calendars Google could not read and why. */
 export async function compareBusy(
   session: CompareSession,
   calendarIds: readonly string[],
   range: { start: Date; end: Date },
-): Promise<{ busy: BusyRange[]; failed: string[] }> {
+): Promise<{ busy: BusyRange[]; failed: CompareFailure[] }> {
   if (session.fake) {
     const all: BusyRange[] = [];
+    const failed: CompareFailure[] = [];
     for (const id of calendarIds) {
+      const reason = session.fake.failed?.[id];
+      if (reason) {
+        failed.push({ id, reason });
+        continue;
+      }
       for (const b of session.fake.busy[id] ?? []) {
         const s = Date.parse(b.start);
         const e = Date.parse(b.end);
         if (s < range.end.getTime() && e > range.start.getTime()) all.push({ start: s, end: e });
       }
     }
-    return { busy: mergeRanges(all), failed: [] };
+    return { busy: mergeRanges(all), failed };
   }
   const res = await google(session, "/freeBusy", {
     method: "POST",
@@ -106,12 +121,13 @@ export async function compareBusy(
   if (!res.ok) throw new Error(`google_freebusy_${res.status}`);
   const data = (await res.json()) as { calendars?: Record<string, { busy?: { start: string; end: string }[]; errors?: { reason?: string }[] }> };
   const all: BusyRange[] = [];
-  const failed: string[] = [];
+  const failed: CompareFailure[] = [];
   for (const id of calendarIds) {
     const cal = data.calendars?.[id];
     if (!cal || cal.errors?.length) {
-      failed.push(id);
-      if (cal?.errors?.length) log.info("compare.freebusy_calendar_error", { reasons: cal.errors.map((e) => e.reason ?? "unknown") });
+      const reasons = cal?.errors?.map((e) => e.reason) ?? [];
+      failed.push({ id, reason: failureReason(reasons) });
+      if (reasons.length) log.info("compare.freebusy_calendar_error", { reasons: reasons.map((r) => r ?? "unknown") });
       continue;
     }
     for (const b of cal.busy ?? []) all.push({ start: Date.parse(b.start), end: Date.parse(b.end) });

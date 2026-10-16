@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProviderLogo } from "@/components/ui/provider-logo";
 import { oauthStartPath } from "@/lib/auth/oauth/links";
-import { COMPARE_API_PATH, COMPARE_MAX_CALENDARS, COMPARE_PARAM } from "@/lib/compare/constants";
+import { COMPARE_API_PATH, COMPARE_MAX_CALENDARS, COMPARE_PARAM, type CompareFailure, type CompareFailureReason } from "@/lib/compare/constants";
 import type { BusyRange } from "./lib/slots";
 
 type Calendar = { id: string; name: string; color: string | null; primary: boolean; selected: boolean };
@@ -35,7 +35,19 @@ const COPY = {
   expired: "Your calendar connection ended. Connect again to keep comparing.",
   loadError: "We couldn't load your calendar.",
   noneChosen: "Choose at least one calendar.",
-  someFailed: "Some calendars couldn't be read.",
+  failedOne: "We couldn't check 1 of your calendars",
+  failedMany: "We couldn't check {count} of your calendars",
+  failedAfter: "Times that clash with events on it aren't marked Conflict.",
+  failedAfterMany: "Times that clash with events on them aren't marked Conflict.",
+  failedTag: "Couldn't read",
+  retry: "Try again",
+};
+
+const REASON: Record<CompareFailureReason, string> = {
+  no_access: "Google doesn't share busy times for this calendar. Holiday and other subscribed calendars usually can't be read.",
+  temporary: "Google had a temporary problem reading it.",
+  too_many: "Google won't check this many calendars at once. Choose fewer.",
+  unknown: "Google wouldn't say why.",
 };
 
 const STORE_KEY = "kairos:compareCalendars";
@@ -73,6 +85,10 @@ function returnPath(): string {
   return `${u.pathname}${u.search}`;
 }
 
+function calendarName(calendars: Calendar[], id: string): string {
+  return calendars.find((c) => c.id === id)?.name ?? id;
+}
+
 export type CompareBarProps = {
   /** The month on screen ("2026-10"). */
   month: string;
@@ -84,7 +100,8 @@ export type CompareBarProps = {
 export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
   const [conn, setConn] = useState<Connection>({ status: "loading" });
   const [chosen, setChosen] = useState<string[] | null>(null);
-  const [done, setDone] = useState<{ key: string; state: "ok" | "error" | "partial" } | null>(null);
+  const [done, setDone] = useState<{ key: string; state: "ok" | "error" | "partial"; failed?: CompareFailure[] } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [oauthError] = useState(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).has("oauth_error") : false));
 
   useEffect(() => {
@@ -110,9 +127,11 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
   }, []);
 
   const ids = useMemo(() => (chosen ?? []).slice(0, COMPARE_MAX_CALENDARS), [chosen]);
-  const key = `${month}|${ids.join("\n")}`;
+  const key = `${month}|${attempt}|${ids.join("\n")}`;
   // The lookup of the month and calendars on screen: loading until its answer arrives.
   const busyState = done?.key === key ? done.state : "loading";
+  const failed = busyState === "partial" ? (done?.failed ?? []) : [];
+  const failedIds = new Set(failed.map((f) => f.id));
   useEffect(() => {
     if (conn.status !== "connected") return;
     if (!ids.length) {
@@ -127,7 +146,7 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
       body: JSON.stringify({ calendarIds: ids, ...monthWindow(month) }),
     })
       .then(async (res) => {
-        const data = (await res.json().catch(() => null)) as { busy?: BusyRange[]; failed?: string[]; connected?: boolean } | null;
+        const data = (await res.json().catch(() => null)) as { busy?: BusyRange[]; failed?: CompareFailure[]; connected?: boolean } | null;
         if (cancelled) return;
         if (res.status === 401) {
           onBusy(month, null);
@@ -139,7 +158,7 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
           return;
         }
         onBusy(month, data.busy);
-        setDone({ key, state: data.failed?.length ? "partial" : "ok" });
+        setDone(data.failed?.length ? { key, state: "partial", failed: data.failed } : { key, state: "ok" });
       })
       .catch(() => {
         if (!cancelled) setDone({ key, state: "error" });
@@ -212,22 +231,37 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
                     <span className="inline-flex min-w-0 items-center gap-2">
                       <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full bg-ink-2" style={c.color ? { backgroundColor: c.color } : undefined} />
                       <span className="truncate">{c.name}</span>
+                      {failedIds.has(c.id) && (
+                        <span className="shrink-0 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-text" data-testid="compare-calendar-failed">
+                          {COPY.failedTag}
+                        </span>
+                      )}
                     </span>
                   }
                 />
               ))}
             </fieldset>
           )}
+          {failed.length > 0 && (
+            <div role="alert" className="rounded-[var(--radius-card)] border border-warning bg-warning-soft px-3 py-2.5 text-[13px] leading-5 text-public-text" data-testid="compare-failed">
+              <p className="font-semibold text-warning-text">{failed.length === 1 ? COPY.failedOne : COPY.failedMany.replace("{count}", String(failed.length))}</p>
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {failed.map((f) => (
+                  <li key={f.id}>
+                    <span className="font-semibold">{calendarName(conn.calendars, f.id)}</span>: {REASON[f.reason] ?? REASON.unknown}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5">{failed.length === 1 ? COPY.failedAfter : COPY.failedAfterMany}</p>
+              {failed.some((f) => f.reason === "temporary" || f.reason === "unknown") && (
+                <button type="button" onClick={() => setAttempt((n) => n + 1)} className="mt-1.5 font-semibold text-brand-strong hover:underline" data-testid="compare-retry">
+                  {COPY.retry}
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-[12px] text-ink-2" aria-live="polite" data-testid="compare-status">
-            {!ids.length
-              ? COPY.noneChosen
-              : busyState === "loading"
-                ? COPY.loading
-                : busyState === "error"
-                  ? COPY.loadError
-                  : busyState === "partial"
-                    ? `${COPY.someFailed} ${COPY.legend}`
-                    : COPY.legend}
+            {!ids.length ? COPY.noneChosen : busyState === "loading" ? COPY.loading : busyState === "error" ? COPY.loadError : COPY.legend}
           </p>
         </div>
       )}

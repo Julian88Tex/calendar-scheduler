@@ -116,6 +116,40 @@ test.describe("compare with my calendar", () => {
     expect(after.status()).toBe(401);
   });
 
+  test("calendars Google can't read are named with the reason, plainly", async ({ page, axe }) => {
+    const data = {
+      ...FAKE,
+      calendars: [...FAKE.calendars, { id: "holidays@group.v.calendar.google.com", name: "Holidays in United States", color: "#0b8043", selected: true }],
+      failed: { "holidays@group.v.calendar.google.com": "no_access", "family@example.com": "temporary" },
+    };
+    const res = await page.request.post("/api/test/compare", { headers: { [E2E_SECRET_HEADER]: e2eSecret() }, data });
+    expect(res.ok()).toBe(true);
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    const bar = page.getByTestId("compare-bar");
+    const warning = bar.getByTestId("compare-failed");
+    await expect(warning).toBeVisible(SLOW);
+    await expect(warning.getByText("We couldn't check 2 of your calendars")).toBeVisible();
+    await expect(warning.getByRole("listitem").filter({ hasText: "Holidays in United States" })).toContainText("Google doesn't share busy times for this calendar.");
+    await expect(warning.getByRole("listitem").filter({ hasText: "Family" })).toContainText("Google had a temporary problem reading it.");
+    await expect(warning).toContainText("Times that clash with events on them aren't marked Conflict.");
+    await expect(bar.getByTestId("compare-calendar-failed")).toHaveCount(2);
+    await expect(bar.getByTestId("compare-retry")).toBeVisible();
+    // The calendars that could be read still count.
+    await page.getByRole("button", { name: TUESDAY }).click();
+    await expect(page.getByRole("list", { name: "Select a time" }).getByRole("button", { name: /^3:00pm\s*Conflict$/ })).toBeVisible(SLOW);
+    await axe(page);
+    if (SHOTS) await bar.screenshot({ path: `${SHOTS}/6-failed-calendars.png` });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await axe(page);
+    if (SHOTS) await bar.screenshot({ path: `${SHOTS}/7-failed-calendars-dark.png` });
+    await page.emulateMedia({ colorScheme: "light" });
+
+    // Unchecking the unreadable calendars clears the warning.
+    await bar.getByRole("checkbox", { name: /Holidays in United States/ }).click();
+    await bar.getByRole("checkbox", { name: /Family/ }).click();
+    await expect(warning).toHaveCount(0);
+  });
+
   test("the compare APIs refuse cross-site requests and are absent from embeds", async ({ page }) => {
     const res = await page.request.post("/api/public/compare/busy", {
       headers: { origin: "https://evil.example" },
