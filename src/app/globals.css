@@ -1,0 +1,462 @@
+/* OWNER: foundation-ui.
+   Design tokens (ARCHITECTURE 20.1, SPEC GEN-03): the Calendly classic theme verbatim on :root, exposed to Tailwind
+   with @theme inline so runtime overrides (branding --primary-color, embed params, dark mode) apply everywhere.
+   Dark tokens (GEN-22) live under :root[data-theme="dark"] and, for "system", under the prefers-color-scheme media
+   query; they apply to the dashboard only (public pages wrap their content in [data-force-light]). */
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root,
+[data-force-light],
+[data-public-auto] {
+  --ink: #0a2540; --ink-2: #476788; --ink-3: #a6bbd1; --navy: #0b3558;
+  --line: #d4e0ed; --line-medium: #a6bbd1; --canvas: #fafafa; --cloud: #f8f9fb; --pebble: #f0f3f8; --mist: #e7edf6; --white: #ffffff;
+  --primary: #006bff; --primary-hover: #004eba; --primary-active: #004796; --primary-text: #004eba;
+  --primary-soft: #f4f8ff; --primary-soft-2: #e6f0ff;
+  --danger: #d53c00; --danger-text: #b03200; --danger-soft: #ffe2d9;
+  --success: #0d804b; --success-text: #0a6439; --success-soft: #cdf9e5;
+  --warning: #ffa600; --warning-text: #894800; --warning-soft: #ffe7ba; --info-soft: #e6f0ff;
+  --overlay: rgba(10, 37, 64, 0.5); --ribbon: #505960; --ribbon-hover: #40474c;
+  --radius-card: 8px; --radius-input: 8px; --radius-pill: 9999px; --radius-slot: 4px;
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.08); --shadow-pop: 0 2px 15px rgba(0, 0, 0, 0.1);
+  --shadow-next: 0 1px 6px 0 rgba(10, 37, 64, 0.1);
+  --shadow-embed: 0 16px 48px 0 rgb(25 72 112 / 6%), 0 0 24px 0 rgb(25 72 112 / 6%);
+  --primary-color: var(--primary);                   /* public pages: overridden by branding / embed params */
+  --public-bg: var(--white); --public-text: var(--ink);
+  /* Additions (foundation-ui): focus ring, selected-time chip, text on filled controls, hover row fill. */
+  --focus: #006bff;
+  --slot-selected: rgba(10, 37, 64, 0.65);           /* Calendly uses 0.5 (3.2:1); 0.65 gives white text 5:1 (GEN-05) */
+  --on-primary: #ffffff;
+  --row-hover: #f0f3f8;
+  /* Booking calendar tints derived from --primary-color (#006BFF gives #F4F8FF days, #E6F0FF hover, #004EBA text). */
+  --day-tint: 4.5%; --day-hover-tint: 10%; --day-text-pct: 73%; --day-text-mix: #000000;
+  /* Available booking days: a stronger fill than Calendly's #F4F8FF (#E6F0FF, hover #D1E4FF) so they stand out from
+     unavailable days on phones and under a browser's automatic dark mode. */
+  --day-fill: 10%; --day-fill-hover: 18%;
+  color-scheme: light;
+}
+
+/* GEN-22 dark tokens: same names, dashboard only. Contrast checked against --white (surface) and --canvas. */
+:root[data-theme="dark"] {
+  --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+  --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+  --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+  --primary-soft: #102640; --primary-soft-2: #163257;
+  --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+  --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+  --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+  --focus: #7ab4ff;
+  --row-hover: #1b222b;
+  --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+    --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+    --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+    --primary-soft: #102640; --primary-soft-2: #163257;
+    --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+    --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+    --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+    --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+    --focus: #7ab4ff;
+    --row-hover: #1b222b;
+    --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
+    color-scheme: dark;
+  }
+}
+
+/* Public pages (booking, confirmation, cancel and reschedule pages) follow the visitor's device setting, so browser
+   extensions such as Dark Reader find a real dark theme instead of guessing one. The shell sets data-public-auto unless
+   the host chose branding background or text colors or the page is embedded; those stay light ([data-force-light]).
+   Branding --primary-color is set inline on the shell, so it still wins here. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-public-theme="light"]) [data-public-auto] {
+    --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+    --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+    --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+    --primary-soft: #102640; --primary-soft-2: #163257;
+    --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+    --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+    --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+    --overlay: rgba(0, 0, 0, 0.6); --ribbon: #3a4148; --ribbon-hover: #4a525a;
+    --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+    --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+    --shadow-embed: 0 16px 48px 0 rgb(0 0 0 / 30%), 0 0 24px 0 rgb(0 0 0 / 30%);
+    --focus: #7ab4ff;
+    --slot-selected: rgba(228, 233, 240, 0.25);
+    --row-hover: #1b222b;
+    --primary-color: var(--primary);
+    --public-bg: var(--white); --public-text: var(--ink);
+    --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+    --day-fill: 26%; --day-fill-hover: 38%;
+    color-scheme: dark;
+  }
+  /* Brand colored text (links, labels) is lightened so any branding color reads on the dark card. */
+  :root:not([data-public-theme="light"]) [data-public-auto] .text-brand,
+  :root:not([data-public-theme="light"]) [data-public-auto] .hover\:text-brand:hover {
+    color: color-mix(in srgb, var(--primary-color) 55%, #ffffff);
+  }
+  :root:not([data-public-theme="light"]) [data-public-auto] .bg-white {
+    background-color: var(--white);
+  }
+  :root:not([data-public-theme="light"]) [data-public-auto] .ring-white {
+    --tw-ring-color: var(--white);
+  }
+  /* Overscroll and the area outside the shell match the dark canvas. */
+  :root:not([data-public-theme="light"]):has([data-public-auto]),
+  :root:not([data-public-theme="light"]) body:has([data-public-auto]) {
+    background-color: #0e1217;
+    color-scheme: dark;
+  }
+}
+/* The visitor's own choice from the theme toggle (PublicThemeToggle, cookie kairos_public_theme): dark whatever the
+   device setting; "light" on <html> turns the media query block above off. */
+:root[data-public-theme="dark"] [data-public-auto] {
+  --ink: #e4e9f0; --ink-2: #a9b7c6; --ink-3: #6f8094; --navy: #e4e9f0;
+  --line: #2d3946; --line-medium: #4a5868; --canvas: #0e1217; --cloud: #131920; --pebble: #1b222b; --mist: #24303c; --white: #161c23;
+  --primary: #2563eb; --primary-hover: #1d4fd8; --primary-active: #1e40af; --primary-text: #7ab4ff;
+  --primary-soft: #102640; --primary-soft-2: #163257;
+  --danger: #d53c00; --danger-text: #ff9a76; --danger-soft: #3d1c10;
+  --success: #12904f; --success-text: #7fe3b4; --success-soft: #0f3324;
+  --warning: #ffa600; --warning-text: #ffcf78; --warning-soft: #3b2c0c; --info-soft: #102640;
+  --overlay: rgba(0, 0, 0, 0.6); --ribbon: #3a4148; --ribbon-hover: #4a525a;
+  --shadow-card: 0 1px 8px 0 rgb(0 0 0 / 0.4); --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-next: 0 1px 6px 0 rgba(0, 0, 0, 0.4);
+  --shadow-embed: 0 16px 48px 0 rgb(0 0 0 / 30%), 0 0 24px 0 rgb(0 0 0 / 30%);
+  --focus: #7ab4ff;
+  --slot-selected: rgba(228, 233, 240, 0.25);
+  --row-hover: #1b222b;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --day-tint: 18%; --day-hover-tint: 30%; --day-text-pct: 45%; --day-text-mix: #ffffff;
+  --day-fill: 26%; --day-fill-hover: 38%;
+  color-scheme: dark;
+}
+/* Brand colored text (links, labels) is lightened so any branding color reads on the dark card. */
+:root[data-public-theme="dark"] [data-public-auto] .text-brand,
+:root[data-public-theme="dark"] [data-public-auto] .hover\:text-brand:hover {
+  color: color-mix(in srgb, var(--primary-color) 55%, #ffffff);
+}
+:root[data-public-theme="dark"] [data-public-auto] .bg-white {
+  background-color: var(--white);
+}
+:root[data-public-theme="dark"] [data-public-auto] .ring-white {
+  --tw-ring-color: var(--white);
+}
+/* Overscroll and the area outside the shell match the dark canvas. */
+:root[data-public-theme="dark"]:has([data-public-auto]),
+:root[data-public-theme="dark"] body:has([data-public-auto]) {
+  background-color: #0e1217;
+  color-scheme: dark;
+}
+
+/* Warm personas (?for={id}, src/components/booking/lib/personas.ts): the same public tokens in a warm palette
+   (cream canvas, espresso text, terracotta accents), rounder cards and pill time buttons. Light or dark by the device
+   setting like the classic public pages; Dark Reader stays locked out through the shell's data-public-auto. */
+[data-public-auto][data-tone="friends"] {
+  --ink: #3d2a1e; --ink-2: #7a5a45; --ink-3: #b89a84; --navy: #5a3d2b;
+  --line: #ecdccb; --line-medium: #d9c0a8; --canvas: #fbf3e8; --cloud: #fdf7ef; --pebble: #f6ead9; --mist: #f8e7d4; --white: #fffaf3;
+  --primary: #b5482a; --primary-hover: #9c3d22; --primary-active: #85331c; --primary-text: #9c3d22;
+  --primary-soft: #fbeee6; --primary-soft-2: #f7dccd;
+  --focus: #b5482a; --row-hover: #f6ead9;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --radius-card: 20px; --radius-slot: 9999px;
+  --shadow-card: 0 10px 40px -12px rgb(122 72 40 / 0.25), 0 2px 8px 0 rgb(122 72 40 / 0.08);
+  --slot-selected: rgba(61, 42, 30, 0.7);
+  background-image: radial-gradient(1200px 500px at 15% -10%, #f9dcc4 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #fde9cf 0%, transparent 55%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-public-theme="light"]) [data-public-auto][data-tone="friends"] {
+    /* Warm charcoal rather than brown: neutral surfaces with a hint of warmth, cream text, a brighter terracotta. */
+    --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
+    --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
+    --primary: #b4502f; --primary-hover: #c25c39; --primary-active: #cc6741; --primary-text: #f2a07e;
+    --primary-soft: #2f201a; --primary-soft-2: #3c271e;
+    --focus: #f2a07e; --row-hover: #262220;
+    --primary-color: var(--primary);
+    --public-bg: var(--white); --public-text: var(--ink);
+    --shadow-card: 0 10px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.04);
+    --slot-selected: rgba(244, 239, 233, 0.22);
+    background-image: radial-gradient(1000px 420px at 15% -10%, rgb(201 91 55 / 0.16) 0%, transparent 60%);
+  }
+  :root:not([data-public-theme="light"]):has([data-tone="friends"]),
+  :root:not([data-public-theme="light"]) body:has([data-tone="friends"]) {
+    background-color: #141211;
+  }
+}
+:root[data-public-theme="dark"] [data-public-auto][data-tone="friends"] {
+  --ink: #f4efe9; --ink-2: #bdb3aa; --ink-3: #80776f; --navy: #f4efe9;
+  --line: #34302c; --line-medium: #4b443e; --canvas: #141211; --cloud: #1a1817; --pebble: #262220; --mist: #2d2825; --white: #1e1b19;
+  --primary: #b4502f; --primary-hover: #c25c39; --primary-active: #cc6741; --primary-text: #f2a07e;
+  --primary-soft: #2f201a; --primary-soft-2: #3c271e;
+  --focus: #f2a07e; --row-hover: #262220;
+  --primary-color: var(--primary);
+  --public-bg: var(--white); --public-text: var(--ink);
+  --shadow-card: 0 10px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --slot-selected: rgba(244, 239, 233, 0.22);
+  background-image: radial-gradient(1000px 420px at 15% -10%, rgb(201 91 55 / 0.16) 0%, transparent 60%);
+}
+:root[data-public-theme="dark"]:has([data-tone="friends"]),
+:root[data-public-theme="dark"] body:has([data-tone="friends"]) {
+  background-color: #141211;
+}
+
+[data-tone="friends"] .friends-avatar {
+  box-shadow: 0 0 0 4px var(--public-bg), 0 0 0 7px color-mix(in srgb, var(--primary-color) 35%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-tone="friends"] .friends-wave {
+    animation: friends-wave 2.4s ease-in-out 0.4s 2;
+    transform-origin: 70% 70%;
+  }
+}
+@keyframes friends-wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30% { transform: rotate(14deg); }
+  20% { transform: rotate(-8deg); }
+  40% { transform: rotate(-4deg); }
+  50% { transform: rotate(10deg); }
+}
+
+@theme inline {
+  --font-sans: "Figtree Variable", "Proxima Nova", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-ink: var(--ink); --color-ink-2: var(--ink-2); --color-ink-3: var(--ink-3); --color-navy: var(--navy);
+  --color-line: var(--line); --color-canvas: var(--canvas); --color-pebble: var(--pebble); --color-mist: var(--mist);
+  --color-primary: var(--primary); --color-primary-hover: var(--primary-hover); --color-primary-active: var(--primary-active);
+  --color-primary-text: var(--primary-text); --color-primary-soft: var(--primary-soft); --color-primary-soft-2: var(--primary-soft-2);
+  --color-brand: var(--primary-color);
+  --color-danger: var(--danger); --color-danger-text: var(--danger-text); --color-success: var(--success); --color-warning: var(--warning);
+  --radius-card: var(--radius-card); --radius-input: var(--radius-input);
+  --shadow-card: var(--shadow-card); --shadow-pop: var(--shadow-pop);
+  /* Additions (foundation-ui). */
+  --color-line-medium: var(--line-medium); --color-cloud: var(--cloud); --color-surface: var(--white);
+  --color-danger-soft: var(--danger-soft); --color-success-text: var(--success-text); --color-success-soft: var(--success-soft);
+  --color-warning-text: var(--warning-text); --color-warning-soft: var(--warning-soft); --color-info-soft: var(--info-soft);
+  --color-overlay: var(--overlay); --color-ribbon: var(--ribbon); --color-ribbon-hover: var(--ribbon-hover);
+  --color-focus: var(--focus); --color-on-primary: var(--on-primary); --color-row-hover: var(--row-hover);
+  --color-public-bg: var(--public-bg); --color-public-text: var(--public-text);
+  --radius-slot: var(--radius-slot);
+  --shadow-next: var(--shadow-next); --shadow-embed: var(--shadow-embed);
+  --animate-slide-in-x: kairos-slide-in-x 220ms ease-out;
+  --animate-fade-in: kairos-fade-in 150ms ease-out;
+  --animate-pop-in: kairos-pop-in 150ms ease-out;
+  --animate-toast-in: kairos-toast-in 200ms ease-out;
+  --animate-sheet-in-right: kairos-sheet-in-right 220ms ease-out;
+  --animate-sheet-in-left: kairos-sheet-in-left 220ms ease-out;
+  --animate-sheet-in-bottom: kairos-sheet-in-bottom 220ms ease-out;
+}
+
+@keyframes kairos-slide-in-x {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes kairos-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes kairos-pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes kairos-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes kairos-sheet-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes kairos-sheet-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes kairos-sheet-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* GEN-05: visible 2px focus ring, offset 2px, on every interactive element reached by keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+  button,
+  [role="button"],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  ::placeholder {
+    color: var(--ink-2);
+    opacity: 1;
+  }
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* GEN-04: inputs at least 16px on phones (no iOS zoom on focus). */
+  @media (max-width: 599px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea,
+    [contenteditable="true"] {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Dark mode: Tailwind's literal white utilities become the surface token so cards and panels follow the theme
+   (text-white stays white for text on filled controls). Unlayered, so these win over the utilities layer. */
+:root[data-theme="dark"] .bg-white {
+  background-color: var(--white);
+}
+:root[data-theme="dark"] .ring-white {
+  --tw-ring-color: var(--white);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .bg-white {
+    background-color: var(--white);
+  }
+  :root[data-theme="system"] .ring-white {
+    --tw-ring-color: var(--white);
+  }
+}
+
+/* GEN-05: respect prefers-reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Typography scale (ARCHITECTURE 20.1, walkthrough 1.3). */
+@utility text-headline-1 {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+}
+@utility text-headline-2 {
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+}
+@utility text-headline-3 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+}
+@utility text-title-lg {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+}
+@utility text-title-md {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+}
+@utility text-title-sm {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+@utility text-body {
+  font-size: 16px;
+  line-height: 1.4;
+}
+@utility text-body-md {
+  font-size: 14px;
+  line-height: 1.4;
+}
+@utility text-body-sm {
+  font-size: 12px;
+  line-height: 1.4;
+}
+@utility text-label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+@utility text-label-sm {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+@utility text-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.72px;
+}
+
+/* Brand-derived colors for public pages (SPEC GEN-03: every blue reads from --primary-color). */
+@utility cal-day-available {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-fill), transparent);
+  color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
+}
+@utility cal-day-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-hover-tint), transparent);
+}
+@utility cal-day-available-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-fill-hover), transparent);
+}
+@utility text-brand-strong {
+  color: color-mix(in srgb, var(--primary-color) var(--day-text-pct), var(--day-text-mix));
+}
+@utility bg-brand-soft {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-tint), transparent);
+}
+@utility bg-brand-hover {
+  background-color: color-mix(in srgb, var(--primary-color) var(--day-hover-tint), transparent);
+}
+
+/* Thin, quiet scrollbars for scroll containers (ScrollArea, slot lists, menus). */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-medium) transparent;
+}
+
+/* Shared focus ring for composite widgets that draw it on an inner element. */
+@utility focus-ring {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

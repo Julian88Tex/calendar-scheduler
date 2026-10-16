@@ -1,0 +1,314 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`lifecycle-only emails > conference failure and calendar fallback notices for the host 1`] = `
+"Hi Julian Joseph,
+
+We couldn't create a Google Meet link for your 30 Minute Virtual with Ana Lima on Tuesday, October 20, 2026. Your invitee sees "Web conferencing details to follow." until a link exists.
+
+Event Type
+30 Minute Virtual
+
+Invitee
+Ana Lima
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Pacific Time - US & Canada)
+
+What happened
+Your calendar didn't create a Google Meet link for this meeting.
+
+Open the meeting and choose Retry once the problem is fixed.
+
+View meeting: http://localhost:3000/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`lifecycle-only emails > conference failure and calendar fallback notices for the host 2`] = `
+"Hi Julian Joseph,
+
+We couldn't send a calendar invitation for your 30 Minute Virtual with Ana Lima on Tuesday, October 20, 2026, so we emailed them a confirmation with a calendar file instead.
+
+Event Type
+30 Minute Virtual
+
+Invitee
+Ana Lima
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Pacific Time - US & Canada)
+
+Check your calendar connection so future invitations go out from your calendar.
+
+View meeting: http://localhost:3000/app/meetings?event=1
+
+--
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`lifecycle-only emails > request reschedule and its reminder 1`] = `
+"Hi Ana,
+
+Julian Joseph asked to find a new time for your 30 Minute Virtual on Tuesday, October 20, 2026. Please pick a new time that works for you.
+
+Message from Julian Joseph
+Could we move this to next week?
+
+Event
+30 Minute Virtual
+
+Original time
+19:00 - Tuesday, October 20, 2026 (Central European Time)
+
+Pick a new time: http://localhost:3000/reschedulings/22222222-2222-4222-8222-222222222222
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Julian Joseph."
+`;
+
+exports[`standard booking emails > guest confirmation greets with Hi, and never carries manage links 1`] = `
+"Hi,
+
+Your 30 Minute Virtual with Julian Joseph at 19:00 (Central European Time) on Tuesday, October 20, 2026 is scheduled.
+
+Event
+30 Minute Virtual
+
+Event Date/Time
+19:00 - Tuesday, October 20, 2026 (Central European Time)
+
+Location
+This is a Google Meet web conference.
+Join now (http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join)
+
+Invitee Time Zone
+Central European Time
+
+--
+Powered by Kairos
+You are receiving this email because Ana Lima added you as a guest to an event with Julian Joseph."
+`;
+
+exports[`standard booking emails > host cancellation names the invitee 1`] = `
+"Hi Julian Joseph,
+
+The event below has been canceled.
+
+Event Type
+30 Minute Virtual
+
+Invitee
+Ana Lima
+
+Invitee Email
+ana@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Pacific Time - US & Canada)
+
+Invitee Time Zone
+Central European Time
+
+Canceled by
+Ana Lima
+
+View event in Kairos: http://localhost:3000/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`standard booking emails > host new event with spots, poll and booked-over notices in the host's zone 1`] = `
+"Hi Julian Joseph,
+
+A new event has been scheduled.
+
+Booked from meeting poll: Quarterly planning
+
+2 of 5 spots filled
+
+Booked over another event
+This meeting overlaps with Team sync at 10:00am.
+
+Booked over another event
+This meeting overlaps with another event at 10:15am.
+
+Event Type
+30 Minute Virtual
+
+Invitee
+Ana Lima
+
+Invitee Email
+ana@example.com
+
+Guests
+bo@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Pacific Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join)
+
+Invitee Time Zone
+Central European Time
+
+Questions
+What would you like to discuss?
+The roadmap
+
+View event in Kairos: http://localhost:3000/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`standard booking emails > invitee cancellation with reason, canceler and Schedule again 1`] = `
+"Hi Ana,
+
+Your 30 Minute Virtual with Julian Joseph at 19:00 on Tuesday, October 20, 2026 has been canceled.
+
+Event
+30 Minute Virtual
+
+Event Date/Time
+19:00 - Tuesday, October 20, 2026 (Central European Time)
+
+Invitee Time Zone
+Central European Time
+
+Canceled by
+Julian Joseph
+
+Reason
+Something came up
+
+Schedule again: http://localhost:3000/julian/30min
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Julian Joseph."
+`;
+
+exports[`standard booking emails > invitee confirmation in the invitee's zone and 24 hour format, with manage and calendar links 1`] = `
+"Hi Ana,
+
+Your 30 Minute Virtual with Julian Joseph at 19:00 (Central European Time) on Tuesday, October 20, 2026 is scheduled.
+
+Event
+30 Minute Virtual
+
+Event Date/Time
+19:00 - Tuesday, October 20, 2026 (Central European Time)
+
+Location
+This is a Google Meet web conference.
+Join now (http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join)
+
+Invitee Time Zone
+Central European Time
+
+Questions
+What would you like to discuss?
+The roadmap
+
+Need to make changes to this event?
+Cancel: http://localhost:3000/cancellations/22222222-2222-4222-8222-222222222222
+Reschedule: http://localhost:3000/reschedulings/22222222-2222-4222-8222-222222222222
+
+Add to calendar
+Google: https://calendar.google.com/calendar/render?action=TEMPLATE
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Julian Joseph."
+`;
+
+exports[`standard booking emails > invitee confirmation in the invitee's zone and 24 hour format, with manage and calendar links 2`] = `"<!doctype html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="x-apple-disable-message-reformatting"><meta name="format-detection" content="telephone=no, date=no, address=no, email=no"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><style>body{margin:0;padding:0;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}a{color:#006BFF}.k-body p{margin:0 0 16px 0}@media only screen and (max-width:620px){.k-outer{padding:16px 8px!important}.k-card{padding:28px 20px!important}}</style></head><body style="margin:0;padding:0;background-color:#FAFAFA"><div data-preheader style="display:none;max-height:0;max-width:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#FAFAFA;opacity:0">Your 30 Minute Virtual with Julian Joseph at 19:00 (Central European Time) on Tuesday, October 20, 2026 is scheduled.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#FAFAFA" style="background-color:#FAFAFA;border-collapse:collapse"><tr><td class="k-outer" align="center" style="padding:32px 16px"><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;border-collapse:separate"><tr><td class="k-card" bgcolor="#FFFFFF" style="background-color:#FFFFFF;border:1px solid #E7EDF6;border-radius:8px;padding:40px 40px 32px 40px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr><td align="center" style="padding:0 0 24px 0"><img src="http://localhost:3000/api/files/avatar-1" alt="" width="64" height="64" style="display:block;width:64px;height:64px;border-radius:50%;border:0;outline:none;text-decoration:none;object-fit:cover"></td></tr><tr><td class="k-body" style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540;word-break:break-word"><p style="margin:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540">Hi Ana,</p><p style="margin:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540">Your 30 Minute Virtual with Julian Joseph at 19:00 (Central European Time) on Tuesday, October 20, 2026 is scheduled.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 8px 0"><tr><td style="padding:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><div style="font-weight:700;margin:0 0 2px 0">Event</div><div style="word-break:break-word">30 Minute Virtual</div></td></tr><tr><td style="padding:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><div style="font-weight:700;margin:0 0 2px 0">Event Date/Time</div><div style="word-break:break-word">19:00 - Tuesday, October 20, 2026 (Central European Time)</div></td></tr><tr><td style="padding:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><div style="font-weight:700;margin:0 0 2px 0">Location</div><div style="word-break:break-word">This is a Google Meet web conference.<br><a href="http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join" target="_blank" rel="noopener" style="color:#006BFF;text-decoration:underline">Join now</a></div></td></tr><tr><td style="padding:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><div style="font-weight:700;margin:0 0 2px 0">Invitee Time Zone</div><div style="word-break:break-word">Central European Time</div></td></tr><tr><td style="padding:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540"><div style="font-weight:700;margin:0 0 2px 0">Questions</div><div style="word-break:break-word"><span style="color:#476788">What would you like to discuss?</span><br>The roadmap</div></td></tr></table><p style="margin:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540;margin-top:8px">Need to make changes to this event?<br><a href="http://localhost:3000/cancellations/22222222-2222-4222-8222-222222222222" target="_blank" rel="noopener" style="color:#006BFF;font-weight:600;text-decoration:underline">Cancel</a><span style="color:#D4E0ED">&nbsp;&nbsp;|&nbsp;&nbsp;</span><a href="http://localhost:3000/reschedulings/22222222-2222-4222-8222-222222222222" target="_blank" rel="noopener" style="color:#006BFF;font-weight:600;text-decoration:underline">Reschedule</a></p><p style="margin:0 0 16px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;font-size:16px;line-height:24px;color:#0A2540;margin-top:8px">Add to calendar<br><a href="https://calendar.google.com/calendar/render?action=TEMPLATE" target="_blank" rel="noopener" style="color:#006BFF;font-weight:600;text-decoration:underline">Google</a></p></td></tr></table></td></tr><tr><td align="center" style="padding:24px 16px 0 16px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;text-align:center"><p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:#476788"><a href="http://localhost:3000" target="_blank" rel="noopener" style="color:#476788;text-decoration:none;font-weight:600">Powered by Kairos</a></p><p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:#476788">You are receiving this email because you scheduled an event with Julian Joseph.</p></td></tr></table></td></tr></table></body></html>"`;
+
+exports[`standard booking emails > reschedule emails strike the former time (invitee and host zones) 1`] = `
+"Hi Ana,
+
+Your 30 Minute Virtual with Julian Joseph has been rescheduled.
+
+Event
+30 Minute Virtual
+
+Event Date/Time
+19:00 - Tuesday, October 20, 2026 (Central European Time)
+
+Former time
+18:00 - Monday, October 19, 2026 (Central European Time)
+
+Location
+This is a Google Meet web conference.
+Join now (http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join)
+
+Invitee Time Zone
+Central European Time
+
+Reason for rescheduling
+Conflict
+
+Questions
+What would you like to discuss?
+The roadmap
+
+Need to make changes to this event?
+Cancel: http://localhost:3000/cancellations/22222222-2222-4222-8222-222222222222
+Reschedule: http://localhost:3000/reschedulings/22222222-2222-4222-8222-222222222222
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Julian Joseph."
+`;
+
+exports[`standard booking emails > reschedule emails strike the former time (invitee and host zones) 2`] = `
+"Hi Julian Joseph,
+
+An event has been rescheduled.
+
+This change was made in your connected calendar.
+
+Event Type
+30 Minute Virtual
+
+Invitee
+Ana Lima
+
+Invitee Email
+ana@example.com
+
+Guests
+bo@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Pacific Time - US & Canada)
+
+Former time
+9:00am - Monday, October 19, 2026 (Pacific Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (http://localhost:3000/events/11111111-1111-4111-8111-111111111111/join)
+
+Invitee Time Zone
+Central European Time
+
+Questions
+What would you like to discuss?
+The roadmap
+
+View event in Kairos: http://localhost:3000/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;

@@ -1,0 +1,33 @@
+# Manual background jobs run (ARCHITECTURE section 12.3): calls GET $APP_URL/api/cron once, on demand only
+# (Actions > cron > Run workflow, or `gh workflow run cron.yml`). It has no schedule: the owner's Google Apps Script
+# (docs/DEPLOY.md step 8) is the dispatcher and calls /api/cron every 5 minutes, and Vercel's daily cron (vercel.json)
+# stays as a backstop. A schedule here would only add late runs and billed minutes.
+#
+# Setup: repository variable APP_URL (production URL, for example https://kairos.example.com) and repository secret
+# CRON_SECRET (same value as the CRON_SECRET env var on Vercel). The job is skipped when either is missing.
+name: cron
+
+on:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call /api/cron
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL variable or CRON_SECRET secret is not set; skipping."
+            exit 0
+          fi
+          curl -fsS -m 60 -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron"

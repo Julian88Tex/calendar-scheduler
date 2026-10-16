@@ -1,0 +1,369 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > guest_canceled 1`] = `
+"Subject: Canceled: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi,
+
+Your 30 Minute Meeting with Jordan Lee at 10:00am on Tuesday, October 20, 2026 has been canceled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Canceled by
+Jordan Lee
+
+Reason
+Out sick
+
+--
+Powered by Kairos
+You are receiving this email because Sam Rivera added you as a guest to an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > guest_confirmation 1`] = `
+"Subject: Confirmed: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi,
+
+Your 30 Minute Meeting with Jordan Lee at 10:00am (Eastern Time - US & Canada) on Tuesday, October 20, 2026 is scheduled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+--
+Powered by Kairos
+You are receiving this email because Sam Rivera added you as a guest to an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > guest_rescheduled 1`] = `
+"Subject: Updated: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi,
+
+Your 30 Minute Meeting with Jordan Lee has been rescheduled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Former time
+9:00am - Monday, October 19, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Reason for rescheduling
+Conflict
+
+--
+Powered by Kairos
+You are receiving this email because Sam Rivera added you as a guest to an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > host_canceled 1`] = `
+"Subject: Canceled: 30 Minute Meeting with Sam Rivera on Tuesday, October 20, 2026
+
+Hi Jordan Lee,
+
+The event below has been canceled.
+
+Event Type
+30 Minute Meeting
+
+Invitee
+Sam Rivera
+
+Invitee Email
+sam@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Canceled by
+Jordan Lee
+
+Reason
+Out sick
+
+View event in Kairos: https://example.com/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > host_new_event 1`] = `
+"Subject: New Event: Sam Rivera - 10:00am Tuesday, October 20, 2026 - 30 Minute Meeting
+
+Hi Jordan Lee,
+
+A new event has been scheduled.
+
+Event Type
+30 Minute Meeting
+
+Invitee
+Sam Rivera
+
+Invitee Email
+sam@example.com
+
+Guests
+alex@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Questions
+What would you like to discuss?
+Roadmap
+Budget
+
+View event in Kairos: https://example.com/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > host_reminder 1`] = `
+"Subject: Reminder: 30 Minute Meeting with Sam Rivera at 10:00am Tuesday, October 20, 2026
+
+Hi Jordan Lee,
+
+This is a friendly reminder that 30 Minute Meeting with Sam Rivera is at 10:00am on Tuesday, October 20, 2026.
+
+Event Type
+30 Minute Meeting
+
+Invitee
+Sam Rivera
+
+Invitee Email
+sam@example.com
+
+Guests
+alex@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+View event in Kairos: https://example.com/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > host_rescheduled 1`] = `
+"Subject: Rescheduled: Sam Rivera - 10:00am Tuesday, October 20, 2026 - 30 Minute Meeting
+
+Hi Jordan Lee,
+
+An event has been rescheduled.
+
+Event Type
+30 Minute Meeting
+
+Invitee
+Sam Rivera
+
+Invitee Email
+sam@example.com
+
+Guests
+alex@example.com
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Former time
+9:00am - Monday, October 19, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Reason for rescheduling
+Conflict
+
+Questions
+What would you like to discuss?
+Roadmap
+Budget
+
+View event in Kairos: https://example.com/app/meetings?event=1
+
+--
+Powered by Kairos
+You are receiving this email because you are a host of this event."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > invitee_canceled 1`] = `
+"Subject: Canceled: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi Sam,
+
+Your 30 Minute Meeting with Jordan Lee at 10:00am on Tuesday, October 20, 2026 has been canceled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Canceled by
+Jordan Lee
+
+Reason
+Out sick
+
+Schedule again: https://example.com/jordan/30min
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > invitee_confirmation 1`] = `
+"Subject: Confirmed: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi Sam,
+
+Your 30 Minute Meeting with Jordan Lee at 10:00am (Eastern Time - US & Canada) on Tuesday, October 20, 2026 is scheduled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Questions
+What would you like to discuss?
+Roadmap
+Budget
+
+Need to make changes to this event?
+Cancel: https://example.com/cancellations/00000000-0000-4000-8000-000000000000
+Reschedule: https://example.com/reschedulings/00000000-0000-4000-8000-000000000000
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > invitee_reminder 1`] = `
+"Subject: Reminder: 30 Minute Meeting with Jordan Lee at 10:00am Tuesday, October 20, 2026
+
+Hi Sam,
+
+This is a friendly reminder that 30 Minute Meeting with Jordan Lee is at 10:00am on Tuesday, October 20, 2026.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Need to make changes to this event?
+Cancel: https://example.com/cancellations/00000000-0000-4000-8000-000000000000
+Reschedule: https://example.com/reschedulings/00000000-0000-4000-8000-000000000000
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Jordan Lee."
+`;
+
+exports[`every meeting email kind (NT-05: valid HTML and text, snapshots) > invitee_rescheduled 1`] = `
+"Subject: Updated: 30 Minute Meeting with Jordan Lee on Tuesday, October 20, 2026
+
+Hi Sam,
+
+Your 30 Minute Meeting with Jordan Lee has been rescheduled.
+
+Event
+30 Minute Meeting
+
+Event Date/Time
+10:00am - Tuesday, October 20, 2026 (Eastern Time - US & Canada)
+
+Former time
+9:00am - Monday, October 19, 2026 (Eastern Time - US & Canada)
+
+Location
+This is a Google Meet web conference.
+Join now (https://example.com/events/00000000-0000-4000-8000-000000000000/join)
+
+Invitee Time Zone
+Eastern Time - US & Canada
+
+Reason for rescheduling
+Conflict
+
+Questions
+What would you like to discuss?
+Roadmap
+Budget
+
+Need to make changes to this event?
+Cancel: https://example.com/cancellations/00000000-0000-4000-8000-000000000000
+Reschedule: https://example.com/reschedulings/00000000-0000-4000-8000-000000000000
+
+--
+Powered by Kairos
+You are receiving this email because you scheduled an event with Jordan Lee."
+`;

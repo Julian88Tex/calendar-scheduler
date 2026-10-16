@@ -1,0 +1,236 @@
+// OWNER: foundation-auth. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
+//
+// createUserAccount (ARCHITECTURE section 18.4, SPEC AU-01, AU-13): the single way to create an account. Email signup,
+// OAuth signup, invitation acceptance (teams-org) and the seed all call it inside their own transaction. It creates:
+// - the user (email normalized for uniqueness; display keeps the original),
+// - the handle (slug derived from the preferred slug, the name or the email, de-duplicated with numeric suffixes),
+// - a new organization "{Name}'s workspace" with an owner membership, unless organizationId is given (then a membership
+//   with `role`, default "user"),
+// - the default schedule "Working hours" (Mon to Fri 09:00 to 17:00 in the detected zone, UTC when unknown),
+// - the default event type "30 Minute Meeting" (slug 30min, 30 minutes, color #8247F5, location empty or Google Meet /
+//   Microsoft Teams per AU-13, the ET-33 defaults, the default schedule, its host row and the default question),
+// - a user.created domain event.
+// It never sets cookies, sends email or checks the signup policy: callers do.
+//
+// createAccountUnderPolicy (foundation-auth, SPEC AU-11): the policy-checked entry point used by email and OAuth
+// signups. It takes the instance-wide signup advisory lock inside the caller's transaction before reading the user
+// count, so two simultaneous first signups cannot both become instance admin (the second waits, then sees the first
+// account and follows the policy).
+import "server-only";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { withTx, type DbOrTx } from "@/db";
+import { advisoryXactLock } from "@/db/helpers";
+import { eventTypeHosts, eventTypeQuestions, eventTypes, organizationMemberships, organizations, users } from "@/db/schema";
+import type { LocationConfig } from "@/db/types";
+import { ensureDefaultSchedule } from "@/lib/availability";
+import { AppError, isAppError } from "@/lib/errors";
+import { publishEvent } from "@/lib/events";
+import { isSupportedLocale } from "@/lib/i18n/locales";
+import { newId } from "@/lib/ids";
+import { claimHandle, suggestHandle } from "@/lib/slugs";
+import { zoneOrUtc } from "@/lib/time/zones";
+import { normalizeEmail } from "@/lib/validation";
+import { signupPolicyAllows, type SignupDecision } from "./policy";
+
+export type UserRow = typeof users.$inferSelect;
+
+export type CreateUserAccountInput = {
+  email: string;
+  name: string;
+  /** scrypt hash from hashPassword(); omit for OAuth-only accounts. */
+  passwordHash?: string | null;
+  /** Join this organization (invitation acceptance) instead of creating a new one. */
+  organizationId?: string | null;
+  /** Role in `organizationId` (default "user"); ignored for a new organization (always "owner"). */
+  role?: "owner" | "admin" | "user";
+  /** Detected IANA zone (browser or provider); UTC when unknown or invalid. */
+  timezone?: string | null;
+  createdViaInvitationId?: string | null;
+  /** Provider avatar URL (Google, Microsoft). */
+  avatarUrl?: string | null;
+  // Extensions (optional, foundation core):
+  /** Preferred handle (normalized; a numeric suffix is added when taken). Default: derived from the name, else email. */
+  slug?: string | null;
+  /** Set for verified provider emails (OAuth signups). */
+  emailVerifiedAt?: Date | null;
+  /** Profile locale (default "en"); the default event type uses it when supported. */
+  locale?: string | null;
+  /** AU-11: the first account of an instance becomes instance admin (decided by the caller's signup policy). */
+  isInstanceAdmin?: boolean;
+  /** Name of a new organization (default "{Name}'s workspace"). */
+  organizationName?: string | null;
+  /** AU-13: Google Meet for Google signups, Microsoft Teams for work Microsoft accounts, else no location. */
+  defaultEventLocationKind?: "google_conference" | "microsoft_teams_conference" | null;
+};
+
+export const DEFAULT_EVENT_TYPE = {
+  name: "30 Minute Meeting",
+  slug: "30min",
+  durationMinutes: 30,
+  color: "#8247f5",
+} as const;
+
+export const DEFAULT_QUESTION_LABEL = "Please share anything that will help prepare for our meeting.";
+
+export const EMAIL_TAKEN_MESSAGE = "An account with this email already exists. Log in instead.";
+
+/** Display name fallback: the trimmed name, else the email's local part. */
+function displayName(name: string, email: string): string {
+  const trimmed = name.trim();
+  return trimmed || email.split("@")[0] || email;
+}
+
+async function claimFreshHandle(tx: DbOrTx, userId: string, base: string): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = await suggestHandle(tx, attempt === 0 ? base : `${base}-${Math.floor(Math.random() * 9000) + 1000}`);
+    try {
+      return await claimHandle(tx, candidate, { userId });
+    } catch (e) {
+      // A concurrent signup claimed the same candidate between our check and insert: try the next one.
+      if (!isAppError(e) || e.code !== "conflict") throw e;
+      lastError = e;
+    }
+  }
+  throw lastError ?? new AppError("conflict", "This URL is not available.");
+}
+
+/** Creates a complete account (AU-13 defaults). Throws AppError("conflict") when the email is taken. */
+export async function createUserAccount(tx: DbOrTx, input: CreateUserAccountInput): Promise<UserRow> {
+  const email = input.email.trim();
+  const emailNormalized = normalizeEmail(email);
+  const name = displayName(input.name, email);
+  const timezone = zoneOrUtc(input.timezone);
+  const locale = input.locale && isSupportedLocale(input.locale) ? input.locale : "en";
+
+  const inserted = await tx
+    .insert(users)
+    .values({
+      email,
+      emailNormalized,
+      name,
+      passwordHash: input.passwordHash ?? null,
+      timezone,
+      locale,
+      avatarUrl: input.avatarUrl ?? null,
+      emailVerifiedAt: input.emailVerifiedAt ?? null,
+      isInstanceAdmin: input.isInstanceAdmin ?? false,
+      createdViaInvitationId: input.createdViaInvitationId ?? null,
+    })
+    .onConflictDoNothing({ target: users.emailNormalized, where: sql`deleted_at is null` })
+    .returning({ id: users.id });
+  const userId = inserted[0]?.id;
+  if (!userId) throw new AppError("conflict", EMAIL_TAKEN_MESSAGE, { fieldErrors: { email: [EMAIL_TAKEN_MESSAGE] } });
+
+  await claimFreshHandle(tx, userId, input.slug?.trim() || name || email);
+
+  let organizationId = input.organizationId ?? null;
+  if (organizationId) {
+    await tx.insert(organizationMemberships).values({ organizationId, userId, role: input.role ?? "user" });
+  } else {
+    const [org] = await tx
+      .insert(organizations)
+      .values({ name: input.organizationName?.trim() || `${name}'s workspace` })
+      .returning({ id: organizations.id });
+    if (!org) throw new Error("createUserAccount: organization insert returned no row");
+    organizationId = org.id;
+    await tx.insert(organizationMemberships).values({ organizationId, userId, role: "owner" });
+  }
+
+  const schedule = await ensureDefaultSchedule(tx, userId, { timezone });
+
+  const locations: LocationConfig[] = input.defaultEventLocationKind
+    ? [{ id: newId(), kind: input.defaultEventLocationKind, position: 0 }]
+    : [];
+  const [eventType] = await tx
+    .insert(eventTypes)
+    .values({
+      organizationId,
+      ownerUserId: userId,
+      scope: "personal",
+      type: "standard",
+      kind: "solo",
+      name: DEFAULT_EVENT_TYPE.name,
+      slug: DEFAULT_EVENT_TYPE.slug,
+      color: DEFAULT_EVENT_TYPE.color,
+      durationMinutes: DEFAULT_EVENT_TYPE.durationMinutes,
+      locale,
+      locations,
+      scheduleId: schedule.id,
+      position: 0,
+      createdByUserId: userId,
+    })
+    .returning({ id: eventTypes.id });
+  if (!eventType) throw new Error("createUserAccount: event type insert returned no row");
+  await tx.insert(eventTypeHosts).values({ eventTypeId: eventType.id, userId, poolId: null, priority: 3, position: 0 });
+  await tx.insert(eventTypeQuestions).values({
+    eventTypeId: eventType.id,
+    position: 0,
+    label: DEFAULT_QUESTION_LABEL,
+    type: "text",
+    required: false,
+    enabled: true,
+    answerChoices: [],
+  });
+
+  await publishEvent(tx, "user.created", { userId }, { organizationId, actor: { type: "system" } });
+
+  const [user] = await tx
+    .select()
+    .from(users)
+    .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+    .limit(1);
+  if (!user) throw new Error("createUserAccount: user vanished");
+  return user;
+}
+
+/** Transaction advisory lock key that serializes account creation under the signup policy (AU-11). */
+export const SIGNUP_LOCK_KEY = "auth:signup";
+
+/** The live account for an email, or null. */
+export async function findUserByEmail(db: DbOrTx, email: string): Promise<UserRow | null> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.emailNormalized, normalizeEmail(email)), isNull(users.deletedAt)))
+    .limit(1);
+  return user ?? null;
+}
+
+export type CreateAccountUnderPolicyResult = { user: UserRow; decision: SignupDecision };
+
+/**
+ * Creates an account after checking the signup policy inside the transaction, serialized by SIGNUP_LOCK_KEY.
+ * - Email taken: AppError("conflict", EMAIL_TAKEN_MESSAGE) with an email field error (checked before the policy).
+ * - Policy closed: AppError("forbidden", "Sign ups are closed. Ask an admin for an invitation."), unless bypassPolicy
+ *   (invitation acceptance, AU-11).
+ * - First account of the instance: instance admin and owner of a new organization (when OWNER_EMAIL is set, only the
+ *   owner's, with a verified address: src/lib/auth/policy.ts).
+ * - "domains" policy match: joins the first organization as User.
+ * When `db` is not a transaction a new one is opened (the advisory lock needs one).
+ */
+export async function createAccountUnderPolicy(
+  db: DbOrTx,
+  input: CreateUserAccountInput,
+  opts: { bypassPolicy?: boolean } = {},
+): Promise<CreateAccountUnderPolicyResult> {
+  return withTx(db, async (tx) => {
+    await advisoryXactLock(tx, SIGNUP_LOCK_KEY);
+    if (await findUserByEmail(tx, input.email)) {
+      throw new AppError("conflict", EMAIL_TAKEN_MESSAGE, { fieldErrors: { email: [EMAIL_TAKEN_MESSAGE] } });
+    }
+    // emailVerifiedAt is set only by signups that prove the address (OAuth with a verified email), never by a password
+    // signup: with OWNER_EMAIL set, only such a signup of the owner's address claims a fresh instance.
+    const decision = await signupPolicyAllows(input.email, { db: tx, emailVerified: Boolean(input.emailVerifiedAt) });
+    if (!decision.allowed && !opts.bypassPolicy) throw new AppError("forbidden", decision.message);
+    const firstUser = decision.allowed && decision.firstUser;
+    const joinOrganizationId = input.organizationId ?? (decision.allowed ? decision.joinOrganizationId : null);
+    const user = await createUserAccount(tx, {
+      ...input,
+      isInstanceAdmin: Boolean(input.isInstanceAdmin) || firstUser,
+      organizationId: joinOrganizationId,
+      role: input.organizationId ? input.role : joinOrganizationId ? "user" : undefined,
+    });
+    return { user, decision };
+  });
+}
