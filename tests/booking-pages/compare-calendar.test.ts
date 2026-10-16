@@ -12,7 +12,7 @@ const { calendarConnections, oauthAccounts, sessions, users } = await import("@/
 const { handleOAuthCallback, handleOAuthStart } = await import("@/lib/auth/oauth/flow");
 const google = await import("@/lib/auth/oauth/google");
 const { COMPARE_API_PATH, COMPARE_COOKIE } = await import("@/lib/compare/constants");
-const { mergeRanges } = await import("@/lib/compare/google");
+const { failureReason, mergeRanges } = await import("@/lib/compare/google");
 const { newCompareSession, appendCompareCookie } = await import("@/lib/compare/session");
 const compareRoute = await import("@/app/api/public/compare/route");
 const busyRoute = await import("@/app/api/public/compare/busy/route");
@@ -156,19 +156,35 @@ describe("compare API", () => {
       method: "POST",
       url: "https://www.googleapis.com/calendar/v3/freeBusy",
       handler: (r) => {
-        expect((r.body as { items: { id: string }[] }).items).toEqual([{ id: "primary" }, { id: "work@x" }, { id: "gone@x" }]);
+        expect((r.body as { items: { id: string }[] }).items).toEqual([{ id: "primary" }, { id: "work@x" }, { id: "gone@x" }, { id: "flaky@x" }, { id: "missing@x" }]);
         return {
           calendars: {
             primary: { busy: [{ start: "2030-10-08T19:00:00Z", end: "2030-10-08T19:30:00Z" }] },
             "work@x": { busy: [{ start: "2030-10-08T19:15:00Z", end: "2030-10-08T20:00:00Z" }] },
             "gone@x": { errors: [{ reason: "notFound" }] },
+            "flaky@x": { errors: [{ reason: "backendError" }] },
           },
         };
       },
     });
-    const res = await busyRoute.POST(req("POST", `${COMPARE_API_PATH}/busy`, cookie, { calendarIds: ["primary", "work@x", "gone@x"], start: "2030-10-01T00:00:00Z", end: "2030-11-01T00:00:00Z" }), undefined);
+    const res = await busyRoute.POST(req("POST", `${COMPARE_API_PATH}/busy`, cookie, { calendarIds: ["primary", "work@x", "gone@x", "flaky@x", "missing@x"], start: "2030-10-01T00:00:00Z", end: "2030-11-01T00:00:00Z" }), undefined);
     fm.restore();
-    expect(await res.json()).toEqual({ busy: [{ start: Date.parse("2030-10-08T19:00:00Z"), end: Date.parse("2030-10-08T20:00:00Z") }], failed: ["gone@x"] });
+    expect(await res.json()).toEqual({ busy: [{ start: Date.parse("2030-10-08T19:00:00Z"), end: Date.parse("2030-10-08T20:00:00Z") }], failed: [
+        { id: "gone@x", reason: "no_access" },
+        { id: "flaky@x", reason: "temporary" },
+        { id: "missing@x", reason: "no_access" },
+      ],
+    });
+  });
+
+  it("explains each Google free/busy error in the visitor's terms", () => {
+    expect(failureReason(["notFound"])).toBe("no_access");
+    expect(failureReason([])).toBe("no_access");
+    expect(failureReason(["internalError"])).toBe("temporary");
+    expect(failureReason(["backendError"])).toBe("temporary");
+    expect(failureReason(["groupTooBig"])).toBe("too_many");
+    expect(failureReason(["tooManyCalendarsRequested"])).toBe("too_many");
+    expect(failureReason(["somethingNew"])).toBe("unknown");
   });
 
   it("ends the connection when Google rejects the token", async () => {

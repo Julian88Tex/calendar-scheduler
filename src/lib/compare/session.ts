@@ -15,11 +15,13 @@ import { appendEmbedSafeCookie, readEmbedSafeCookie } from "@/lib/cookies";
 import { decrypt, encrypt, randomToken } from "@/lib/crypto";
 import { isE2eMode } from "@/lib/env";
 import { nowMs } from "@/lib/time/now";
-import { COMPARE_API_PATH, COMPARE_COOKIE, COMPARE_MAX_AGE_SECONDS } from "./constants";
+import { COMPARE_API_PATH, COMPARE_COOKIE, COMPARE_MAX_AGE_SECONDS, type CompareFailureReason } from "./constants";
 
 export type FakeCompareData = {
   calendars: { id: string; name: string; color?: string | null; primary?: boolean; selected?: boolean }[];
   busy: Record<string, { start: string; end: string }[]>;
+  /** Calendars Google "can't read", and why. */
+  failed?: Record<string, CompareFailureReason>;
 };
 
 export type CompareSession = {
