@@ -14,8 +14,15 @@
 // email and password signup needs no proof of the address). When a provider proves the address and is linked to such
 // an account (step 2, or an invitation accepted into it), everything set before that proof is dropped in the same
 // transaction: the password, two-factor authentication and its recovery codes, every session and every outstanding
-// emailed token (an email change started by the squatter would otherwise move the account to their address). The
-// owner logs in with the provider and can set a password again with "Forgot password?".
+// emailed token (an email change started by the squatter would otherwise move the account to their address), and
+// every way back in that a new password would not close: the other sign-in methods (link_login_method needs only a
+// session, so the squatter could have linked their own Google account; only the provider proving the address stays),
+// calendar connections (the owner's bookings would be written to the squatter's calendar), API tokens, calendar feeds,
+// webhooks created by or for the account, and the pending invitations it sent. Removals are audited where the catalog
+// has an action (login_method.disconnected, calendar.disconnected). Removing rather than refusing the link keeps the
+// address claimable by its owner; refusing would leave a squatted ADMIN_EMAILS address (which may always sign up with
+// a password, src/lib/auth/policy.ts, and is instance admin once verified, src/lib/authz.ts) out of the owner's reach.
+// The owner logs in with the provider and can set a password again with "Forgot password?".
 //
 // linkOAuthLoginMethod (link_login_method): connects the provider to the signed-in user; refuses an account that is
 // already linked to someone else.
@@ -24,9 +31,20 @@
 // then in one transaction finds or creates the account (inside the inviting organization with the invited role,
 // regardless of the signup policy) and accepts the invitation through teams.acceptInvitationInTx.
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { getDb, withTx, type DbOrTx } from "@/db";
-import { authTokens, oauthAccounts, twoFactorRecoveryCodes, users } from "@/db/schema";
+import {
+  apiTokens,
+  authTokens,
+  calendarConnections,
+  calendarFeeds,
+  oauthAccounts,
+  organizationInvitations,
+  twoFactorRecoveryCodes,
+  users,
+  webhookSubscriptions,
+} from "@/db/schema";
+import { audit } from "@/lib/audit";
 import { isAppError } from "@/lib/errors";
 import { acceptInvitationInTx, getPendingInvitation, type PendingInvitation } from "@/lib/teams";
 import { now } from "@/lib/time/now";
@@ -35,7 +53,7 @@ import type { OAuthErrorCode } from "../oauth/errors";
 import type { OAuthProfile, OAuthProviderId } from "../oauth/types";
 import { revokeAllSessions, type UserRow } from "../session";
 import { createAccountUnderPolicy, findUserByEmail } from "../signup";
-import { auditAuth } from "./audit";
+import { auditAuth, primaryOrganizationId } from "./audit";
 
 /** A resolution failure the callback turns into ?error={code}. */
 export class OAuthFlowError extends Error {
@@ -55,8 +73,8 @@ export type OAuthResolution = {
   /** The provider was connected to an existing account by this sign-in. */
   linked: boolean;
   /**
-   * The existing account's email was unverified, so its password, 2FA and sessions were dropped when the provider
-   * proved the address (pre-account hijacking, see the file header).
+   * The existing account's email was unverified, so its password, 2FA, sessions, other sign-in methods and the access
+   * it had handed out were dropped when the provider proved the address (pre-account hijacking, see the file header).
    */
   securedUnverifiedAccount?: boolean;
 };
@@ -136,13 +154,71 @@ function signupFields(provider: OAuthProviderId, profile: OAuthProfile, timezone
   };
 }
 
+/** Audit details of everything an unverified account loses when a provider proves its address. */
+const CLAIMED = { via: "unverified_account_claimed" } as const;
+
+/**
+ * The ways back in that someone who registered the account without owning the mailbox could have left, and that a
+ * new password would not close (see the file header). Only `keepOAuthAccountId`, the provider proving the address,
+ * stays linked. Call inside the linking transaction, under the user row lock.
+ */
+async function dropAccessGrantedBeforeProof(db: DbOrTx, user: UserRow, keepOAuthAccountId: string | null, at: Date): Promise<void> {
+  const logins = await db
+    .delete(oauthAccounts)
+    .where(and(eq(oauthAccounts.userId, user.id), keepOAuthAccountId ? ne(oauthAccounts.id, keepOAuthAccountId) : undefined))
+    .returning({ provider: oauthAccounts.provider, email: oauthAccounts.email });
+  // Cascades to the calendars, their cached events and watch channels; destinations on them fall back to none.
+  const connections = await db
+    .delete(calendarConnections)
+    .where(eq(calendarConnections.userId, user.id))
+    .returning({
+      id: calendarConnections.id,
+      provider: calendarConnections.provider,
+      email: calendarConnections.accountEmail,
+      status: calendarConnections.status,
+    });
+  await db.delete(apiTokens).where(eq(apiTokens.userId, user.id));
+  await db.delete(calendarFeeds).where(eq(calendarFeeds.userId, user.id));
+  await db.delete(webhookSubscriptions).where(or(eq(webhookSubscriptions.userId, user.id), eq(webhookSubscriptions.creatorUserId, user.id)));
+  await db
+    .update(organizationInvitations)
+    .set({ status: "revoked", updatedAt: at })
+    .where(and(eq(organizationInvitations.invitedByUserId, user.id), eq(organizationInvitations.status, "pending")));
+
+  for (const login of logins) {
+    await auditAuth("login_method.disconnected", { user, details: { provider: login.provider, email: login.email, ...CLAIMED }, tx: db });
+  }
+  // A connection the user already disconnected was audited then.
+  const live = connections.filter((c) => c.status !== "disconnected");
+  if (!live.length) return;
+  const organizationId = await primaryOrganizationId(user.id, db);
+  for (const c of live) {
+    await audit(
+      {
+        action: "calendar.disconnected",
+        namespace: "calendars",
+        targetType: "calendar_connection",
+        targetId: c.id,
+        details: { provider: c.provider, email: c.email, ...CLAIMED },
+        actor: { type: "user", userId: user.id, organizationId, label: user.name ?? user.email },
+      },
+      db,
+    );
+  }
+}
+
 /**
  * The provider vouched for the address of an existing account. A verified account is returned as is. An unverified one
  * becomes verified and loses everything that was set before the address was proven (password, 2FA, recovery codes,
- * sessions, outstanding emailed tokens), so whoever registered it without owning the mailbox is locked out. Call
- * inside the linking transaction.
+ * sessions, outstanding emailed tokens, and every sign-in method and grant of access but `keepOAuthAccountId`, see
+ * dropAccessGrantedBeforeProof), so whoever registered it without owning the mailbox is locked out. Call inside the
+ * linking transaction.
  */
-async function claimForVerifiedEmail(db: DbOrTx, stale: UserRow): Promise<{ user: UserRow; secured: boolean }> {
+async function claimForVerifiedEmail(
+  db: DbOrTx,
+  stale: UserRow,
+  keepOAuthAccountId: string | null,
+): Promise<{ user: UserRow; secured: boolean }> {
   // Re-read under a row lock: the row passed in may have been read before the transaction.
   const [user] = await db
     .select()
@@ -153,20 +229,20 @@ async function claimForVerifiedEmail(db: DbOrTx, stale: UserRow): Promise<{ user
   if (!user) throw new OAuthFlowError("failed", "account vanished");
   if (user.emailVerifiedAt) return { user, secured: false };
   const at = now();
-  await db
+  await dropAccessGrantedBeforeProof(db, user, keepOAuthAccountId, at);
+  // Read back after the removals: a destination calendar among them is now none.
+  const [claimed] = await db
     .update(users)
     .set({ emailVerifiedAt: at, passwordHash: null, twoFactorEnabled: false, twoFactorSecretEnc: null, updatedAt: at })
-    .where(eq(users.id, user.id));
+    .where(eq(users.id, user.id))
+    .returning();
+  if (!claimed) throw new OAuthFlowError("failed", "account vanished");
   await db.delete(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, user.id));
   await db.update(authTokens).set({ usedAt: at }).where(and(eq(authTokens.userId, user.id), isNull(authTokens.usedAt)));
   await revokeAllSessions(user.id, db);
-  const details = { via: "unverified_account_claimed" };
-  if (user.passwordHash) await auditAuth("user.password_changed", { user, details, tx: db });
-  if (user.twoFactorEnabled) await auditAuth("user.two_factor_disabled", { user, details, tx: db });
-  return {
-    user: { ...user, emailVerifiedAt: at, passwordHash: null, twoFactorEnabled: false, twoFactorSecretEnc: null, updatedAt: at },
-    secured: true,
-  };
+  if (user.passwordHash) await auditAuth("user.password_changed", { user, details: CLAIMED, tx: db });
+  if (user.twoFactorEnabled) await auditAuth("user.two_factor_disabled", { user, details: CLAIMED, tx: db });
+  return { user: claimed, secured: true };
 }
 
 /**
@@ -206,7 +282,7 @@ export async function resolveOAuthLogin(p: {
   if (existing) {
     return withTx(db, async (tx) => {
       const oauthAccountId = await insertOAuthAccount(tx, existing.id, provider, profile);
-      const { user, secured } = await claimForVerifiedEmail(tx, existing);
+      const { user, secured } = await claimForVerifiedEmail(tx, existing, oauthAccountId);
       return { user: await adoptProviderAvatar(tx, user, profile), oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
     });
   }
@@ -225,7 +301,7 @@ export async function resolveOAuthLogin(p: {
       if (winner) {
         return withTx(db, async (tx) => {
           const oauthAccountId = await insertOAuthAccount(tx, winner.id, provider, profile);
-          const { user, secured } = await claimForVerifiedEmail(tx, winner);
+          const { user, secured } = await claimForVerifiedEmail(tx, winner, oauthAccountId);
           return { user: await adoptProviderAvatar(tx, user, profile), oauthAccountId, created: false, linked: true, securedUnverifiedAccount: secured };
         });
       }
@@ -285,7 +361,8 @@ export async function acceptInvitationWithOAuth(p: {
       } else {
         const existing = await findUserByEmail(tx, p.profile.email);
         if (existing) {
-          ({ user, secured } = await claimForVerifiedEmail(tx, existing));
+          // Nothing to keep yet: the provider is linked right below, after the claim.
+          ({ user, secured } = await claimForVerifiedEmail(tx, existing, null));
           linkedNow = true;
         } else {
           const res = await createAccountUnderPolicy(
