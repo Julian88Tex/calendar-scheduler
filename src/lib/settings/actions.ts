@@ -14,7 +14,7 @@ import { AppError } from "@/lib/errors";
 import { assertRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { absoluteUrl } from "@/lib/url";
 import { FriendsSettingsInput, resetFriendsSettings, saveFriendsSettings } from "./friends";
-import type { FriendsContent } from "@/components/booking/lib/friends";
+import type { FriendsContent } from "@/components/booking/lib/friends-content";
 import {
   changeHandle,
   checkHandle,

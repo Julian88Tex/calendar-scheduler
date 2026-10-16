@@ -6,7 +6,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { cache } from "react";
 import { getDb } from "@/db";
 import { handles, organizationMemberships, organizations, users } from "@/db/schema";
-import { DEFAULT_FRIENDS_CONTENT, friendsContentOf, type FriendsContent } from "../lib/friends";
+import { DEFAULT_FRIENDS_CONTENT, friendsContentOf, type FriendsContent } from "../lib/friends-content";
 
 /** The handle the old friends link books with: the instance owner's, or null before anyone signed up. */
 export const friendsHandle = cache(async (): Promise<string | null> => {

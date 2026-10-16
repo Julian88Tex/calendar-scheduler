@@ -3,7 +3,7 @@
 // FriendsLanding: the /{handle}?friends=1 landing card of friends mode (lib/friends.ts): the host's avatar, greeting,
 // note and sign-off, their favorite ways to hang as chips, and their event types under friendly names. The words come
 // from the host's Settings > Friends mode. Server and client safe.
-import { firstNameOf, friendlyEventOf, friendsLine, type FriendsContent } from "@/components/booking/lib/friends";
+import { firstNameOf, friendlyEventOf, friendsLine, type FriendsContent } from "@/components/booking/lib/friends-content";
 import type { LandingData } from "@/components/booking/server/landing";
 import { PUBLIC_TEXT_TRACKING } from "./booking-card";
 import { EventTypeList } from "./event-type-list";

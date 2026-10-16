@@ -5,7 +5,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type DbOrTx } from "@/db";
 import { eventTypes, users } from "@/db/schema";
-import { FRIENDS_LIMITS, friendsContentOf, type FriendsContent } from "@/components/booking/lib/friends";
+import { FRIENDS_LIMITS, friendsContentOf, type FriendsContent } from "@/components/booking/lib/friends-content";
 import { AppError } from "@/lib/errors";
 import { now } from "@/lib/time/now";
 

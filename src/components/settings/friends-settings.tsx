@@ -7,7 +7,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type * as React from "react";
-import { DEFAULT_FRIENDS_CONTENT, FRIENDS_LIMITS, type FriendsContent } from "@/components/booking/lib/friends";
+import { DEFAULT_FRIENDS_CONTENT, FRIENDS_LIMITS, type FriendsContent } from "@/components/booking/lib/friends-content";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";

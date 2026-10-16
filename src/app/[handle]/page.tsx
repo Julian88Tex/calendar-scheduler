@@ -10,7 +10,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { EmbedBeacon } from "@/components/booking/embed-beacon";
-import { FRIENDS_PARAM, firstNameOf, friendsLine, toneOfParam } from "@/components/booking/lib/friends";
+import { FRIENDS_PARAM, toneOfParam } from "@/components/booking/lib/friends";
+import { firstNameOf, friendsLine } from "@/components/booking/lib/friends-content";
 import { bt } from "@/components/booking/lib/t";
 import { landingForwardParams, withCarried } from "@/components/booking/lib/url-state";
 import { loadFriendsContent } from "@/components/booking/server/friends";

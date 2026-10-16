@@ -7,7 +7,8 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { withFriendsParam, type Tone } from "@/components/booking/lib/friends";
+import type { Tone } from "@/components/booking/lib/friends";
+import { withFriendsParam } from "@/components/booking/lib/friends-param";
 import { cn } from "@/lib/cn";
 
 export function ToneToggle({ tone, className }: { tone: Tone; className?: string }) {
