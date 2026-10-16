@@ -14,6 +14,7 @@
 //   error or timeout (1 second) falls back to the normal page.
 // Never import the database, env.ts or "server-only" modules here.
 import { NextResponse, type NextRequest } from "next/server";
+import { DEFAULT_APP_NAME } from "./lib/brand";
 import { securityHeadersFor } from "./lib/net/frame-policy";
 import { proxyDecision } from "./lib/net/proxy-decision";
 
@@ -32,7 +33,7 @@ function withSecurityHeaders(res: NextResponse, pathname: string): NextResponse 
 }
 
 function fallbackSetupHtml(): string {
-  const name = (process.env.NEXT_PUBLIC_APP_NAME || "Kairos").replace(/[<>&"]/g, "");
+  const name = (process.env.NEXT_PUBLIC_APP_NAME || DEFAULT_APP_NAME).replace(/[<>&"]/g, "");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Finish setting up ${name}</title></head><body style="font-family:system-ui,sans-serif;color:#0a2540;max-width:640px;margin:48px auto;padding:0 16px"><h1>Finish setting up ${name}</h1><p>${name} needs a Postgres database before it can run.</p><ol><li>Open your project in Vercel</li><li>Go to the Storage tab</li><li>Create a Neon Postgres database and connect it to this project (all environments)</li><li>Redeploy</li></ol><p><a href="/setup">Open the setup page</a></p></body></html>`;
 }
 

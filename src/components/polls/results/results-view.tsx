@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimeZoneSelect } from "@/components/ui/time-zone-select";
 import { toast } from "@/components/ui/toast";
 import { copyText } from "@/lib/client/use-copy";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import {
   addHostCommentAction,
@@ -270,7 +271,7 @@ export function ResultsView({ data, viewer, bookOptionId, offerDuplicate }: Resu
             ? pt("results.holdsPending")
             : holds.active > 0
               ? ptCount(holds.active, "results.holdsActiveOne", "results.holdsActive")
-              : pt("results.holdsSkipped", { app: "Kairos" })}
+              : pt("results.holdsSkipped", { app: APP_NAME })}
       </Banner>
     ) : null;
 

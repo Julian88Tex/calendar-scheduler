@@ -1,7 +1,7 @@
-// Product identity (SPEC GEN-01): the name comes from NEXT_PUBLIC_APP_NAME (default "Kairos"). Client safe: Next
+// Product identity (SPEC GEN-01): the name comes from NEXT_PUBLIC_APP_NAME (default "Julendly"). Client safe: Next
 // inlines NEXT_PUBLIC_* variables into client bundles at build time.
 
-export const DEFAULT_APP_NAME = "Kairos";
+export const DEFAULT_APP_NAME = "Julendly";
 
 /** The product name, read now (tests and scripts may change the environment). */
 export function appName(): string {
