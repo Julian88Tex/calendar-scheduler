@@ -8,7 +8,7 @@
 // A user's page is shown as one of their personas (lib/personas.ts): ?for={id} picks it, links without it show the
 // default persona. Only the event types enabled for the persona are listed, under the names set for it; a warm persona
 // gets the PersonaLanding card in the warm theme, a classic one the normal card with its greeting and note. Pages of a
-// persona other than the default are never indexed.
+// persona other than the default are never indexed. Shared links preview as the persona's card (og-card.ts).
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { EmbedBeacon } from "@/components/booking/embed-beacon";
@@ -17,6 +17,7 @@ import { firstNameOf, personaFor, personaLine, type Persona } from "@/components
 import { bt } from "@/components/booking/lib/t";
 import { landingForwardParams, withCarried } from "@/components/booking/lib/url-state";
 import { type LandingData, loadLanding } from "@/components/booking/server/landing";
+import { ogImageMeta } from "@/components/booking/server/og-card";
 import { loadPersonas } from "@/components/booking/server/personas";
 import { PUBLIC_TEXT_TRACKING } from "@/components/public/booking-card";
 import { EventTypeList } from "@/components/public/event-type-list";
@@ -28,7 +29,6 @@ import { PublicFooterLinks } from "@/components/public/public-footer-links";
 import { PublicPageShell } from "@/components/public/public-page-shell";
 import { cn } from "@/lib/cn";
 import { embedDisplayParams } from "@/lib/embed-events";
-import { absoluteUrl } from "@/lib/url";
 
 type Props = {
   params: Promise<{ handle: string }>;
@@ -52,17 +52,19 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!data) return { title: bt("states.notFoundTitle"), robots: { index: false, follow: false } };
   const persona = await personaOf(data, sp);
   const noindex = persona && !persona.isDefault ? { robots: { index: false, follow: false } } : {};
+  const og = ogImageMeta({ handle: data.handle, persona: persona && !persona.isDefault ? persona.id : null }, data.name);
   if (persona?.style === "warm") {
     const title = personaLine("landingTitle", firstNameOf(data.name));
     const description = persona.note || persona.greeting || undefined;
-    return { title, description, ...noindex, openGraph: { title, description } };
+    return { title, description, ...noindex, openGraph: { title, description, images: og.images }, twitter: { ...og.twitter, title, description } };
   }
   const description = persona?.note || data.welcomeMessage || undefined;
   return {
     title: data.name,
     description,
     ...noindex,
-    openGraph: { title: data.name, description, images: data.avatarUrl ? [absoluteUrl(data.avatarUrl)] : undefined },
+    openGraph: { title: data.name, description, images: og.images },
+    twitter: { ...og.twitter, title: data.name, description },
   };
 }
 

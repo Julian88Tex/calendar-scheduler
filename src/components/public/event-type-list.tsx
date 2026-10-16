@@ -54,7 +54,7 @@ export function EventTypeList({ items, className, ...aria }: EventTypeListProps)
             <span className="flex min-w-0 flex-1 flex-col gap-1.5 pt-[3px]">
               <span className="text-[16px] leading-5 font-bold break-words text-public-text">{item.name}</span>
               {item.meta && <span className="text-[14px] leading-5 text-ink-2">{item.meta}</span>}
-              {item.description && <span className="line-clamp-2 text-[14px] leading-5 text-ink-2">{item.description}</span>}
+              {item.description && <span className="line-clamp-2 text-[14px] leading-5 text-pretty text-ink-2">{item.description}</span>}
             </span>
             <svg aria-hidden="true" viewBox="0 0 8 16" className="mt-[6px] h-4 w-2 shrink-0 fill-public-text">
               <path d="M0 0l8 8-8 8z" />
