@@ -1,7 +1,8 @@
 // The visitor's compare connection (booking page "Compare with my calendar"). Server only.
 //
 // After the visitor allows Google (OAuth intent compare_calendar, scopes calendar.freebusy and
-// calendar.calendarlist.readonly, no offline access), their access token is sealed with AES-256-GCM (encrypt() from
+// calendar.calendarlist.readonly, plus calendar.readonly when they asked to see event names, no offline access), their
+// access token is sealed with AES-256-GCM (encrypt() from
 // src/lib/crypto.ts) into the httpOnly cookie COMPARE_COOKIE, scoped to COMPARE_API_PATH and living no longer than the
 // token (an hour at most). Nothing is written to the database: no token, no calendar, no event. "Disconnect" deletes the
 // cookie. The token is not revoked at Google: a revoke ends the whole grant of this app for that Google account, which
@@ -22,6 +23,8 @@ export type FakeCompareData = {
   busy: Record<string, { start: string; end: string }[]>;
   /** Calendars Google "can't read", and why. */
   failed?: Record<string, CompareFailureReason>;
+  /** Named events per calendar, read only when the session may read events. */
+  titles?: Record<string, { start: string; end: string; title: string }[]>;
 };
 
 export type CompareSession = {
@@ -32,14 +35,24 @@ export type CompareSession = {
   email: string;
   /** Epoch ms after which the token no longer works. */
   expiresAt: number;
+  /** The visitor allowed reading their events (calendar.readonly), so a Conflict can name the event. */
+  events?: boolean;
   fake?: FakeCompareData;
 };
 
 /** A new session that ends when the token does, and within COMPARE_MAX_AGE_SECONDS. */
-export function newCompareSession(p: { accessToken: string; email: string; expiresAt: Date | null; fake?: FakeCompareData }): CompareSession {
+export function newCompareSession(p: { accessToken: string; email: string; expiresAt: Date | null; events?: boolean; fake?: FakeCompareData }): CompareSession {
   const cap = nowMs() + COMPARE_MAX_AGE_SECONDS * 1000;
   const expiresAt = Math.min(p.expiresAt?.getTime() ?? cap, cap);
-  return { v: 1, id: randomToken(16), accessToken: p.accessToken, email: p.email, expiresAt, ...(p.fake ? { fake: p.fake } : {}) };
+  return {
+    v: 1,
+    id: randomToken(16),
+    accessToken: p.accessToken,
+    email: p.email,
+    expiresAt,
+    ...(p.events ? { events: true } : {}),
+    ...(p.fake ? { fake: p.fake } : {}),
+  };
 }
 
 function isSession(v: unknown): v is CompareSession {

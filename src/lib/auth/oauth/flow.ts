@@ -146,7 +146,7 @@ export async function handleOAuthStart(request: Request, provider: OAuthProvider
 
   const authorizeUrl =
     provider === "google"
-      ? googleAuthorizationUrl({ state, codeVerifier, intent, loginHint })
+      ? googleAuthorizationUrl({ state, codeVerifier, intent, loginHint, data })
       : microsoftAuthorizationUrl({ state, codeVerifier, intent, loginHint });
   return redirectResponse(authorizeUrl, 302);
 }

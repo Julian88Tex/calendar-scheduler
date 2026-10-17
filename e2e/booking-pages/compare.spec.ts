@@ -116,7 +116,7 @@ test.describe("compare with my calendar", () => {
     expect(after.status()).toBe(401);
   });
 
-  test("calendars Google can't read are named with the reason, plainly", async ({ page, axe }) => {
+  test("calendars Google won't read stay listed, grayed out with the reason, and other failures are named", async ({ page, axe }) => {
     const data = {
       ...FAKE,
       calendars: [...FAKE.calendars, { id: "holidays@group.v.calendar.google.com", name: "Holidays in United States", color: "#0b8043", selected: true }],
@@ -126,13 +126,20 @@ test.describe("compare with my calendar", () => {
     expect(res.ok()).toBe(true);
     await page.goto("/julianjoseph/30min?compare=1", SLOW);
     const bar = page.getByTestId("compare-bar");
+    // Holidays: listed last, unchecked and disabled, with why it can't be used, and never looked up.
+    const holidays = bar.getByRole("checkbox", { name: /Holidays in United States/ });
+    await expect(holidays).toBeVisible(SLOW);
+    await expect(holidays).toBeDisabled();
+    await expect(holidays).not.toBeChecked();
+    await expect(holidays).toHaveAccessibleDescription("Can't be compared. Google doesn't share busy times for this calendar.");
+    await expect(bar.locator("fieldset label")).toHaveText([/Alex Rivera/, /Family/, /Work/, /Holidays in United States/]);
+    // Family: a temporary failure, named in the warning with a retry.
     const warning = bar.getByTestId("compare-failed");
     await expect(warning).toBeVisible(SLOW);
-    await expect(warning.getByText("We couldn't check 2 of your calendars")).toBeVisible();
-    await expect(warning.getByRole("listitem").filter({ hasText: "Holidays in United States" })).toContainText("Google doesn't share busy times for this calendar.");
-    await expect(warning.getByRole("listitem").filter({ hasText: "Family" })).toContainText("Google had a temporary problem reading it.");
-    await expect(warning).toContainText("Times that clash with events on them aren't marked Conflict.");
-    await expect(bar.getByTestId("compare-calendar-failed")).toHaveCount(2);
+    await expect(warning.getByText("We couldn't check 1 of your calendars")).toBeVisible();
+    await expect(warning.getByRole("listitem")).toHaveText(["Family: Google had a temporary problem reading it."]);
+    await expect(warning).toContainText("Times that clash with events on it aren't marked Conflict.");
+    await expect(bar.getByTestId("compare-calendar-failed")).toHaveCount(1);
     await expect(bar.getByTestId("compare-retry")).toBeVisible();
     // The calendars that could be read still count.
     await page.getByRole("button", { name: TUESDAY }).click();
@@ -144,10 +151,61 @@ test.describe("compare with my calendar", () => {
     if (SHOTS) await bar.screenshot({ path: `${SHOTS}/7-failed-calendars-dark.png` });
     await page.emulateMedia({ colorScheme: "light" });
 
-    // Unchecking the unreadable calendars clears the warning.
-    await bar.getByRole("checkbox", { name: /Holidays in United States/ }).click();
+    // Unchecking the failed calendar clears the warning; Holidays keeps its reason.
     await bar.getByRole("checkbox", { name: /Family/ }).click();
     await expect(warning).toHaveCount(0);
+    await expect(bar.getByTestId("compare-calendar-unreadable")).toHaveText("Can't be compared. Google doesn't share busy times for this calendar.");
+  });
+
+  test("Conflict names the visitor's own event once they allow it, and only asks when they click", async ({ page, axe }) => {
+    // Busy-only connection: plain Conflict, and a link that asks Google for event access.
+    let res = await page.request.post("/api/test/compare", { headers: { [E2E_SECRET_HEADER]: e2eSecret() }, data: FAKE });
+    expect(res.ok()).toBe(true);
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    const bar = page.getByTestId("compare-bar");
+    await expect(bar.getByTestId("compare-email")).toBeVisible(SLOW);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    const list = page.getByRole("list", { name: "Select a time" });
+    await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict$/ })).toBeVisible(SLOW);
+    await expect(bar).toContainText("Want to see which event is in the way?");
+    const start = page.waitForRequest((r) => r.url().includes("/api/auth/google/start"));
+    await bar.getByTestId("compare-names").click();
+    const url = new URL((await start).url());
+    expect(url.searchParams.get("intent")).toBe("compare_calendar");
+    expect(url.searchParams.get("events")).toBe("1");
+
+    // Event access allowed: the clash names every event it overlaps; a clash with an untitled event stays plain.
+    res = await page.request.post("/api/test/compare", {
+      headers: { [E2E_SECRET_HEADER]: e2eSecret() },
+      data: {
+        ...FAKE,
+        events: true,
+        titles: {
+          primary: [{ start: "2030-10-08T19:00:00Z", end: "2030-10-08T19:30:00Z", title: "Dentist appointment with Dr. Alvarez downtown" }],
+          "family@example.com": [{ start: "2030-10-08T19:15:00Z", end: "2030-10-08T19:30:00Z", title: "School pickup" }],
+        },
+      },
+    });
+    expect(res.ok()).toBe(true);
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    await expect(bar.getByTestId("compare-status")).toHaveText("Times marked Conflict overlap events on your calendar. Event names show only to you and aren't saved.", SLOW);
+    await expect(bar.getByTestId("compare-names")).toHaveCount(0);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict: Dentist appointment with Dr\. Alvarez downtown, School pickup$/ })).toBeVisible(SLOW);
+    await expect(list.getByRole("button", { name: /^5:00pm\s*Conflict$/ })).toBeVisible();
+    await expect(list.getByRole("button", { name: /^3:30pm$/ })).toBeVisible();
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/8-named-conflict.png` });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/9-named-conflict-dark.png` });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/julianjoseph/30min?compare=1", SLOW);
+    await expect(page.getByTestId("compare-email")).toBeVisible(SLOW);
+    await page.getByRole("button", { name: TUESDAY }).click();
+    await expect(page.getByRole("list", { name: "Select a time" }).getByRole("button", { name: /^3:00pm\s*Conflict: Dentist.*, School pickup$/ })).toBeVisible(SLOW);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/10-named-conflict-phone.png` });
   });
 
   test("the compare APIs refuse cross-site requests and are absent from embeds", async ({ page }) => {
