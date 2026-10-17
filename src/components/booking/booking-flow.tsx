@@ -284,6 +284,8 @@ export function BookingFlow(p: BookingPageProps) {
   // "Compare with my calendar": reopened by ?compare=1 after the Google round trip.
   const [compareOpen, setCompareOpen] = useState(() => p.viewer.compare && p.carry.some(([k]) => k === "compare"));
   const [compareBusy, setCompareBusy] = useState<{ month: string; busy: BusyRange[] } | null>(null);
+  // The compare's "Show event" link beside each unnamed Conflict, while the visitor hasn't allowed event names.
+  const [showNames, setShowNames] = useState<TimeSlot["action"]>(null);
 
   // Form state (BK-09 to BK-16).
   const ctx: FormContext = useMemo(
@@ -752,7 +754,12 @@ export function BookingFlow(p: BookingPageProps) {
   const timeSlots: TimeSlot[] = daySlots.map((s) => {
     const conflict = conflictOf(s.start, duration, busyRanges);
     const spots = event.showRemainingSpots ? (s.remaining === 1 ? bt("page.spotLeft") : bt("page.spotsLeft", { count: s.remaining })) : null;
-    return { value: s.start, label: fmt(s.start), detail: conflict ? bt("mutual.conflict") + (conflict.length ? `: ${conflict.join(", ")}` : "") : spots };
+    return {
+      value: s.start,
+      label: fmt(s.start),
+      detail: conflict ? bt("mutual.conflict") + (conflict.length ? `: ${conflict.join(", ")}` : "") : spots,
+      action: conflict && !conflict.length ? showNames : null,
+    };
   });
   const candidates = effectiveDate && troubleshootDays ? (troubleshootDays[effectiveDate] ?? []) : [];
   const nextAllowed = !data?.windowEnd || Date.parse(data.windowEnd) > Date.parse(`${nextMonthOf(month)}-01T00:00:00Z`) - 14 * 3_600_000;
@@ -874,7 +881,7 @@ export function BookingFlow(p: BookingPageProps) {
             </div>
           )}
           {compareOpen ? (
-            <CompareBar month={month} onBusy={(m, b) => setCompareBusy(b ? { month: m, busy: b } : null)} onClose={() => setCompareOpen(false)} />
+            <CompareBar month={month} onBusy={(m, b) => setCompareBusy(b ? { month: m, busy: b } : null)} onNames={(link) => setShowNames(() => link)} onClose={() => setCompareOpen(false)} />
           ) : (
             p.viewer.compare && (
               <button type="button" onClick={() => setCompareOpen(true)} className="mt-4 text-[14px] font-semibold text-brand-strong hover:underline" data-testid="compare-open">

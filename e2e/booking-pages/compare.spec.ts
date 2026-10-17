@@ -75,7 +75,7 @@ test.describe("compare with my calendar", () => {
     await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict$/ })).toBeVisible(SLOW);
     await expect(list.getByRole("button", { name: /^3:30pm$/ })).toBeVisible();
     await expect(list.getByRole("button", { name: /^5:00pm\s*Conflict$/ })).toBeVisible();
-    await expect(bar.getByTestId("compare-status")).toHaveText("Times marked Conflict overlap events on your calendar.");
+    await expect(bar.getByTestId("compare-status")).toHaveText("Times marked Conflict overlap events on your calendar. Choose Show event beside one to see which event it is.");
     await axe(page);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/2-compared.png` });
 
@@ -157,8 +157,8 @@ test.describe("compare with my calendar", () => {
     await expect(bar.getByTestId("compare-calendar-unreadable")).toHaveText("Can't be compared. Google doesn't share busy times for this calendar.");
   });
 
-  test("Conflict names the visitor's own event once they allow it, and only asks when they click", async ({ page, axe }) => {
-    // Busy-only connection: plain Conflict, and a link that asks Google for event access.
+  test("each Conflict offers Show event, and names the visitor's own events once they allow it", async ({ page, axe }) => {
+    // Busy-only connection: plain Conflict, with a Show event link beside each one that asks Google for event access.
     let res = await page.request.post("/api/test/compare", { headers: { [E2E_SECRET_HEADER]: e2eSecret() }, data: FAKE });
     expect(res.ok()).toBe(true);
     await page.goto("/julianjoseph/30min?compare=1", SLOW);
@@ -167,9 +167,17 @@ test.describe("compare with my calendar", () => {
     await page.getByRole("button", { name: TUESDAY }).click();
     const list = page.getByRole("list", { name: "Select a time" });
     await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict$/ })).toBeVisible(SLOW);
-    await expect(bar).toContainText("Want to see which event is in the way?");
+    const showEvent = (time: string) => list.getByRole("listitem").filter({ hasText: time }).getByRole("button", { name: "Show event" });
+    await expect(showEvent("3:00pm")).toHaveAccessibleDescription(/^3:00pm\s*Conflict$/);
+    await expect(showEvent("5:00pm")).toBeVisible();
+    await expect(showEvent("3:30pm")).toHaveCount(0);
+    await axe(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/11-show-event-links.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/12-show-event-links-phone.png` });
+    await page.setViewportSize({ width: 1280, height: 720 });
     const start = page.waitForRequest((r) => r.url().includes("/api/auth/google/start"));
-    await bar.getByTestId("compare-names").click();
+    await showEvent("3:00pm").click();
     const url = new URL((await start).url());
     expect(url.searchParams.get("intent")).toBe("compare_calendar");
     expect(url.searchParams.get("events")).toBe("1");
@@ -189,7 +197,7 @@ test.describe("compare with my calendar", () => {
     expect(res.ok()).toBe(true);
     await page.goto("/julianjoseph/30min?compare=1", SLOW);
     await expect(bar.getByTestId("compare-status")).toHaveText("Times marked Conflict overlap events on your calendar. Event names show only to you and aren't saved.", SLOW);
-    await expect(bar.getByTestId("compare-names")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Show event" })).toHaveCount(0);
     await page.getByRole("button", { name: TUESDAY }).click();
     await expect(list.getByRole("button", { name: /^3:00pm\s*Conflict: Dentist appointment with Dr\. Alvarez downtown, School pickup$/ })).toBeVisible(SLOW);
     await expect(list.getByRole("button", { name: /^5:00pm\s*Conflict$/ })).toBeVisible();
