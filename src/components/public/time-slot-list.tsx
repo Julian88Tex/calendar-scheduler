@@ -12,7 +12,7 @@
 
 import type { Route } from "next";
 import Link from "next/link";
-import { useEffect, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { Spinner } from "../ui/spinner";
 
@@ -23,6 +23,8 @@ export type TimeSlot = {
   label: string;
   /** Second line, for example "3 spots left". */
   detail?: string | null;
+  /** Renders a small link beside the time (for example "Show event" next to a Conflict), described by the time's button id. */
+  action?: ((describedBy: string) => ReactNode) | null;
   disabled?: boolean;
 };
 
@@ -106,11 +108,19 @@ export function TimeSlotList({
         >
           {slots.map((slot) => {
             const isSelected = slot.value === selected;
-            const timeId = `${base}-${slot.value.replace(/[^a-zA-Z0-9]/g, "")}`;
+            const timeId = `${base}-${slot.value.replace(/[^a-zA-Z0-9_-]/g, "")}`;
             if (isSelected) {
               // pb-0.5 lifts every label 1px above the box's center, where Calendly's sit (Figtree's glyphs sit low).
               const nextClass =
                 "inline-flex h-[52px] w-[48.5%] animate-slide-in-x items-center justify-center rounded-[var(--radius-slot)] bg-brand pb-0.5 text-[16px] font-bold text-white shadow-[var(--shadow-next)] transition-[filter] hover:brightness-[0.85] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+              const next = {
+                ref: (el: HTMLElement | null) => {
+                  nextRef.current = el;
+                },
+                "aria-describedby": timeId,
+                className: nextClass,
+                onClick: () => onNext?.(slot.value),
+              };
               return (
                 <li key={slot.value} className="flex min-w-0 items-stretch justify-between">
                   <div
@@ -121,27 +131,11 @@ export function TimeSlotList({
                     {slot.detail && <span className="truncate text-[12px] leading-4 font-semibold opacity-90">{slot.detail}</span>}
                   </div>
                   {nextHref ? (
-                    <Link
-                      ref={(el) => {
-                        nextRef.current = el;
-                      }}
-                      href={nextHref(slot.value) as Route}
-                      aria-describedby={timeId}
-                      className={nextClass}
-                      onClick={() => onNext?.(slot.value)}
-                    >
+                    <Link href={nextHref(slot.value) as Route} {...next}>
                       {nextLabel}
                     </Link>
                   ) : (
-                    <button
-                      ref={(el) => {
-                        nextRef.current = el;
-                      }}
-                      type="button"
-                      aria-describedby={timeId}
-                      className={nextClass}
-                      onClick={() => onNext?.(slot.value)}
-                    >
+                    <button type="button" {...next}>
                       {nextLabel}
                     </button>
                   )}
@@ -149,8 +143,9 @@ export function TimeSlotList({
               );
             }
             return (
-              <li key={slot.value} className="flex min-w-0">
+              <li key={slot.value} className="flex min-w-0 items-center gap-2">
                 <button
+                  id={timeId}
                   type="button"
                   disabled={slot.disabled}
                   onClick={() => {
@@ -167,6 +162,7 @@ export function TimeSlotList({
                   <span className="text-[16px] leading-5 font-bold">{slot.label}</span>
                   {slot.detail && <span className="line-clamp-2 max-w-full text-[12px] break-words leading-4 font-semibold text-ink-2">{slot.detail}</span>}
                 </button>
+                {slot.action?.(timeId)}
               </li>
             );
           })}

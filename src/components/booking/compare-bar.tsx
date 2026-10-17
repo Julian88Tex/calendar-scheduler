@@ -3,13 +3,14 @@
 // and the host's open times that clash with them read "Conflict". Their token stays sealed in their own browser for
 // an hour at most (src/lib/compare/session.ts); busy times come back as bare ranges and nothing is stored. "Show event
 // names" connects again asking Google to read events too (start parameter events=1); then a clash with one of their
-// own events reads "Conflict: {title}" (every one it overlaps), shown to them alone and never stored. Calendars Google
+// own events reads "Conflict: {title}" (every one it overlaps), shown to them alone and never stored. Until then, each
+// Conflict time carries the "Show event" link (onNames renders it). Calendars Google
 // won't share busy times of (holidays and other subscribed calendars) stay listed, grayed out with the reason.
 // Loaded on demand (next/dynamic) so the booking page keeps its GEN-07 JavaScript budget; its copy lives here for the
 // same reason.
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProviderLogo } from "@/components/ui/provider-logo";
@@ -40,8 +41,8 @@ const COPY = {
   disconnect: "Disconnect",
   pick: "Calendars to compare",
   legend: "Times marked Conflict overlap events on your calendar.",
-  namesAsk: "Want to see which event is in the way?",
-  namesLink: "Show event names",
+  namesHint: "Choose Show event beside one to see which event it is.",
+  namesLink: "Show event",
   namesOn: "Event names show only to you and aren't saved.",
   loading: "Checking your calendar...",
   failed: "We couldn't connect to your Google Calendar. Try again.",
@@ -108,10 +109,12 @@ export type CompareBarProps = {
   month: string;
   /** The visitor's busy ranges for a month, or null when nothing is compared. */
   onBusy: (month: string, busy: BusyRange[] | null) => void;
+  /** The "Show event" link for each Conflict time, or null when event names are on or there is no connection. */
+  onNames: (link: ((describedBy: string) => ReactNode) | null) => void;
   onClose: () => void;
 };
 
-export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
+export function CompareBar({ month, onBusy, onNames, onClose }: CompareBarProps) {
   const [conn, setConn] = useState<Connection>({ status: "loading" });
   const [chosen, setChosen] = useState<string[] | null>(null);
   const [done, setDone] = useState<{ key: string; state: "ok" | "error" | "partial"; failed?: CompareFailure[] } | null>(null);
@@ -205,6 +208,22 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
   const connect = (events?: boolean) =>
     window.location.assign(oauthStartPath("google", { intent: "compare_calendar", next: returnPath(), ...(events ? { data: { events: "1" } } : {}) }));
 
+  const offerNames = conn.status === "connected" && !conn.events;
+  useEffect(() => {
+    onNames(
+      offerNames
+        ? (describedBy) => (
+            <button type="button" onClick={() => connect(true)} aria-describedby={describedBy} className="shrink-0 text-[14px] font-semibold text-brand-strong hover:underline">
+              {COPY.namesLink}
+            </button>
+          )
+        : null,
+    );
+    return () => onNames(null);
+    // connect reads only the current URL; onNames is the parent's state setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerNames]);
+
   return (
     <section aria-label="Compare with your calendar" data-testid="compare-bar" className="mt-4 rounded-[var(--radius-card)] border border-line px-4 py-3 text-[14px] leading-5 text-public-text">
       {conn.status === "loading" && <p className="text-ink-2">{COPY.loading}</p>}
@@ -285,16 +304,8 @@ export function CompareBar({ month, onBusy, onClose }: CompareBarProps) {
             </div>
           )}
           <p className="text-[12px] text-ink-2" aria-live="polite" data-testid="compare-status">
-            {!ids.length ? COPY.noneChosen : busyState === "loading" ? COPY.loading : busyState === "error" ? COPY.loadError : conn.events ? `${COPY.legend} ${COPY.namesOn}` : COPY.legend}
+            {!ids.length ? COPY.noneChosen : busyState === "loading" ? COPY.loading : busyState === "error" ? COPY.loadError : `${COPY.legend} ${conn.events ? COPY.namesOn : COPY.namesHint}`}
           </p>
-          {!conn.events && (
-            <p className="text-[12px] text-ink-2">
-              {COPY.namesAsk}{" "}
-              <button type="button" onClick={() => connect(true)} className="font-semibold text-brand-strong hover:underline" data-testid="compare-names">
-                {COPY.namesLink}
-              </button>
-            </p>
-          )}
         </div>
       )}
     </section>
