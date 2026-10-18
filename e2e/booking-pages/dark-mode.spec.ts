@@ -26,6 +26,8 @@ test.describe("public pages dark mode", () => {
     const shell = page.locator("[data-public-shell]");
     await expect(shell).toHaveAttribute("data-public-auto", "");
     await expect(shell).toHaveCSS("background-color", "rgb(14, 18, 23)");
+    // Same brand blue as light mode (owner request, October 18): the purple-leaning #2563eb read off on the dark card.
+    expect(await shell.evaluate((el) => getComputedStyle(el).getPropertyValue("--primary").trim())).toBe("#006bff");
     await expect(page.locator('meta[name="darkreader-lock"]')).toHaveCount(1);
     await axe(page);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/dark-1-landing.png` });
