@@ -4,12 +4,12 @@
 // { subject, html, text } through renderEmailLayout. Copy follows Calendly's account emails: a short greeting, one
 // sentence of context, one pill button, the plain link for copy and paste, and the expiry. No em or en dashes (GEN-11).
 import { appName } from "@/lib/brand";
-import { emailButtonHtml, escapeHtml, htmlToText, renderEmailLayout } from "@/lib/email";
+import { EMAIL_COLORS, emailButtonHtml, escapeHtml, htmlToText, renderEmailLayout } from "@/lib/email";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 
-const P = 'style="margin:0 0 16px;font-size:16px;line-height:24px;color:#0a2540"';
-const MUTED = 'style="margin:0 0 12px;font-size:14px;line-height:20px;color:#476788"';
+const P = `style="margin:0 0 16px;font-size:16px;line-height:24px;color:${EMAIL_COLORS.text}"`;
+const MUTED = `style="margin:0 0 12px;font-size:14px;line-height:20px;color:${EMAIL_COLORS.secondary}"`;
 
 function firstName(name: string): string {
   const trimmed = name.trim();
@@ -27,7 +27,7 @@ function button(label: string, url: string): string {
 }
 
 function plainLink(url: string): string {
-  return `<p ${MUTED}>Or copy and paste this link into your browser:<br><a href="${escapeHtml(url)}" style="color:#004eba;word-break:break-all">${escapeHtml(url)}</a></p>`;
+  return `<p ${MUTED}>Or copy and paste this link into your browser:<br><a href="${escapeHtml(url)}" style="color:${EMAIL_COLORS.link};word-break:break-all">${escapeHtml(url)}</a></p>`;
 }
 
 function render(p: { subject: string; heading: string; preheader: string; bodyHtml: string; footerHtml?: string }): RenderedEmail {
@@ -92,7 +92,7 @@ export function loginMethodCodeTemplate(p: { name: string; code: string; expires
     bodyHtml:
       greeting(p.name) +
       `<p ${P}>Enter this code in ${escapeHtml(app)} to confirm the change to how you log in:</p>` +
-      `<p style="margin:24px 0;font-size:32px;line-height:40px;font-weight:700;letter-spacing:8px;color:#0a2540">${code}</p>` +
+      `<p style="margin:24px 0;font-size:32px;line-height:40px;font-weight:700;letter-spacing:8px;color:${EMAIL_COLORS.text}">${code}</p>` +
       `<p ${MUTED}>The code expires in ${minutes} minutes.</p>`,
     footerHtml: `If you didn't try to change your login method, someone may know your password. Change it in ${escapeHtml(app)} under Settings, Login.`,
   });
@@ -102,7 +102,7 @@ export function loginMethodCodeTemplate(p: { name: string; code: string; expires
 export function welcomeTemplate(p: { name: string; url: string; bookingUrl?: string | null }): RenderedEmail {
   const app = appName();
   const booking = p.bookingUrl
-    ? `<p ${P}>Your scheduling page is live at <a href="${escapeHtml(p.bookingUrl)}" style="color:#004eba">${escapeHtml(p.bookingUrl.replace(/^https?:\/\//, ""))}</a>. Share it and people can book time with you without the back and forth.</p>`
+    ? `<p ${P}>Your scheduling page is live at <a href="${escapeHtml(p.bookingUrl)}" style="color:${EMAIL_COLORS.link}">${escapeHtml(p.bookingUrl.replace(/^https?:\/\//, ""))}</a>. Share it and people can book time with you without the back and forth.</p>`
     : "";
   return render({
     subject: `Welcome to ${app}`,
@@ -113,7 +113,7 @@ export function welcomeTemplate(p: { name: string; url: string; bookingUrl?: str
       `<p ${P}>Your ${escapeHtml(app)} account is ready.</p>` +
       booking +
       `<p ${P}>A few things to do next:</p>` +
-      `<ul style="margin:0 0 16px;padding-left:20px;font-size:16px;line-height:24px;color:#0a2540">` +
+      `<ul style="margin:0 0 16px;padding-left:20px;font-size:16px;line-height:24px;color:${EMAIL_COLORS.text}">` +
       `<li>Connect your calendar so you are never double booked</li>` +
       `<li>Set the hours you are available for meetings</li>` +
       `<li>Share your link by email, text or on your website</li>` +

@@ -1,5 +1,5 @@
-// Email layout and content blocks (SPEC NT-05, NT-01 to NT-04): one responsive layout (600px, white card on #FAFAFA,
-// logo or avatar, #0A2540 text, #006BFF pill buttons, "Powered by {AppName}" and the reason line), plain text
+// Email layout and content blocks (SPEC NT-05, NT-01 to NT-04): one responsive layout (600px, plain white page,
+// logo or avatar, neutral #1A1A1A text, #006BFF pill buttons, "Powered by {AppName}" and the reason line), plain text
 // alternatives that match the HTML, valid markup and no tracking pixels.
 import { describe, expect, it } from "vitest";
 import { composeEmail, renderEmail, type EmailBlock } from "@/lib/email/blocks";
@@ -66,8 +66,8 @@ describe("renderEmailLayout (NT-05)", () => {
     });
     expect(html).toMatch(/^<!doctype html><html lang="en"/);
     expect(html).toContain("max-width:600px");
-    expect(html).toContain("background-color:#FAFAFA");
-    expect(html).toContain("color:#0A2540");
+    expect(html).toContain("background-color:#FFFFFF");
+    expect(html).toContain("color:#1A1A1A");
     expect(html).toContain('src="https://cdn.example.com/a.png"');
     expect(html).toContain("border-radius:50%");
     expect(html).toContain("Powered by Kairos");

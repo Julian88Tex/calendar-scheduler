@@ -134,7 +134,10 @@ export async function createBooking(db: DbOrTx, opts: CreateBookingOptions) {
 
   const inviteeSpecs = opts.invitees ?? [opts.invitee ?? {}];
   const createdInvitees: InviteeRow[] = [];
-  for (const spec of inviteeSpecs) {
+  // Inside a test transaction now() is the same for every row, so queries ordered by (createdAt, id) would fall back
+  // to the random id; one millisecond apart keeps the invitees in the order they were listed.
+  const createdBase = Date.now();
+  for (const [index, spec] of inviteeSpecs.entries()) {
     const email = spec.email ?? `${uniq("guest")}@example.com`;
     const name = spec.name ?? "Test Invitee";
     const inviteeStatus = spec.status ?? (status === "canceled" ? "canceled" : "active");
@@ -154,6 +157,7 @@ export async function createBooking(db: DbOrTx, opts: CreateBookingOptions) {
           status: inviteeStatus,
           questionsAndAnswers: spec.questionsAndAnswers ?? [],
           canceledAt: inviteeStatus === "canceled" ? new Date() : null,
+          createdAt: new Date(createdBase + index),
           ...spec.overrides,
         })
         .returning(),

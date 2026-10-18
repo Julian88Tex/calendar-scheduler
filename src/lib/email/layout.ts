@@ -1,7 +1,8 @@
 // OWNER: foundation-platform. Stub created by foundation; the owner replaces the implementation and must keep these signatures.
 //
 // Shared email layout (SPEC NT-05, ARCHITECTURE section 13.1): one responsive HTML layout for every email (600px max,
-// white card on #FAFAFA, logo or avatar at the top, #0A2540 text, #006BFF pill buttons, footer with "Powered by
+// plain white page like Calendly's, logo or avatar at the top, neutral near-black text, #006BFF pill buttons and links,
+// footer with "Powered by
 // {AppName}" (hideable) and a line saying why the recipient got the email) plus the matching plain text footer.
 // Table based markup with inline styles so Gmail, Outlook and Apple Mail render it the same. No tracking pixels, no
 // remote fonts, no scripts. Pure (no I/O); the footer strings come from the i18n `common` namespace.
@@ -12,17 +13,21 @@ import { appUrl } from "../url";
 import { escapeHtml, isAbsoluteHttpUrl, safeHref } from "./html";
 import type { EmailBrand } from "./types";
 
-/** Email palette (Calendly Classic tokens, calendly-ux-walkthrough 1.1). */
+/**
+ * Email palette, modeled on Calendly's notification emails: no card or border, neutral grays for text. Gmail and
+ * Outlook force dark mode by inverting colors; a neutral gray inverts to a neutral light gray, while a tinted color
+ * like navy #0A2540 turned every line light blue on a dark boxed card. Only links and buttons stay blue.
+ */
 export const EMAIL_COLORS = {
-  canvas: "#FAFAFA",
+  canvas: "#FFFFFF",
   card: "#FFFFFF",
-  border: "#E7EDF6",
-  divider: "#D4E0ED",
-  text: "#0A2540",
-  secondary: "#476788",
+  border: "#FFFFFF",
+  divider: "#DDDDDD",
+  text: "#1A1A1A",
+  secondary: "#666666",
   primary: "#006BFF",
   link: "#006BFF",
-  infoBg: "#E6F0FF",
+  infoBg: "#F2F2F2",
   warningBg: "#FFE7BA",
   warningText: "#894800",
   successBg: "#CDF9E5",
@@ -196,7 +201,8 @@ export function renderEmailLayout(p: EmailLayoutInput): { html: string } {
     `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" ` +
     `style="width:100%;max-width:600px;border-collapse:separate">` +
     `<tr><td class="k-card" bgcolor="${c.card}" style="background-color:${c.card};` +
-    `border:1px solid ${c.border};border-radius:${c.radius}px;padding:40px 40px 32px 40px;font-family:${EMAIL_FONT_STACK};` +
+    (c.border === c.card ? "" : `border:1px solid ${c.border};`) +
+    `border-radius:${c.radius}px;padding:40px 40px 32px 40px;font-family:${EMAIL_FONT_STACK};` +
     `font-size:16px;line-height:24px;color:${c.text}">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">` +
     headerImage(p.brand) +
