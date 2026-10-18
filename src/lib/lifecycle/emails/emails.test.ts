@@ -136,6 +136,20 @@ describe("standard booking emails", () => {
 });
 
 describe("lifecycle-only emails", () => {
+  it("host emails use neutral grays so dark mode inversion keeps text gray, not blue (only links and buttons are blue)", () => {
+    const host = bookingEmail("host_rescheduled", { ctx: hostCtx, brand, locale: "en", location: meet, former: { ctx: formerHost, reason: null }, meetingUrl: "http://localhost:3000/app/meetings?event=1", facts: { fromCalendar: true } });
+    const blue = new Set(["#006BFF"]);
+    const tinted = [...host.html.matchAll(/(?:color|background-color|bgcolor=")[:]?\s*(#[0-9A-Fa-f]{6})/g)]
+      .map((m) => m[1].toUpperCase())
+      .filter((hex) => !blue.has(hex))
+      .filter((hex) => {
+        const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+        return Math.max(r, g, b) - Math.min(r, g, b) > 8;
+      });
+    expect(tinted).toEqual([]);
+    expect(host.html).not.toMatch(/class="k-card"[^>]*border:1px/);
+  });
+
   it("request reschedule and its reminder", () => {
     const email = requestRescheduleEmail({ ctx: inviteeCtx, brand, locale: "en", message: "Could we move this to next week?", rebookUrl: String(inviteeCtx.reschedule_url) });
     wellFormed(email);

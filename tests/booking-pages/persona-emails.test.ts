@@ -61,7 +61,7 @@ describe("persona email look", () => {
     expect(renderMeetingEmail({ kind: "guest_confirmation", ctx: { ...warm.ctx, invitee_first_name: "" }, brand: warm.brand }).text).toMatch(/^Hey there!\n/);
     const host = renderMeetingEmail({ kind: "host_new_event", ctx, brand: plain });
     expect(host.text).toMatch(/^Hi Jordan Lee,\n/);
-    expect(host.html).toContain("#FAFAFA");
+    expect(host.html).toContain("background-color:#FFFFFF;border-collapse");
   });
 
   it("classic personas keep the classic layout and copy, with their event name", () => {
