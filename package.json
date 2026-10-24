@@ -51,6 +51,7 @@
     "date-holidays": "3.37.0",
     "drizzle-orm": "0.45.4",
     "ical-generator": "11.1.2",
+    "jose": "^6.2.13",
     "lucide-react": "1.55.0",
     "luxon": "3.7.2",
     "next": "16.4.0",
