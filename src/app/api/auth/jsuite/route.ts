@@ -1,3 +1,5 @@
+// OWNER: foundation-auth.
+//
 // GET /api/auth/jsuite?token=...&next=... : the JSuite hand-off. Verifies the token, resolves the account as a Google
 // login (find by Google subject, link by verified email, or create under the signup policy), then starts a session the
 // same way the OAuth callback does (two factor still applies).

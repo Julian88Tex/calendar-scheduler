@@ -1,3 +1,5 @@
+// OWNER: foundation-auth.
+//
 // JSuite single sign in (https://github.com/Julian88Tex/JSuite, docs/INTEGRATION.md). JSuite signs the user in with
 // Google and sends them to /api/auth/jsuite with a one minute ES256 token whose `sub` is the Google subject, so the
 // account resolves exactly like a "Continue with Google" login. Off unless JSUITE_URL is set.
