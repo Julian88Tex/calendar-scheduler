@@ -240,6 +240,6 @@ export const CRON_STALE_MESSAGE = "Reminders may be sent late. Set up a pinger t
 export function optionalVariablesDocsUrl(): string {
   const owner = process.env.VERCEL_GIT_REPO_OWNER;
   const slug = process.env.VERCEL_GIT_REPO_SLUG;
-  const repo = owner && slug ? `https://github.com/${owner}/${slug}` : "https://github.com/Julian88Tex/calendar-scheduler";
+  const repo = owner && slug ? `https://github.com/${owner}/${slug}` : "https://github.com/Julian88Tex/julendly";
   return `${repo}#optional-environment-variables`;
 }
